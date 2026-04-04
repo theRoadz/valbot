@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ValBot - Design Direction Mockups</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg-base: #0a0a0f;
+    --bg-surface: #12121a;
+    --bg-elevated: #1a1a26;
+    --border: #2a2a3a;
+    --profit: #22c55e;
+    --loss: #ef4444;
+    --warning: #f59e0b;
+    --neutral: #6b7280;
+    --accent: #3b82f6;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --mode-volume: #8b5cf6;
+    --mode-profit: #22c55e;
+    --mode-arb: #06b6d4;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: #050508;
+    color: var(--text-primary);
+  }
+
+  /* Navigation */
+  .nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(10,10,15,0.95); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .nav h1 { font-size: 16px; font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+  .nav-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .nav-tab {
+    padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 500;
+    cursor: pointer; border: 1px solid transparent; transition: all 0.2s;
+    color: var(--text-secondary); background: transparent;
+  }
+  .nav-tab:hover { background: var(--bg-elevated); color: var(--text-primary); }
+  .nav-tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+  /* Mockup container */
+  .mockup-container { padding-top: 60px; }
+  .mockup-section { display: none; min-height: 100vh; padding: 24px; }
+  .mockup-section.active { display: block; }
+
+  .mockup-title {
+    font-size: 20px; font-weight: 700; margin-bottom: 4px;
+  }
+  .mockup-desc {
+    font-size: 14px; color: var(--text-secondary); margin-bottom: 24px;
+    max-width: 800px; line-height: 1.6;
+  }
+
+  /* Shared component styles */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 500;
+  }
+  .badge-running { background: rgba(34,197,94,0.15); color: var(--profit); }
+  .badge-stopped { background: rgba(107,114,128,0.15); color: var(--neutral); }
+  .badge-error { background: rgba(239,68,68,0.15); color: var(--loss); }
+  .badge-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .badge-running .badge-dot { background: var(--profit); }
+  .badge-stopped .badge-dot { background: var(--neutral); }
+  .badge-error .badge-dot { background: var(--loss); }
+
+  .toggle {
+    width: 36px; height: 20px; border-radius: 10px; position: relative; cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle.off { background: var(--neutral); }
+  .toggle.on { background: var(--accent); }
+  .toggle::after {
+    content: ''; position: absolute; top: 2px; width: 16px; height: 16px;
+    border-radius: 50%; background: white; transition: left 0.2s;
+  }
+  .toggle.off::after { left: 2px; }
+  .toggle.on::after { left: 18px; }
+
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .profit { color: var(--profit); }
+  .loss { color: var(--loss); }
+  .warning { color: var(--warning); }
+  .muted { color: var(--text-muted); }
+  .secondary { color: var(--text-secondary); }
+
+  /* ===== DIRECTION A: Classic Grid ===== */
+  .da-dashboard {
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    gap: 16px;
+    height: calc(100vh - 120px);
+  }
+  .da-topbar {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 20px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .da-topbar-stats { display: flex; gap: 32px; }
+  .da-stat-group { display: flex; flex-direction: column; gap: 2px; }
+  .da-stat-label { font-size: 11px; font-weight: 500; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .da-stat-value { font-size: 18px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+
+  .da-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .da-mode-card {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .da-mode-header { display: flex; align-items: center; justify-content: space-between; }
+  .da-mode-title { display: flex; align-items: center; gap: 8px; }
+  .da-mode-name { font-size: 16px; font-weight: 600; }
+  .da-mode-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .da-mode-stat { display: flex; flex-direction: column; gap: 2px; }
+
+  .da-bottom { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; min-height: 0; }
+  .da-panel {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .da-panel-header {
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    font-size: 13px; font-weight: 600; flex-shrink: 0;
+  }
+  .da-panel-body { padding: 8px; overflow-y: auto; flex: 1; }
+
+  .da-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .da-table th {
+    text-align: left; padding: 6px 8px; font-weight: 500; color: var(--text-muted);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  .da-table td { padding: 6px 8px; border-bottom: 1px solid rgba(42,42,58,0.5); }
+
+  .da-log-entry {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    padding: 3px 8px; line-height: 1.6;
+  }
+  .da-log-time { color: var(--text-muted); }
+  .da-log-mode { font-weight: 500; }
+
+  /* Mode accent borders */
+  .da-mode-card.volume { border-top: 2px solid var(--mode-volume); }
+  .da-mode-card.profit { border-top: 2px solid var(--mode-profit); }
+  .da-mode-card.arb { border-top: 2px solid var(--mode-arb); }
+
+  /* Fund allocation bar */
+  .da-fund-bar {
+    height: 4px; border-radius: 2px; background: var(--bg-elevated); overflow: hidden;
+  }
+  .da-fund-bar-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+
+  /* ===== DIRECTION B: Compact Horizontal ===== */
+  .db-dashboard {
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    gap: 12px;
+    height: calc(100vh - 120px);
+  }
+  .db-topbar {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 16px;
+    display: flex; align-items: center; gap: 24px;
+  }
+  .db-topbar-brand { font-size: 15px; font-weight: 700; color: var(--accent); }
+  .db-topbar-stats { display: flex; gap: 20px; flex: 1; }
+  .db-topbar-stat { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .db-topbar-stat .label { color: var(--text-muted); }
+  .db-topbar-stat .value { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+  .db-connection { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--profit); }
+  .db-connection-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--profit); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  .db-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .db-mode-card {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px;
+  }
+  .db-mode-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  .db-mode-left { display: flex; align-items: center; gap: 8px; }
+  .db-mode-indicator { width: 3px; height: 24px; border-radius: 2px; }
+  .db-mode-name { font-size: 13px; font-weight: 600; }
+  .db-mode-stats {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+  }
+  .db-mode-stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .db-mode-stat-value { font-size: 14px; font-weight: 600; font-family: 'JetBrains Mono', monospace; margin-top: 1px; }
+  .db-mode-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--text-muted);
+  }
+
+  .db-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; }
+  .db-panel {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .db-panel-header {
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; font-weight: 600;
+  }
+  .db-panel-count { font-size: 10px; color: var(--text-muted); font-weight: 400; }
+  .db-panel-body { padding: 4px; overflow-y: auto; flex: 1; }
+
+  /* ===== DIRECTION C: Wide Mode Cards with Inline Details ===== */
+  .dc-dashboard {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 16px;
+    height: calc(100vh - 120px);
+  }
+  .dc-topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 4px;
+  }
+  .dc-topbar-left { display: flex; align-items: center; gap: 16px; }
+  .dc-topbar-brand { font-size: 18px; font-weight: 700; }
+  .dc-topbar-brand span { color: var(--accent); }
+  .dc-summary-pills { display: flex; gap: 8px; }
+  .dc-pill {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 20px;
+    padding: 6px 14px; font-size: 12px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .dc-pill .label { color: var(--text-muted); }
+  .dc-pill .value { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+
+  .dc-main { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+  .dc-mode-card {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden;
+  }
+  .dc-mode-main {
+    display: grid; grid-template-columns: 200px 1fr auto; align-items: center;
+    padding: 16px 20px; gap: 24px;
+  }
+  .dc-mode-identity { display: flex; align-items: center; gap: 12px; }
+  .dc-mode-icon {
+    width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center;
+    justify-content: center; font-size: 18px; font-weight: 700;
+  }
+  .dc-mode-info { display: flex; flex-direction: column; gap: 2px; }
+  .dc-mode-name { font-size: 15px; font-weight: 600; }
+  .dc-mode-pair { font-size: 11px; color: var(--text-muted); }
+  .dc-mode-stats { display: flex; gap: 32px; }
+  .dc-mode-stat { display: flex; flex-direction: column; gap: 1px; }
+  .dc-mode-stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .dc-mode-stat-value { font-size: 16px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+  .dc-mode-controls { display: flex; align-items: center; gap: 12px; }
+  .dc-mode-expanded {
+    padding: 0 20px 16px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+
+  .dc-log {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px;
+    max-height: 200px; overflow: hidden;
+  }
+  .dc-log-header {
+    padding: 8px 16px; border-bottom: 1px solid var(--border);
+    font-size: 12px; font-weight: 600;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  /* ===== DIRECTION D: Terminal-Inspired ===== */
+  .dd-dashboard {
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    gap: 12px;
+    height: calc(100vh - 120px);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .dd-topbar {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 4px;
+    padding: 8px 12px;
+    display: flex; align-items: center; gap: 16px; font-size: 12px;
+  }
+  .dd-topbar-brand { color: var(--accent); font-weight: 700; }
+  .dd-topbar-sep { color: var(--border); }
+  .dd-topbar-stat { display: flex; gap: 6px; }
+  .dd-topbar-stat .label { color: var(--text-muted); }
+
+  .dd-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .dd-mode-card {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 4px;
+    font-size: 12px;
+  }
+  .dd-mode-header {
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .dd-mode-title { display: flex; align-items: center; gap: 8px; }
+  .dd-mode-prefix { color: var(--text-muted); }
+  .dd-mode-body { padding: 8px 12px; }
+  .dd-mode-line { display: flex; justify-content: space-between; padding: 2px 0; }
+  .dd-mode-key { color: var(--text-muted); }
+  .dd-mode-val { font-weight: 500; }
+
+  .dd-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; }
+  .dd-panel {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 4px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .dd-panel-header {
+    padding: 6px 12px; border-bottom: 1px solid var(--border);
+    font-size: 11px; color: var(--text-muted); flex-shrink: 0;
+  }
+  .dd-panel-body { padding: 6px 12px; overflow-y: auto; flex: 1; font-size: 11px; line-height: 1.7; }
+
+  /* ===== DIRECTION E: Dashboard with Sidebar ===== */
+  .de-dashboard {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 0;
+    height: calc(100vh - 120px);
+  }
+  .de-sidebar {
+    background: var(--bg-surface); border-right: 1px solid var(--border);
+    padding: 16px; display: flex; flex-direction: column; gap: 12px;
+    overflow-y: auto;
+  }
+  .de-sidebar-brand { font-size: 18px; font-weight: 700; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .de-sidebar-brand span { color: var(--accent); }
+  .de-sidebar-section { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 8px; }
+
+  .de-mode-item {
+    background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .de-mode-item-header { display: flex; align-items: center; justify-content: space-between; }
+  .de-mode-item-left { display: flex; align-items: center; gap: 8px; }
+  .de-mode-item-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .de-mode-item-name { font-size: 13px; font-weight: 600; }
+  .de-mode-item-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px; }
+  .de-mode-item-stat { display: flex; justify-content: space-between; }
+  .de-mode-item-stat .label { color: var(--text-muted); }
+  .de-mode-item-stat .value { font-family: 'JetBrains Mono', monospace; font-weight: 500; }
+
+  .de-main { display: grid; grid-template-rows: auto 1fr 1fr; gap: 12px; padding: 16px; overflow: hidden; }
+  .de-summary {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;
+  }
+  .de-summary-card {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .de-summary-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .de-summary-value { font-size: 20px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+
+  .de-panel {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .de-panel-header {
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    font-size: 12px; font-weight: 600; flex-shrink: 0;
+  }
+  .de-panel-body { padding: 8px; overflow-y: auto; flex: 1; }
+
+  /* ===== DIRECTION F: Minimal Focus ===== */
+  .df-dashboard {
+    display: flex; flex-direction: column; gap: 20px;
+    height: calc(100vh - 120px);
+    max-width: 1200px; margin: 0 auto;
+  }
+  .df-header { display: flex; align-items: center; justify-content: space-between; }
+  .df-header-left { display: flex; align-items: center; gap: 24px; }
+  .df-brand { font-size: 20px; font-weight: 700; }
+  .df-brand span { color: var(--accent); }
+  .df-header-stats { display: flex; gap: 24px; }
+  .df-header-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .df-header-stat .label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; }
+  .df-header-stat .value { font-size: 22px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+
+  .df-modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .df-mode-card {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; display: flex; flex-direction: column; gap: 16px;
+  }
+  .df-mode-header { display: flex; align-items: center; justify-content: space-between; }
+  .df-mode-title { display: flex; align-items: center; gap: 10px; }
+  .df-mode-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px;
+  }
+  .df-mode-name { font-size: 16px; font-weight: 600; }
+  .df-mode-pnl { text-align: center; padding: 12px 0; }
+  .df-mode-pnl-value { font-size: 28px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+  .df-mode-pnl-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .df-mode-row { display: flex; justify-content: space-between; font-size: 13px; }
+  .df-mode-row .label { color: var(--text-muted); }
+  .df-mode-row .value { font-family: 'JetBrains Mono', monospace; font-weight: 500; }
+
+  .df-bottom { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .df-panel {
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .df-panel-header {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    font-size: 14px; font-weight: 600;
+  }
+  .df-panel-body { padding: 8px; overflow-y: auto; flex: 1; }
+
+  /* Alert banner */
+  .alert-banner {
+    background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+    border-radius: 6px; padding: 8px 16px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--loss);
+    margin-bottom: 12px;
+  }
+  .alert-banner-icon { font-size: 14px; }
+
+  /* Shared table for all directions */
+  table.shared-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  table.shared-table th {
+    text-align: left; padding: 5px 8px; font-weight: 500; color: var(--text-muted);
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.shared-table td {
+    padding: 5px 8px; border-bottom: 1px solid rgba(42,42,58,0.4);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  table.shared-table td.text-cell { font-family: 'Inter', sans-serif; }
+
+  /* Log entries shared */
+  .log-entry { font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 2px 8px; line-height: 1.7; }
+  .log-time { color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <h1>ValBot Design Directions</h1>
+  <div class="nav-tabs">
+    <div class="nav-tab active" onclick="showDirection('a')">A: Classic Grid</div>
+    <div class="nav-tab" onclick="showDirection('b')">B: Compact</div>
+    <div class="nav-tab" onclick="showDirection('c')">C: Wide Cards</div>
+    <div class="nav-tab" onclick="showDirection('d')">D: Terminal</div>
+    <div class="nav-tab" onclick="showDirection('e')">E: Sidebar</div>
+    <div class="nav-tab" onclick="showDirection('f')">F: Minimal</div>
+  </div>
+</nav>
+
+<div class="mockup-container">
+
+  <!-- DIRECTION A: Classic Grid -->
+  <section id="dir-a" class="mockup-section active">
+    <div class="mockup-title">Direction A: Classic Grid</div>
+    <div class="mockup-desc">Top summary bar, three mode cards in a row, positions table and trade log below. The Grafana-inspired layout. Dense, professional, all information visible at once.</div>
+
+    <div class="da-dashboard">
+      <div class="da-topbar">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <span style="font-size:16px; font-weight:700;">Val<span style="color:var(--accent)">Bot</span></span>
+          <div class="db-connection"><div class="db-connection-dot"></div> Connected</div>
+        </div>
+        <div class="da-topbar-stats">
+          <div class="da-stat-group">
+            <span class="da-stat-label">Wallet</span>
+            <span class="da-stat-value">$12,450.00</span>
+          </div>
+          <div class="da-stat-group">
+            <span class="da-stat-label">Total PnL</span>
+            <span class="da-stat-value profit">+$1,247.83</span>
+          </div>
+          <div class="da-stat-group">
+            <span class="da-stat-label">Session PnL</span>
+            <span class="da-stat-value profit">+$312.50</span>
+          </div>
+          <div class="da-stat-group">
+            <span class="da-stat-label">Total Trades</span>
+            <span class="da-stat-value">1,847</span>
+          </div>
+          <div class="da-stat-group">
+            <span class="da-stat-label">Volume</span>
+            <span class="da-stat-value">$2.4M</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="da-modes">
+        <div class="da-mode-card volume">
+          <div class="da-mode-header">
+            <div class="da-mode-title">
+              <span class="da-mode-name" style="color:var(--mode-volume)">Volume Max</span>
+              <span class="badge badge-running"><span class="badge-dot"></span> Running</span>
+            </div>
+            <div class="toggle on"></div>
+          </div>
+          <div class="da-mode-stats">
+            <div class="da-mode-stat">
+              <span class="da-stat-label">PnL</span>
+              <span class="da-stat-value mono profit" style="font-size:16px;">+$42.10</span>
+            </div>
+            <div class="da-mode-stat">
+              <span class="da-stat-label">Trades</span>
+              <span class="da-stat-value mono" style="font-size:16px;">842</span>
+            </div>
+            <div class="da-mode-stat">
+              <span class="da-stat-label">Volume</span>
+              <span class="da-stat-value mono" style="font-size:16px;">$1.2M</span>
+            </div>
+            <div class="da-mode-stat">
+              <span class="da-stat-label">Allocated</span>
+              <span class="da-stat-value mono" style="font-size:16px;">$5,000</span>
+            </div>
+          </div>
+          <div class="da-fund-bar"><div class="da-fund-bar-fill" style="width:72%; background:var(--mode-volume);"></div></div>
+          <div style="font-size:10px; color:var(--text-muted);">$3,600 / $5,000 remaining</div>
+        </div>
+
+        <div class="da-mode-card profit">
+          <div class="da-mode-header">
+            <div class="da-mode-title">
+              <span class="da-mode-name" style="color:var(--mode-profit)">Profit Hunter</span>
+              <span class="badge badge-running"><span class="badge-dot"></span> Running</span>
+            </div>
+            <div class="toggle on"></div>
+          </div>
+          <div class="da-mode-stats">
+            <div class="da-mode-stat">
+              <span class="da-stat-label">PnL</span>
+              <span class="da-stat-value mono profit" style="font-size:16px;">+$187.30</span>
+            </div>
+            <div class="da-mode-stat">
+              <span class="da-stat-label">Trades</span>
+              <span class="da-stat-value mono" style="font-size:16px;">156</span>
+            </div>
+            <div class="da-mode-stat">
+              <span class="da-stat-label">Volume</span>
+              <span class="da-stat-value mono" style="font-size:16px;">$680K</span>
+            </div>
+            <div class="da-mode-stat">
+              <span class="da-stat-label">Allocated</span>
+              <span class="da-stat-value mono" style="font-size:16px;">$4,000</span>
+            </div>
+          </div>
+          <div class="da-fund-bar"><div class="da-fund-bar-fill" style="width:85%; background:var(--mode-profit);"></div></div>
+          <div style="font-size:10px; color:var(--text-muted);">$3,400 / $4,000 remaining</div>
+        </div>
+
+        <div class="da-mode-card arb">
+          <div class="da-mode-header">
+            <div class="da-mode-title">
+              <span class="da-mode-name" style="color:var(--mode-arb)">Arbitrage</span>
+              <span class="badge badge-stopped"><span class="badge-dot"></span> Stopped</span>
+            </div>
+            <div class="toggle off"></div>
+          </div>
+          <div class="da-mode-stats">
+            <div class="da-mode-stat">
+              <span class="da-stat-label">PnL</span>
+              <span class="da-stat-value mono muted" style="font-size:16px;">$0.00</span>
+            </div>
+            <div class="da-mode-stat">
+              <span class="da-stat-label">Trades</span>
+              <span class="da-stat-value mono muted" style="font-size:16px;">0</span>
+            </div>
+            <div class="da-mode-stat">
+              <span class="da-stat-label">Volume</span>
+              <span class="da-stat-value mono muted" style="font-size:16px;">$0</span>
+            </div>
+            <div class="da-mode-stat">
+              <span class="da-stat-label">Allocated</span>
+              <span class="da-stat-value mono muted" style="font-size:16px;">$0</span>
+            </div>
+          </div>
+          <div class="da-fund-bar"><div class="da-fund-bar-fill" style="width:0%; background:var(--mode-arb);"></div></div>
+          <div style="font-size:10px; color:var(--text-muted);">Not allocated</div>
+        </div>
+      </div>
+
+      <div class="da-bottom">
+        <div class="da-panel">
+          <div class="da-panel-header">Open Positions <span class="muted" style="font-weight:400; font-size:11px;">(4 active)</span></div>
+          <div class="da-panel-body">
+            <table class="shared-table">
+              <thead><tr><th>Mode</th><th>Pair</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>PnL</th><th>Stop-Loss</th></tr></thead>
+              <tbody>
+                <tr><td class="text-cell" style="color:var(--mode-volume)">Vol Max</td><td>SOL-PERP</td><td class="profit">Long</td><td>$500</td><td>$142.50</td><td>$143.10</td><td class="profit">+$2.10</td><td>$140.25</td></tr>
+                <tr><td class="text-cell" style="color:var(--mode-volume)">Vol Max</td><td>SOL-PERP</td><td class="loss">Short</td><td>$500</td><td>$143.10</td><td>$143.10</td><td class="muted">$0.00</td><td>$145.35</td></tr>
+                <tr><td class="text-cell" style="color:var(--mode-profit)">Profit</td><td>ETH-PERP</td><td class="profit">Long</td><td>$1,200</td><td>$3,280</td><td>$3,305</td><td class="profit">+$9.15</td><td>$3,247</td></tr>
+                <tr><td class="text-cell" style="color:var(--mode-profit)">Profit</td><td>BTC-PERP</td><td class="loss">Short</td><td>$2,000</td><td>$67,450</td><td>$67,520</td><td class="loss">-$2.07</td><td>$68,124</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="da-panel">
+          <div class="da-panel-header">Live Trade Log</div>
+          <div class="da-panel-body">
+            <div class="log-entry"><span class="log-time">14:32:07</span> <span style="color:var(--mode-volume)">[VOL]</span> Opened Long SOL-PERP $500 @ $142.50 | SL: $140.25</div>
+            <div class="log-entry"><span class="log-time">14:32:05</span> <span style="color:var(--mode-profit)">[PRO]</span> Closed Short ETH-PERP +$14.20</div>
+            <div class="log-entry"><span class="log-time">14:31:58</span> <span style="color:var(--mode-volume)">[VOL]</span> Closed Long SOL-PERP +$1.85</div>
+            <div class="log-entry"><span class="log-time">14:31:52</span> <span style="color:var(--mode-profit)">[PRO]</span> Opened Long ETH-PERP $1,200 @ $3,280 | SL: $3,247</div>
+            <div class="log-entry"><span class="log-time">14:31:45</span> <span style="color:var(--mode-volume)">[VOL]</span> Opened Short SOL-PERP $500 @ $143.10 | SL: $145.35</div>
+            <div class="log-entry"><span class="log-time">14:31:30</span> <span style="color:var(--mode-profit)">[PRO]</span> Opened Short BTC-PERP $2,000 @ $67,450 | SL: $68,124</div>
+            <div class="log-entry"><span class="log-time">14:31:12</span> <span style="color:var(--mode-volume)">[VOL]</span> Closed Short SOL-PERP +$0.95</div>
+            <div class="log-entry"><span class="log-time">14:30:58</span> <span style="color:var(--mode-volume)">[VOL]</span> Opened Long SOL-PERP $500 @ $142.30 | SL: $140.07</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DIRECTION B: Compact Horizontal -->
+  <section id="dir-b" class="mockup-section">
+    <div class="mockup-title">Direction B: Compact Horizontal</div>
+    <div class="mockup-desc">Tighter spacing, smaller type, maximizes data density. The "power user terminal" feel with a polished UI. Inline stats in the top bar, compact mode cards, equal-split bottom panels.</div>
+
+    <div class="db-dashboard">
+      <div class="db-topbar">
+        <span class="db-topbar-brand">ValBot</span>
+        <div class="db-topbar-stats">
+          <div class="db-topbar-stat"><span class="label">Wallet:</span><span class="value">$12,450</span></div>
+          <div class="db-topbar-stat"><span class="label">PnL:</span><span class="value profit">+$1,247.83</span></div>
+          <div class="db-topbar-stat"><span class="label">Session:</span><span class="value profit">+$312.50</span></div>
+          <div class="db-topbar-stat"><span class="label">Trades:</span><span class="value">1,847</span></div>
+          <div class="db-topbar-stat"><span class="label">Vol:</span><span class="value">$2.4M</span></div>
+        </div>
+        <div class="db-connection"><div class="db-connection-dot"></div> RPC OK</div>
+      </div>
+
+      <div class="db-modes">
+        <div class="db-mode-card">
+          <div class="db-mode-header">
+            <div class="db-mode-left">
+              <div class="db-mode-indicator" style="background:var(--mode-volume)"></div>
+              <div>
+                <div class="db-mode-name">Volume Max</div>
+                <span class="badge badge-running" style="font-size:10px;"><span class="badge-dot"></span> Running</span>
+              </div>
+            </div>
+            <div class="toggle on" style="width:32px;height:18px;"></div>
+          </div>
+          <div class="db-mode-stats">
+            <div><div class="db-mode-stat-label">PnL</div><div class="db-mode-stat-value profit">+$42.10</div></div>
+            <div><div class="db-mode-stat-label">Trades</div><div class="db-mode-stat-value">842</div></div>
+            <div><div class="db-mode-stat-label">Volume</div><div class="db-mode-stat-value">$1.2M</div></div>
+          </div>
+          <div class="db-mode-footer">
+            <span>SOL-PERP, ETH-PERP</span>
+            <span class="mono">$3,600 / $5,000</span>
+          </div>
+        </div>
+
+        <div class="db-mode-card">
+          <div class="db-mode-header">
+            <div class="db-mode-left">
+              <div class="db-mode-indicator" style="background:var(--mode-profit)"></div>
+              <div>
+                <div class="db-mode-name">Profit Hunter</div>
+                <span class="badge badge-running" style="font-size:10px;"><span class="badge-dot"></span> Running</span>
+              </div>
+            </div>
+            <div class="toggle on" style="width:32px;height:18px;"></div>
+          </div>
+          <div class="db-mode-stats">
+            <div><div class="db-mode-stat-label">PnL</div><div class="db-mode-stat-value profit">+$187.30</div></div>
+            <div><div class="db-mode-stat-label">Trades</div><div class="db-mode-stat-value">156</div></div>
+            <div><div class="db-mode-stat-label">Volume</div><div class="db-mode-stat-value">$680K</div></div>
+          </div>
+          <div class="db-mode-footer">
+            <span>BTC-PERP, ETH-PERP</span>
+            <span class="mono">$3,400 / $4,000</span>
+          </div>
+        </div>
+
+        <div class="db-mode-card">
+          <div class="db-mode-header">
+            <div class="db-mode-left">
+              <div class="db-mode-indicator" style="background:var(--neutral)"></div>
+              <div>
+                <div class="db-mode-name" style="color:var(--text-muted)">Arbitrage</div>
+                <span class="badge badge-stopped" style="font-size:10px;"><span class="badge-dot"></span> Stopped</span>
+              </div>
+            </div>
+            <div class="toggle off" style="width:32px;height:18px;"></div>
+          </div>
+          <div class="db-mode-stats">
+            <div><div class="db-mode-stat-label">PnL</div><div class="db-mode-stat-value muted">$0.00</div></div>
+            <div><div class="db-mode-stat-label">Trades</div><div class="db-mode-stat-value muted">0</div></div>
+            <div><div class="db-mode-stat-label">Volume</div><div class="db-mode-stat-value muted">$0</div></div>
+          </div>
+          <div class="db-mode-footer" style="color:var(--text-muted)">
+            <span>No pairs</span>
+            <span class="mono">Not allocated</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="db-bottom">
+        <div class="db-panel">
+          <div class="db-panel-header">Open Positions <span class="db-panel-count">4 active</span></div>
+          <div class="db-panel-body">
+            <table class="shared-table">
+              <thead><tr><th>Mode</th><th>Pair</th><th>Side</th><th>Size</th><th>Entry</th><th>PnL</th><th>SL</th></tr></thead>
+              <tbody>
+                <tr><td class="text-cell" style="color:var(--mode-volume)">VOL</td><td>SOL</td><td class="profit">L</td><td>$500</td><td>$142.50</td><td class="profit">+$2.10</td><td>$140.25</td></tr>
+                <tr><td class="text-cell" style="color:var(--mode-volume)">VOL</td><td>SOL</td><td class="loss">S</td><td>$500</td><td>$143.10</td><td class="muted">$0.00</td><td>$145.35</td></tr>
+                <tr><td class="text-cell" style="color:var(--mode-profit)">PRO</td><td>ETH</td><td class="profit">L</td><td>$1.2K</td><td>$3,280</td><td class="profit">+$9.15</td><td>$3,247</td></tr>
+                <tr><td class="text-cell" style="color:var(--mode-profit)">PRO</td><td>BTC</td><td class="loss">S</td><td>$2K</td><td>$67,450</td><td class="loss">-$2.07</td><td>$68,124</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="db-panel">
+          <div class="db-panel-header">Trade Log <span class="db-panel-count">streaming</span></div>
+          <div class="db-panel-body">
+            <div class="log-entry"><span class="log-time">14:32:07</span> <span style="color:var(--mode-volume)">[VOL]</span> Open L SOL $500 @ $142.50</div>
+            <div class="log-entry"><span class="log-time">14:32:05</span> <span style="color:var(--mode-profit)">[PRO]</span> Close S ETH <span class="profit">+$14.20</span></div>
+            <div class="log-entry"><span class="log-time">14:31:58</span> <span style="color:var(--mode-volume)">[VOL]</span> Close L SOL <span class="profit">+$1.85</span></div>
+            <div class="log-entry"><span class="log-time">14:31:52</span> <span style="color:var(--mode-profit)">[PRO]</span> Open L ETH $1.2K @ $3,280</div>
+            <div class="log-entry"><span class="log-time">14:31:45</span> <span style="color:var(--mode-volume)">[VOL]</span> Open S SOL $500 @ $143.10</div>
+            <div class="log-entry"><span class="log-time">14:31:30</span> <span style="color:var(--mode-profit)">[PRO]</span> Open S BTC $2K @ $67,450</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DIRECTION C: Wide Mode Cards -->
+  <section id="dir-c" class="mockup-section">
+    <div class="mockup-title">Direction C: Wide Horizontal Cards</div>
+    <div class="mockup-desc">Mode cards as full-width horizontal rows with stats spread across. More vertical, scrollable layout. Each mode gets a prominent row. Good for seeing mode details at a glance without density overload.</div>
+
+    <div class="dc-dashboard">
+      <div class="dc-topbar">
+        <div class="dc-topbar-left">
+          <div class="dc-topbar-brand">Val<span>Bot</span></div>
+          <div class="db-connection"><div class="db-connection-dot"></div> Connected to FOGOChain</div>
+        </div>
+        <div class="dc-summary-pills">
+          <div class="dc-pill"><span class="label">Wallet</span><span class="value">$12,450</span></div>
+          <div class="dc-pill"><span class="label">Total PnL</span><span class="value profit">+$1,247.83</span></div>
+          <div class="dc-pill"><span class="label">Session</span><span class="value profit">+$312.50</span></div>
+          <div class="dc-pill"><span class="label">Trades</span><span class="value">1,847</span></div>
+        </div>
+      </div>
+
+      <div class="dc-main">
+        <div class="dc-mode-card">
+          <div class="dc-mode-main">
+            <div class="dc-mode-identity">
+              <div class="dc-mode-icon" style="background:rgba(139,92,246,0.15); color:var(--mode-volume);">VM</div>
+              <div class="dc-mode-info">
+                <div class="dc-mode-name">Volume Max</div>
+                <div class="dc-mode-pair">SOL-PERP, ETH-PERP</div>
+              </div>
+            </div>
+            <div class="dc-mode-stats">
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">PnL</div><div class="dc-mode-stat-value profit">+$42.10</div></div>
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">Trades</div><div class="dc-mode-stat-value">842</div></div>
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">Volume</div><div class="dc-mode-stat-value">$1.2M</div></div>
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">Allocated</div><div class="dc-mode-stat-value">$5,000</div></div>
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">Remaining</div><div class="dc-mode-stat-value">$3,600</div></div>
+            </div>
+            <div class="dc-mode-controls">
+              <span class="badge badge-running"><span class="badge-dot"></span> Running</span>
+              <div class="toggle on"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dc-mode-card">
+          <div class="dc-mode-main">
+            <div class="dc-mode-identity">
+              <div class="dc-mode-icon" style="background:rgba(34,197,94,0.15); color:var(--mode-profit);">PH</div>
+              <div class="dc-mode-info">
+                <div class="dc-mode-name">Profit Hunter</div>
+                <div class="dc-mode-pair">BTC-PERP, ETH-PERP</div>
+              </div>
+            </div>
+            <div class="dc-mode-stats">
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">PnL</div><div class="dc-mode-stat-value profit">+$187.30</div></div>
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">Trades</div><div class="dc-mode-stat-value">156</div></div>
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">Volume</div><div class="dc-mode-stat-value">$680K</div></div>
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">Allocated</div><div class="dc-mode-stat-value">$4,000</div></div>
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">Remaining</div><div class="dc-mode-stat-value">$3,400</div></div>
+            </div>
+            <div class="dc-mode-controls">
+              <span class="badge badge-running"><span class="badge-dot"></span> Running</span>
+              <div class="toggle on"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dc-mode-card" style="opacity: 0.6;">
+          <div class="dc-mode-main">
+            <div class="dc-mode-identity">
+              <div class="dc-mode-icon" style="background:rgba(6,182,212,0.15); color:var(--mode-arb);">AB</div>
+              <div class="dc-mode-info">
+                <div class="dc-mode-name" style="color:var(--text-muted)">Arbitrage</div>
+                <div class="dc-mode-pair">No pairs selected</div>
+              </div>
+            </div>
+            <div class="dc-mode-stats">
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">PnL</div><div class="dc-mode-stat-value muted">$0.00</div></div>
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">Trades</div><div class="dc-mode-stat-value muted">0</div></div>
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">Volume</div><div class="dc-mode-stat-value muted">$0</div></div>
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">Allocated</div><div class="dc-mode-stat-value muted">$0</div></div>
+              <div class="dc-mode-stat"><div class="dc-mode-stat-label">Remaining</div><div class="dc-mode-stat-value muted">—</div></div>
+            </div>
+            <div class="dc-mode-controls">
+              <span class="badge badge-stopped"><span class="badge-dot"></span> Stopped</span>
+              <div class="toggle off"></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:3fr 2fr; gap:16px; flex:1; min-height:200px;">
+          <div class="da-panel">
+            <div class="da-panel-header">Open Positions <span class="muted" style="font-weight:400; font-size:11px;">(4)</span></div>
+            <div class="da-panel-body">
+              <table class="shared-table">
+                <thead><tr><th>Mode</th><th>Pair</th><th>Side</th><th>Size</th><th>Entry</th><th>PnL</th><th>SL</th></tr></thead>
+                <tbody>
+                  <tr><td class="text-cell" style="color:var(--mode-volume)">Vol Max</td><td>SOL-PERP</td><td class="profit">Long</td><td>$500</td><td>$142.50</td><td class="profit">+$2.10</td><td>$140.25</td></tr>
+                  <tr><td class="text-cell" style="color:var(--mode-volume)">Vol Max</td><td>SOL-PERP</td><td class="loss">Short</td><td>$500</td><td>$143.10</td><td class="muted">$0.00</td><td>$145.35</td></tr>
+                  <tr><td class="text-cell" style="color:var(--mode-profit)">Profit</td><td>ETH-PERP</td><td class="profit">Long</td><td>$1,200</td><td>$3,280</td><td class="profit">+$9.15</td><td>$3,247</td></tr>
+                  <tr><td class="text-cell" style="color:var(--mode-profit)">Profit</td><td>BTC-PERP</td><td class="loss">Short</td><td>$2,000</td><td>$67,450</td><td class="loss">-$2.07</td><td>$68,124</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="da-panel">
+            <div class="da-panel-header">Live Trade Log</div>
+            <div class="da-panel-body">
+              <div class="log-entry"><span class="log-time">14:32:07</span> <span style="color:var(--mode-volume)">[VOL]</span> Opened Long SOL-PERP $500 @ $142.50</div>
+              <div class="log-entry"><span class="log-time">14:32:05</span> <span style="color:var(--mode-profit)">[PRO]</span> Closed Short ETH-PERP <span class="profit">+$14.20</span></div>
+              <div class="log-entry"><span class="log-time">14:31:58</span> <span style="color:var(--mode-volume)">[VOL]</span> Closed Long SOL-PERP <span class="profit">+$1.85</span></div>
+              <div class="log-entry"><span class="log-time">14:31:52</span> <span style="color:var(--mode-profit)">[PRO]</span> Opened Long ETH-PERP $1,200 @ $3,280</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DIRECTION D: Terminal-Inspired -->
+  <section id="dir-d" class="mockup-section">
+    <div class="mockup-title">Direction D: Terminal-Inspired</div>
+    <div class="mockup-desc">Fully monospace, sharp corners, minimal decoration. Feels like a custom trading terminal. Maximum information density for the technically minded. Every pixel is data.</div>
+
+    <div class="dd-dashboard">
+      <div class="dd-topbar">
+        <span class="dd-topbar-brand">VALBOT v1.0</span>
+        <span class="dd-topbar-sep">|</span>
+        <div class="dd-topbar-stat"><span class="label">WALLET</span> <span>$12,450.00</span></div>
+        <span class="dd-topbar-sep">|</span>
+        <div class="dd-topbar-stat"><span class="label">PNL</span> <span class="profit">+$1,247.83</span></div>
+        <span class="dd-topbar-sep">|</span>
+        <div class="dd-topbar-stat"><span class="label">SESSION</span> <span class="profit">+$312.50</span></div>
+        <span class="dd-topbar-sep">|</span>
+        <div class="dd-topbar-stat"><span class="label">TRADES</span> <span>1,847</span></div>
+        <span class="dd-topbar-sep">|</span>
+        <div class="dd-topbar-stat"><span class="label">VOL</span> <span>$2.4M</span></div>
+        <span style="flex:1"></span>
+        <span class="profit" style="font-size:11px;">● CONNECTED</span>
+      </div>
+
+      <div class="dd-modes">
+        <div class="dd-mode-card">
+          <div class="dd-mode-header">
+            <div class="dd-mode-title">
+              <span class="dd-mode-prefix">$</span>
+              <span style="color:var(--mode-volume)">VOLUME_MAX</span>
+            </div>
+            <span class="profit" style="font-size:11px;">● ACTIVE</span>
+          </div>
+          <div class="dd-mode-body">
+            <div class="dd-mode-line"><span class="dd-mode-key">pnl</span><span class="dd-mode-val profit">+$42.10</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">trades</span><span class="dd-mode-val">842</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">volume</span><span class="dd-mode-val">$1,200,000</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">alloc</span><span class="dd-mode-val">$5,000</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">remain</span><span class="dd-mode-val">$3,600</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">pairs</span><span class="dd-mode-val">SOL-PERP ETH-PERP</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">slip</span><span class="dd-mode-val">0.5%</span></div>
+          </div>
+        </div>
+
+        <div class="dd-mode-card">
+          <div class="dd-mode-header">
+            <div class="dd-mode-title">
+              <span class="dd-mode-prefix">$</span>
+              <span style="color:var(--mode-profit)">PROFIT_HUNTER</span>
+            </div>
+            <span class="profit" style="font-size:11px;">● ACTIVE</span>
+          </div>
+          <div class="dd-mode-body">
+            <div class="dd-mode-line"><span class="dd-mode-key">pnl</span><span class="dd-mode-val profit">+$187.30</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">trades</span><span class="dd-mode-val">156</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">volume</span><span class="dd-mode-val">$680,000</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">alloc</span><span class="dd-mode-val">$4,000</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">remain</span><span class="dd-mode-val">$3,400</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">pairs</span><span class="dd-mode-val">BTC-PERP ETH-PERP</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">slip</span><span class="dd-mode-val">0.5%</span></div>
+          </div>
+        </div>
+
+        <div class="dd-mode-card" style="opacity:0.5;">
+          <div class="dd-mode-header">
+            <div class="dd-mode-title">
+              <span class="dd-mode-prefix">$</span>
+              <span style="color:var(--mode-arb)">ARBITRAGE</span>
+            </div>
+            <span class="muted" style="font-size:11px;">○ STOPPED</span>
+          </div>
+          <div class="dd-mode-body">
+            <div class="dd-mode-line"><span class="dd-mode-key">pnl</span><span class="dd-mode-val muted">$0.00</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">trades</span><span class="dd-mode-val muted">0</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">volume</span><span class="dd-mode-val muted">$0</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">alloc</span><span class="dd-mode-val muted">—</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">remain</span><span class="dd-mode-val muted">—</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">pairs</span><span class="dd-mode-val muted">none</span></div>
+            <div class="dd-mode-line"><span class="dd-mode-key">slip</span><span class="dd-mode-val muted">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="dd-bottom">
+        <div class="dd-panel">
+          <div class="dd-panel-header">-- POSITIONS (4) --</div>
+          <div class="dd-panel-body">
+            <div><span style="color:var(--mode-volume)">VOL</span> SOL-PERP <span class="profit">LONG </span> $500    @ $142.50  PnL:<span class="profit">+$2.10</span>  SL:$140.25</div>
+            <div><span style="color:var(--mode-volume)">VOL</span> SOL-PERP <span class="loss">SHORT</span> $500    @ $143.10  PnL:<span class="muted"> $0.00</span>  SL:$145.35</div>
+            <div><span style="color:var(--mode-profit)">PRO</span> ETH-PERP <span class="profit">LONG </span> $1,200  @ $3,280   PnL:<span class="profit">+$9.15</span>  SL:$3,247</div>
+            <div><span style="color:var(--mode-profit)">PRO</span> BTC-PERP <span class="loss">SHORT</span> $2,000  @ $67,450  PnL:<span class="loss">-$2.07</span>  SL:$68,124</div>
+          </div>
+        </div>
+        <div class="dd-panel">
+          <div class="dd-panel-header">-- TRADE LOG --</div>
+          <div class="dd-panel-body">
+            <div><span class="muted">14:32:07</span> <span style="color:var(--mode-volume)">VOL</span> OPEN  LONG  SOL $500 @ $142.50 SL:$140.25</div>
+            <div><span class="muted">14:32:05</span> <span style="color:var(--mode-profit)">PRO</span> CLOSE SHORT ETH <span class="profit">+$14.20</span></div>
+            <div><span class="muted">14:31:58</span> <span style="color:var(--mode-volume)">VOL</span> CLOSE LONG  SOL <span class="profit">+$1.85</span></div>
+            <div><span class="muted">14:31:52</span> <span style="color:var(--mode-profit)">PRO</span> OPEN  LONG  ETH $1.2K @ $3,280 SL:$3,247</div>
+            <div><span class="muted">14:31:45</span> <span style="color:var(--mode-volume)">VOL</span> OPEN  SHORT SOL $500 @ $143.10 SL:$145.35</div>
+            <div><span class="muted">14:31:30</span> <span style="color:var(--mode-profit)">PRO</span> OPEN  SHORT BTC $2K @ $67,450 SL:$68,124</div>
+            <div><span class="muted">14:31:12</span> <span style="color:var(--mode-volume)">VOL</span> CLOSE SHORT SOL <span class="profit">+$0.95</span></div>
+            <div><span class="muted">14:30:58</span> <span style="color:var(--mode-volume)">VOL</span> OPEN  LONG  SOL $500 @ $142.30 SL:$140.07</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DIRECTION E: Sidebar -->
+  <section id="dir-e" class="mockup-section">
+    <div class="mockup-title">Direction E: Sidebar Navigation</div>
+    <div class="mockup-desc">Mode controls in a left sidebar, main content area for data. The sidebar acts as the "control panel" while the main area is the "monitoring view." Separates controls from data.</div>
+
+    <div class="de-dashboard">
+      <div class="de-sidebar">
+        <div class="de-sidebar-brand">Val<span style="color:var(--accent)">Bot</span></div>
+
+        <div class="de-sidebar-section">Trading Modes</div>
+
+        <div class="de-mode-item">
+          <div class="de-mode-item-header">
+            <div class="de-mode-item-left">
+              <div class="de-mode-item-dot" style="background:var(--mode-volume)"></div>
+              <span class="de-mode-item-name">Volume Max</span>
+            </div>
+            <div class="toggle on" style="width:32px;height:18px;"></div>
+          </div>
+          <div class="de-mode-item-stats">
+            <div class="de-mode-item-stat"><span class="label">PnL</span><span class="value profit">+$42.10</span></div>
+            <div class="de-mode-item-stat"><span class="label">Trades</span><span class="value">842</span></div>
+            <div class="de-mode-item-stat"><span class="label">Alloc</span><span class="value">$5,000</span></div>
+            <div class="de-mode-item-stat"><span class="label">Left</span><span class="value">$3,600</span></div>
+          </div>
+          <div style="font-size:10px; color:var(--text-muted);">SOL-PERP, ETH-PERP</div>
+        </div>
+
+        <div class="de-mode-item">
+          <div class="de-mode-item-header">
+            <div class="de-mode-item-left">
+              <div class="de-mode-item-dot" style="background:var(--mode-profit)"></div>
+              <span class="de-mode-item-name">Profit Hunter</span>
+            </div>
+            <div class="toggle on" style="width:32px;height:18px;"></div>
+          </div>
+          <div class="de-mode-item-stats">
+            <div class="de-mode-item-stat"><span class="label">PnL</span><span class="value profit">+$187.30</span></div>
+            <div class="de-mode-item-stat"><span class="label">Trades</span><span class="value">156</span></div>
+            <div class="de-mode-item-stat"><span class="label">Alloc</span><span class="value">$4,000</span></div>
+            <div class="de-mode-item-stat"><span class="label">Left</span><span class="value">$3,400</span></div>
+          </div>
+          <div style="font-size:10px; color:var(--text-muted);">BTC-PERP, ETH-PERP</div>
+        </div>
+
+        <div class="de-mode-item" style="opacity:0.5;">
+          <div class="de-mode-item-header">
+            <div class="de-mode-item-left">
+              <div class="de-mode-item-dot" style="background:var(--neutral)"></div>
+              <span class="de-mode-item-name" style="color:var(--text-muted)">Arbitrage</span>
+            </div>
+            <div class="toggle off" style="width:32px;height:18px;"></div>
+          </div>
+          <div class="de-mode-item-stats">
+            <div class="de-mode-item-stat"><span class="label">PnL</span><span class="value muted">$0.00</span></div>
+            <div class="de-mode-item-stat"><span class="label">Trades</span><span class="value muted">0</span></div>
+          </div>
+        </div>
+
+        <div class="de-sidebar-section">Connection</div>
+        <div style="font-size:12px; display:flex; align-items:center; gap:6px;">
+          <div class="db-connection-dot"></div>
+          <span class="profit">FOGOChain RPC</span>
+        </div>
+
+        <div class="de-sidebar-section">Settings</div>
+        <div style="font-size:11px; color:var(--text-muted);">
+          <div style="display:flex; justify-content:space-between; padding:2px 0;"><span>Slippage</span><span class="mono" style="color:var(--text-primary)">0.5%</span></div>
+        </div>
+      </div>
+
+      <div class="de-main">
+        <div class="de-summary">
+          <div class="de-summary-card">
+            <div class="de-summary-label">Wallet</div>
+            <div class="de-summary-value">$12,450</div>
+          </div>
+          <div class="de-summary-card">
+            <div class="de-summary-label">Total PnL</div>
+            <div class="de-summary-value profit">+$1,247</div>
+          </div>
+          <div class="de-summary-card">
+            <div class="de-summary-label">Session PnL</div>
+            <div class="de-summary-value profit">+$312</div>
+          </div>
+          <div class="de-summary-card">
+            <div class="de-summary-label">Trades</div>
+            <div class="de-summary-value">1,847</div>
+          </div>
+          <div class="de-summary-card">
+            <div class="de-summary-label">Volume</div>
+            <div class="de-summary-value">$2.4M</div>
+          </div>
+        </div>
+
+        <div class="de-panel">
+          <div class="de-panel-header">Open Positions (4)</div>
+          <div class="de-panel-body">
+            <table class="shared-table">
+              <thead><tr><th>Mode</th><th>Pair</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>PnL</th><th>Stop-Loss</th></tr></thead>
+              <tbody>
+                <tr><td class="text-cell" style="color:var(--mode-volume)">Vol Max</td><td>SOL-PERP</td><td class="profit">Long</td><td>$500</td><td>$142.50</td><td>$143.10</td><td class="profit">+$2.10</td><td>$140.25</td></tr>
+                <tr><td class="text-cell" style="color:var(--mode-volume)">Vol Max</td><td>SOL-PERP</td><td class="loss">Short</td><td>$500</td><td>$143.10</td><td>$143.10</td><td class="muted">$0.00</td><td>$145.35</td></tr>
+                <tr><td class="text-cell" style="color:var(--mode-profit)">Profit</td><td>ETH-PERP</td><td class="profit">Long</td><td>$1,200</td><td>$3,280</td><td>$3,305</td><td class="profit">+$9.15</td><td>$3,247</td></tr>
+                <tr><td class="text-cell" style="color:var(--mode-profit)">Profit</td><td>BTC-PERP</td><td class="loss">Short</td><td>$2,000</td><td>$67,450</td><td>$67,520</td><td class="loss">-$2.07</td><td>$68,124</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="de-panel">
+          <div class="de-panel-header">Live Trade Log</div>
+          <div class="de-panel-body">
+            <div class="log-entry"><span class="log-time">14:32:07</span> <span style="color:var(--mode-volume)">[VOL]</span> Opened Long SOL-PERP $500 @ $142.50 | SL: $140.25</div>
+            <div class="log-entry"><span class="log-time">14:32:05</span> <span style="color:var(--mode-profit)">[PRO]</span> Closed Short ETH-PERP +$14.20</div>
+            <div class="log-entry"><span class="log-time">14:31:58</span> <span style="color:var(--mode-volume)">[VOL]</span> Closed Long SOL-PERP +$1.85</div>
+            <div class="log-entry"><span class="log-time">14:31:52</span> <span style="color:var(--mode-profit)">[PRO]</span> Opened Long ETH-PERP $1,200 @ $3,280 | SL: $3,247</div>
+            <div class="log-entry"><span class="log-time">14:31:45</span> <span style="color:var(--mode-volume)">[VOL]</span> Opened Short SOL-PERP $500 @ $143.10 | SL: $145.35</div>
+            <div class="log-entry"><span class="log-time">14:31:30</span> <span style="color:var(--mode-profit)">[PRO]</span> Opened Short BTC-PERP $2,000 @ $67,450 | SL: $68,124</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DIRECTION F: Minimal Focus -->
+  <section id="dir-f" class="mockup-section">
+    <div class="mockup-title">Direction F: Minimal Focus</div>
+    <div class="mockup-desc">More whitespace, larger type, rounder corners. Emphasizes PnL as the hero metric per card. Feels calmer and more spacious. Trades visual density for breathing room and focus on what matters most.</div>
+
+    <div class="df-dashboard">
+      <div class="df-header">
+        <div class="df-header-left">
+          <div class="df-brand">Val<span>Bot</span></div>
+          <div class="db-connection" style="font-size:12px;"><div class="db-connection-dot"></div> Connected</div>
+        </div>
+        <div class="df-header-stats">
+          <div class="df-header-stat"><span class="label">Wallet</span><span class="value">$12,450</span></div>
+          <div class="df-header-stat"><span class="label">Total PnL</span><span class="value profit">+$1,247</span></div>
+          <div class="df-header-stat"><span class="label">Session</span><span class="value profit">+$312</span></div>
+          <div class="df-header-stat"><span class="label">Trades</span><span class="value">1,847</span></div>
+        </div>
+      </div>
+
+      <div class="df-modes">
+        <div class="df-mode-card">
+          <div class="df-mode-header">
+            <div class="df-mode-title">
+              <div class="df-mode-icon" style="background:rgba(139,92,246,0.15); color:var(--mode-volume);">VM</div>
+              <div>
+                <div class="df-mode-name">Volume Max</div>
+                <span class="badge badge-running"><span class="badge-dot"></span> Running</span>
+              </div>
+            </div>
+            <div class="toggle on"></div>
+          </div>
+          <div class="df-mode-pnl">
+            <div class="df-mode-pnl-value profit">+$42.10</div>
+            <div class="df-mode-pnl-label">Session PnL</div>
+          </div>
+          <div class="df-mode-row"><span class="label">Trades</span><span class="value">842</span></div>
+          <div class="df-mode-row"><span class="label">Volume</span><span class="value">$1.2M</span></div>
+          <div class="df-mode-row"><span class="label">Funds</span><span class="value">$3,600 / $5,000</span></div>
+          <div class="df-mode-row"><span class="label">Pairs</span><span class="value" style="font-family:Inter,sans-serif;">SOL, ETH</span></div>
+        </div>
+
+        <div class="df-mode-card">
+          <div class="df-mode-header">
+            <div class="df-mode-title">
+              <div class="df-mode-icon" style="background:rgba(34,197,94,0.15); color:var(--mode-profit);">PH</div>
+              <div>
+                <div class="df-mode-name">Profit Hunter</div>
+                <span class="badge badge-running"><span class="badge-dot"></span> Running</span>
+              </div>
+            </div>
+            <div class="toggle on"></div>
+          </div>
+          <div class="df-mode-pnl">
+            <div class="df-mode-pnl-value profit">+$187.30</div>
+            <div class="df-mode-pnl-label">Session PnL</div>
+          </div>
+          <div class="df-mode-row"><span class="label">Trades</span><span class="value">156</span></div>
+          <div class="df-mode-row"><span class="label">Volume</span><span class="value">$680K</span></div>
+          <div class="df-mode-row"><span class="label">Funds</span><span class="value">$3,400 / $4,000</span></div>
+          <div class="df-mode-row"><span class="label">Pairs</span><span class="value" style="font-family:Inter,sans-serif;">BTC, ETH</span></div>
+        </div>
+
+        <div class="df-mode-card" style="opacity:0.5;">
+          <div class="df-mode-header">
+            <div class="df-mode-title">
+              <div class="df-mode-icon" style="background:rgba(6,182,212,0.1); color:var(--neutral);">AB</div>
+              <div>
+                <div class="df-mode-name" style="color:var(--text-muted)">Arbitrage</div>
+                <span class="badge badge-stopped"><span class="badge-dot"></span> Stopped</span>
+              </div>
+            </div>
+            <div class="toggle off"></div>
+          </div>
+          <div class="df-mode-pnl">
+            <div class="df-mode-pnl-value muted">$0.00</div>
+            <div class="df-mode-pnl-label">Session PnL</div>
+          </div>
+          <div class="df-mode-row"><span class="label">Trades</span><span class="value muted">0</span></div>
+          <div class="df-mode-row"><span class="label">Volume</span><span class="value muted">$0</span></div>
+          <div class="df-mode-row"><span class="label">Funds</span><span class="value muted">Not allocated</span></div>
+          <div class="df-mode-row"><span class="label">Pairs</span><span class="value muted">None</span></div>
+        </div>
+      </div>
+
+      <div class="df-bottom">
+        <div class="df-panel">
+          <div class="df-panel-header">Open Positions (4)</div>
+          <div class="df-panel-body">
+            <table class="shared-table">
+              <thead><tr><th>Mode</th><th>Pair</th><th>Side</th><th>Size</th><th>Entry</th><th>PnL</th><th>SL</th></tr></thead>
+              <tbody>
+                <tr><td class="text-cell" style="color:var(--mode-volume)">Vol Max</td><td>SOL-PERP</td><td class="profit">Long</td><td>$500</td><td>$142.50</td><td class="profit">+$2.10</td><td>$140.25</td></tr>
+                <tr><td class="text-cell" style="color:var(--mode-volume)">Vol Max</td><td>SOL-PERP</td><td class="loss">Short</td><td>$500</td><td>$143.10</td><td class="muted">$0.00</td><td>$145.35</td></tr>
+                <tr><td class="text-cell" style="color:var(--mode-profit)">Profit</td><td>ETH-PERP</td><td class="profit">Long</td><td>$1,200</td><td>$3,280</td><td class="profit">+$9.15</td><td>$3,247</td></tr>
+                <tr><td class="text-cell" style="color:var(--mode-profit)">Profit</td><td>BTC-PERP</td><td class="loss">Short</td><td>$2,000</td><td>$67,450</td><td class="loss">-$2.07</td><td>$68,124</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="df-panel">
+          <div class="df-panel-header">Live Trade Log</div>
+          <div class="df-panel-body">
+            <div class="log-entry"><span class="log-time">14:32:07</span> <span style="color:var(--mode-volume)">[VOL]</span> Opened Long SOL-PERP $500 @ $142.50</div>
+            <div class="log-entry"><span class="log-time">14:32:05</span> <span style="color:var(--mode-profit)">[PRO]</span> Closed Short ETH-PERP <span class="profit">+$14.20</span></div>
+            <div class="log-entry"><span class="log-time">14:31:58</span> <span style="color:var(--mode-volume)">[VOL]</span> Closed Long SOL-PERP <span class="profit">+$1.85</span></div>
+            <div class="log-entry"><span class="log-time">14:31:52</span> <span style="color:var(--mode-profit)">[PRO]</span> Opened Long ETH-PERP $1,200 @ $3,280</div>
+            <div class="log-entry"><span class="log-time">14:31:45</span> <span style="color:var(--mode-volume)">[VOL]</span> Opened Short SOL-PERP $500 @ $143.10</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+function showDirection(id) {
+  document.querySelectorAll('.mockup-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('dir-' + id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+
+</body>
+</html>

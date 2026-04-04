@@ -1,0 +1,20 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "default",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/client/index.css",
+    "baseColor": "neutral",
+    "cssVariables": true
+  },
+  "aliases": {
+    "components": "src/client/components",
+    "ui": "src/client/components/ui",
+    "hooks": "src/client/hooks",
+    "lib": "src/client/lib",
+    "utils": "src/client/lib/utils"
+  },
+  "iconLibrary": "lucide"
+}

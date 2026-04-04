@@ -1,0 +1,11 @@
+.env
+node_modules/
+dist/
+valbot.db
+*.db-journal
+
+# AI/Agent tooling
+_bmad/
+.agents/
+.claude/
+.gemini/

@@ -1,0 +1,100 @@
+# generated: 2026-04-03
+# last_updated: 2026-04-03
+# project: ValBot
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: {project-root}/_bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-04-03
+last_updated: 2026-04-04
+# last review: 2026-04-04 code review of story 1-1
+project: ValBot
+project_key: NOKEY
+tracking_system: file-system
+story_location: "{project-root}/_bmad-output/implementation-artifacts"
+
+development_status:
+  # Epic 1: Project Foundation & First Boot
+  epic-1: in-progress
+  1-1-project-scaffolding-and-dev-environment: done
+  1-2-database-schema-and-migration-setup: backlog
+  1-3-dark-theme-design-system-and-dashboard-layout-shell: backlog
+  1-4-summarybar-and-connection-status: backlog
+  1-5-fogochain-connection-and-session-key-authentication: backlog
+  epic-1-retrospective: optional
+
+  # Epic 2: Single-Mode Trading — Volume Max
+  epic-2: backlog
+  2-1-shared-types-websocket-event-system-and-rest-api-skeleton: backlog
+  2-2-fund-allocator-and-position-manager-core: backlog
+  2-3-mode-runner-and-volume-max-strategy: backlog
+  2-4-modecard-component-with-controls: backlog
+  2-5-zustand-store-and-real-time-dashboard-updates: backlog
+  2-6-live-trade-log: backlog
+  2-7-open-positions-table: backlog
+  epic-2-retrospective: optional
+
+  # Epic 3: Safety Systems — Kill Switch & Graceful Shutdown
+  epic-3: backlog
+  3-1-per-mode-kill-switch: backlog
+  3-2-graceful-shutdown-and-crash-recovery: backlog
+  3-3-rpc-connection-resilience: backlog
+  3-4-alertbanner-and-toast-notification-system: backlog
+  3-5-error-handling-framework-and-transaction-safety: backlog
+  epic-3-retrospective: optional
+
+  # Epic 4: Multi-Mode Operation — Profit Hunter & Arbitrage
+  epic-4: backlog
+  4-1-pyth-oracle-client-and-price-feed: backlog
+  4-2-profit-hunter-strategy: backlog
+  4-3-arbitrage-strategy: backlog
+  4-4-parallel-mode-execution-and-independent-control: backlog
+  epic-4-retrospective: optional
+
+  # Epic 5: Performance Dashboard & Session History
+  epic-5: backlog
+  5-1-session-persistence-and-cross-session-profit-tracking: backlog
+  5-2-trade-history-view: backlog
+  5-3-combined-cross-mode-statistics: backlog
+  epic-5-retrospective: optional
+
+  # Epic 6: Extensibility — Pluggable Strategy Architecture
+  epic-6: backlog
+  6-1-strategy-plugin-interface-and-registration: backlog
+  6-2-strategy-management-on-dashboard: backlog
+  epic-6-retrospective: optional
+
+  # Epic 7: Accessibility & UX Polish
+  epic-7: backlog
+  7-1-accessibility-baseline-audit-and-fixes: backlog
+  7-2-transition-and-animation-polish: backlog
+  epic-7-retrospective: optional
