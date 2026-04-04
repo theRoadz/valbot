@@ -2,7 +2,9 @@ import { TopBar } from "./components/top-bar";
 import { ModeCard } from "./components/mode-card";
 import { PositionsTable } from "./components/positions-table";
 import { TradeLog } from "./components/trade-log";
+import { AlertBanner } from "./components/alert-banner";
 import { useWebSocket } from "./hooks/use-websocket";
+import useStore from "./store";
 
 const MODES = [
   { name: "Volume Max", color: "text-mode-volume" },
@@ -12,11 +14,15 @@ const MODES = [
 
 function App() {
   useWebSocket();
+  const alerts = useStore((s) => s.alerts);
+  const dismissAlert = useStore((s) => s.dismissAlert);
+  const bannerAlerts = alerts.filter(
+    (a) => a.severity === "critical" || a.severity === "warning",
+  );
 
   return (
     <div className="flex flex-col h-screen min-w-[1280px] bg-background overflow-hidden">
-      {/* Alert Banner slot — reserved for Story 3.4 */}
-      <div />
+      <AlertBanner alerts={bannerAlerts} onDismiss={dismissAlert} />
 
       <div className="grid grid-rows-[auto_auto_1fr] flex-1 min-h-0 gap-4 p-4">
         {/* Top Bar */}

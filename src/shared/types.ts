@@ -18,3 +18,13 @@ export interface SummaryStats {
 }
 
 export type ModeType = "volumeMax" | "profitHunter" | "arbitrage";
+
+export interface Alert {
+  id: number;
+  severity: "info" | "warning" | "critical";
+  code: string;
+  message: string;
+  details: string | null;
+  resolution: string | null;
+  timestamp: number;
+}

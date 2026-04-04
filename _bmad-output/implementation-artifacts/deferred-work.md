@@ -33,3 +33,11 @@
 - ~~`WsMessage.event` typed as `string`~~ — resolved: added `EventName` type, tightened `WsMessage.event` and `broadcast()` parameter
 - ~~Server sends `rpc: false` on initial connect causing flicker~~ — resolved: removed placeholder initial message
 - ~~No `teardown`/`close` for broadcaster singletons~~ — resolved: added `closeWebSocket()` export
+
+## Deferred from: code review of story 1-5 (2026-04-04)
+
+- ~~`alertIdCounter` resets on HMR module re-evaluation~~ — resolved: initialized from `Date.now()` for HMR-safe unique IDs
+- ~~`Number(account.amount)` loses precision above `Number.MAX_SAFE_INTEGER`~~ — resolved: added `MAX_SAFE_INTEGER` guard with warning log and clamping
+- ~~RPC call on every WS client connection~~ — resolved: added 5s TTL cache on `getConnectionStatus()`
+- ~~`loadSessionKey` doesn't explicitly check key length (64 bytes)~~ — resolved: added explicit length check with clear error message
+- ~~Session key `err.message` may contain key fragments in alert `details`~~ — resolved: raw error messages no longer forwarded to client, logged server-side only

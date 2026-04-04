@@ -15,6 +15,7 @@ describe("ValBotStore", () => {
         totalTrades: 0,
         totalVolume: 0,
       },
+      alerts: [],
     });
   });
 
@@ -95,5 +96,80 @@ describe("ValBotStore", () => {
     });
 
     expect(useStore.getState().connection).toEqual(stateBefore);
+  });
+
+  it("handleWsMessage dispatches alert.triggered events", () => {
+    useStore.getState().handleWsMessage({
+      event: EVENTS.ALERT_TRIGGERED,
+      timestamp: 1000,
+      data: {
+        severity: "critical",
+        code: "TEST_ERROR",
+        message: "Something broke",
+        details: "More info",
+        resolution: "Fix it",
+      },
+    });
+
+    const alerts = useStore.getState().alerts;
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].severity).toBe("critical");
+    expect(alerts[0].code).toBe("TEST_ERROR");
+    expect(alerts[0].message).toBe("Something broke");
+    expect(alerts[0].details).toBe("More info");
+    expect(alerts[0].resolution).toBe("Fix it");
+    expect(alerts[0].timestamp).toBe(1000);
+    expect(alerts[0].id).toBeGreaterThan(0);
+  });
+
+  it("handleWsMessage ignores malformed alert.triggered events", () => {
+    useStore.getState().handleWsMessage({
+      event: EVENTS.ALERT_TRIGGERED,
+      timestamp: 1000,
+      data: { severity: 123 },
+    });
+
+    expect(useStore.getState().alerts).toHaveLength(0);
+  });
+
+  it("addAlert adds alert to store", () => {
+    useStore.getState().addAlert({
+      id: 99,
+      severity: "warning",
+      code: "WARN",
+      message: "Warning",
+      details: null,
+      resolution: null,
+      timestamp: Date.now(),
+    });
+
+    expect(useStore.getState().alerts).toHaveLength(1);
+    expect(useStore.getState().alerts[0].id).toBe(99);
+  });
+
+  it("dismissAlert removes alert by id", () => {
+    useStore.getState().addAlert({
+      id: 1,
+      severity: "warning",
+      code: "A",
+      message: "A",
+      details: null,
+      resolution: null,
+      timestamp: Date.now(),
+    });
+    useStore.getState().addAlert({
+      id: 2,
+      severity: "critical",
+      code: "B",
+      message: "B",
+      details: null,
+      resolution: null,
+      timestamp: Date.now(),
+    });
+
+    useStore.getState().dismissAlert(1);
+    const alerts = useStore.getState().alerts;
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].id).toBe(2);
   });
 });

@@ -27,3 +27,11 @@ export interface ConnectionStatusPayload {
   wallet: string;
   balance: number;
 }
+
+export interface AlertTriggeredPayload {
+  severity: "info" | "warning" | "critical";
+  code: string;
+  message: string;
+  details: string | null;
+  resolution: string | null;
+}
