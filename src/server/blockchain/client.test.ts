@@ -63,6 +63,19 @@ describe("loadSessionKey", () => {
     expect(result).toBeInstanceOf(Keypair);
     expect(result.publicKey.toBase58()).toBe(keypair.publicKey.toBase58());
   });
+
+  it("returns Keypair for 32-byte hex-encoded seed (0x prefix)", async () => {
+    const seed = Keypair.generate().secretKey.slice(0, 32);
+    const hexKey =
+      "0x" + Buffer.from(seed).toString("hex");
+    process.env.SESSION_KEY = hexKey;
+    const { loadSessionKey } = await import("./client.js");
+
+    const result = loadSessionKey();
+    const expected = Keypair.fromSeed(seed);
+    expect(result).toBeInstanceOf(Keypair);
+    expect(result.publicKey.toBase58()).toBe(expected.publicKey.toBase58());
+  });
 });
 
 describe("createRpcConnection", () => {

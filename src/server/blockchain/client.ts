@@ -23,22 +23,33 @@ export function loadSessionKey(): Keypair {
       severity: "critical",
       code: "SESSION_KEY_MISSING",
       message: "SESSION_KEY not found in .env",
-      resolution: "Add SESSION_KEY=<your_base58_key> to .env file",
+      resolution:
+        "Add SESSION_KEY=<your_key> to .env file. Accepts base58 or 0x-prefixed hex.",
     });
   }
   try {
-    const secretKey = bs58.decode(sessionKeyStr);
-    if (secretKey.length !== 64) {
+    const trimmed = sessionKeyStr.trim();
+    const secretKey = trimmed.startsWith("0x")
+      ? Uint8Array.from(Buffer.from(trimmed.slice(2), "hex"))
+      : bs58.decode(trimmed);
+    let keypair: Keypair;
+    if (secretKey.length === 64) {
+      keypair = Keypair.fromSecretKey(secretKey);
+    } else if (secretKey.length === 32) {
+      keypair = Keypair.fromSeed(secretKey);
+    } else {
       throw sessionKeyInvalidError(
-        `Expected 64-byte secret key, got ${secretKey.length} bytes`,
+        `Expected 32 or 64-byte key, got ${secretKey.length} bytes`,
       );
     }
-    return Keypair.fromSecretKey(secretKey);
+    return keypair;
   } catch (err) {
     if (err instanceof AppError) throw err;
     // Sanitize: don't forward raw error message — it may contain key fragments
     logger.error({ err }, "Session key decode failed");
-    throw sessionKeyInvalidError("Failed to decode base58 key — check format");
+    throw sessionKeyInvalidError(
+      "Failed to decode session key — check format. Accepts base58 or 0x-prefixed hex.",
+    );
   }
 }
 
