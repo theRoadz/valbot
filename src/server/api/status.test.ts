@@ -11,6 +11,7 @@ vi.mock("../engine/index.js", () => {
       if (!mockEngine) throw new Error("Engine not initialized");
       return mockEngine;
     }),
+    getModeStatus: vi.fn(() => "stopped"),
     _setMockEngine: (engine: unknown) => { mockEngine = engine; },
   };
 });

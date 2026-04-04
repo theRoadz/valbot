@@ -73,6 +73,33 @@ export function killSwitchTriggeredError(
   });
 }
 
+export function modeAlreadyRunningError(mode: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "MODE_ALREADY_RUNNING",
+    message: `Mode ${mode} is already running`,
+    resolution: `Stop the ${mode} mode before restarting it.`,
+  });
+}
+
+export function modeNotAllocatedError(mode: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "NO_ALLOCATION",
+    message: `No funds allocated to mode ${mode}`,
+    resolution: `Allocate funds to ${mode} via the dashboard before starting.`,
+  });
+}
+
+export function modeKillSwitchedError(mode: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "MODE_KILL_SWITCHED",
+    message: `Mode ${mode} is in kill-switch state`,
+    resolution: `The ${mode} mode was stopped by the kill switch. Re-allocate funds and restart manually.`,
+  });
+}
+
 export function rpcConnectionFailedError(
   url: string,
   attempts: number,

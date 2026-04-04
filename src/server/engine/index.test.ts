@@ -11,6 +11,12 @@ vi.mock("../ws/broadcaster.js", () => ({
   broadcast: vi.fn(),
 }));
 
+// Mock blockchain client (needed by position manager)
+vi.mock("../blockchain/client.js", () => ({
+  getBlockchainClient: vi.fn(() => null),
+  getConnectionStatus: vi.fn().mockResolvedValue(null),
+}));
+
 function setupTestDb() {
   process.env.VALBOT_DB_PATH = TEST_DB_PATH;
   _resetDbState();
@@ -51,7 +57,6 @@ describe("engine/index", () => {
   });
 
   it("initEngine creates instances and getEngine returns them", async () => {
-    // Dynamic import to get fresh module state
     const { initEngine, getEngine } = await import("./index.js");
     await initEngine();
 
@@ -60,5 +65,61 @@ describe("engine/index", () => {
     expect(engine).toHaveProperty("positionManager");
     expect(engine.fundAllocator).toBeDefined();
     expect(engine.positionManager).toBeDefined();
+  });
+
+  it("getModeStatus returns 'stopped' when no runner exists", async () => {
+    const { initEngine, getModeStatus } = await import("./index.js");
+    await initEngine();
+
+    expect(getModeStatus("volumeMax")).toBe("stopped");
+  });
+
+  it("startMode creates runner and starts it", async () => {
+    const { initEngine, getEngine, startMode, getModeStatus } = await import("./index.js");
+    await initEngine();
+
+    // Set allocation so start doesn't throw
+    getEngine().fundAllocator.setAllocation("volumeMax", 1_000_000_000);
+
+    await startMode("volumeMax", { pairs: ["SOL/USDC"] });
+    expect(getModeStatus("volumeMax")).toBe("running");
+  });
+
+  it("stopMode stops runner and removes from map", async () => {
+    const { initEngine, getEngine, startMode, stopMode, getModeStatus } = await import("./index.js");
+    await initEngine();
+
+    getEngine().fundAllocator.setAllocation("volumeMax", 1_000_000_000);
+    await startMode("volumeMax", { pairs: ["SOL/USDC"] });
+    await stopMode("volumeMax");
+
+    expect(getModeStatus("volumeMax")).toBe("stopped");
+  });
+
+  it("stopMode is idempotent for non-running mode", async () => {
+    const { initEngine, stopMode } = await import("./index.js");
+    await initEngine();
+
+    // Should not throw
+    await stopMode("volumeMax");
+  });
+
+  it("startMode throws for unsupported mode type", async () => {
+    const { initEngine, startMode } = await import("./index.js");
+    await initEngine();
+
+    await expect(startMode("profitHunter", { pairs: ["SOL/USDC"] }))
+      .rejects.toThrow("Unsupported mode type");
+  });
+
+  it("stopAllModes stops all running modes", async () => {
+    const { initEngine, getEngine, startMode, stopAllModes, getModeStatus } = await import("./index.js");
+    await initEngine();
+
+    getEngine().fundAllocator.setAllocation("volumeMax", 1_000_000_000);
+    await startMode("volumeMax", { pairs: ["SOL/USDC"] });
+
+    await stopAllModes();
+    expect(getModeStatus("volumeMax")).toBe("stopped");
   });
 });

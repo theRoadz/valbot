@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { urlModeToModeType, toSmallestUnit } from "../../shared/types.js";
 import { AppError } from "../lib/errors.js";
-import { getEngine } from "../engine/index.js";
+import { getEngine, startMode, stopMode } from "../engine/index.js";
 
 const modeEnum = ["volume-max", "profit-hunter", "arbitrage"] as const;
 
@@ -14,8 +14,18 @@ const modeParamSchema = {
 };
 
 export default async function modeRoutes(fastify: FastifyInstance) {
-  fastify.post<{ Params: { mode: string } }>("/api/mode/:mode/start", {
-    schema: { params: modeParamSchema },
+  fastify.post<{ Params: { mode: string }; Body: { pairs?: string[]; slippage?: number } }>("/api/mode/:mode/start", {
+    schema: {
+      params: modeParamSchema,
+      body: {
+        type: "object" as const,
+        additionalProperties: false,
+        properties: {
+          pairs: { type: "array" as const, items: { type: "string" as const }, maxItems: 50 },
+          slippage: { type: "number" as const, minimum: 0, maximum: 100 },
+        },
+      },
+    },
   }, async (request) => {
     const modeType = urlModeToModeType(request.params.mode);
     if (!modeType) {
@@ -26,6 +36,11 @@ export default async function modeRoutes(fastify: FastifyInstance) {
         resolution: "Use one of: volume-max, profit-hunter, arbitrage",
       });
     }
+
+    const pairs = request.body?.pairs ?? ["SOL/USDC"];
+    const slippage = request.body?.slippage;
+
+    await startMode(modeType, { pairs, slippage });
     return { status: "started", mode: modeType };
   });
 
@@ -41,6 +56,8 @@ export default async function modeRoutes(fastify: FastifyInstance) {
         resolution: "Use one of: volume-max, profit-hunter, arbitrage",
       });
     }
+
+    await stopMode(modeType);
     return { status: "stopped", mode: modeType };
   });
 

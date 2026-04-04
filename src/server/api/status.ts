@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ModeConfig, ModeType } from "../../shared/types.js";
 import { fromSmallestUnit } from "../../shared/types.js";
-import { getEngine } from "../engine/index.js";
+import { getEngine, getModeStatus } from "../engine/index.js";
 
 function defaultModeConfig(mode: ModeType): ModeConfig {
   return {
@@ -19,10 +19,11 @@ function getModeConfig(mode: ModeType): ModeConfig {
     const { fundAllocator, positionManager } = getEngine();
     const alloc = fundAllocator.getAllocation(mode);
     const stats = fundAllocator.getStats(mode);
-    const modeStatus = positionManager.getModeStatus(mode);
+    const pmStatus = positionManager.getModeStatus(mode);
+    const runnerStatus = getModeStatus(mode);
     return {
       mode,
-      status: modeStatus === "kill-switch" ? "kill-switch" : "stopped", // Mode runner (Story 2.3) will add running/starting states
+      status: pmStatus === "kill-switch" ? "kill-switch" : runnerStatus,
       allocation: fromSmallestUnit(alloc.allocation),
       pairs: [],
       slippage: 0.5,

@@ -2,6 +2,9 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import modeRoutes from "./mode.js";
 
+const mockStartMode = vi.fn();
+const mockStopMode = vi.fn();
+
 // Mock engine
 vi.mock("../engine/index.js", () => {
   const mockFundAllocator = {
@@ -9,6 +12,8 @@ vi.mock("../engine/index.js", () => {
   };
   return {
     getEngine: vi.fn(() => ({ fundAllocator: mockFundAllocator })),
+    startMode: (...args: any[]) => mockStartMode(...args),
+    stopMode: (...args: any[]) => mockStopMode(...args),
     _getMockFundAllocator: () => mockFundAllocator,
   };
 });
@@ -29,35 +34,69 @@ describe("mode routes", () => {
   });
 
   describe("POST /api/mode/:mode/start", () => {
-    it("returns started status for valid mode", async () => {
-      const res = await app.inject({ method: "POST", url: "/api/mode/volume-max/start" });
+    it("calls startMode and returns started status for valid mode", async () => {
+      mockStartMode.mockResolvedValueOnce(undefined);
+      const res = await app.inject({ method: "POST", url: "/api/mode/volume-max/start", payload: {} });
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ status: "started", mode: "volumeMax" });
+      expect(mockStartMode).toHaveBeenCalledWith("volumeMax", { pairs: ["SOL/USDC"], slippage: undefined });
     });
 
-    it("returns started for profit-hunter", async () => {
-      const res = await app.inject({ method: "POST", url: "/api/mode/profit-hunter/start" });
+    it("calls startMode with custom pairs and slippage", async () => {
+      mockStartMode.mockResolvedValueOnce(undefined);
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/mode/volume-max/start",
+        payload: { pairs: ["ETH/USDC"], slippage: 0.3 },
+      });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ status: "started", mode: "profitHunter" });
+      expect(mockStartMode).toHaveBeenCalledWith("volumeMax", { pairs: ["ETH/USDC"], slippage: 0.3 });
     });
 
-    it("returns started for arbitrage", async () => {
-      const res = await app.inject({ method: "POST", url: "/api/mode/arbitrage/start" });
-      expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ status: "started", mode: "arbitrage" });
+    it("returns error when mode is already running", async () => {
+      const err = new Error("MODE_ALREADY_RUNNING");
+      (err as any).name = "AppError";
+      (err as any).code = "MODE_ALREADY_RUNNING";
+      (err as any).statusCode = 500;
+      mockStartMode.mockRejectedValueOnce(err);
+
+      const res = await app.inject({ method: "POST", url: "/api/mode/volume-max/start", payload: {} });
+      expect(res.statusCode).toBeGreaterThanOrEqual(400);
+    });
+
+    it("returns error when no allocation", async () => {
+      const err = new Error("NO_ALLOCATION");
+      (err as any).name = "AppError";
+      (err as any).code = "NO_ALLOCATION";
+      mockStartMode.mockRejectedValueOnce(err);
+
+      const res = await app.inject({ method: "POST", url: "/api/mode/volume-max/start", payload: {} });
+      expect(res.statusCode).toBeGreaterThanOrEqual(400);
+    });
+
+    it("returns error when mode is kill-switched", async () => {
+      const err = new Error("MODE_KILL_SWITCHED");
+      (err as any).name = "AppError";
+      (err as any).code = "MODE_KILL_SWITCHED";
+      mockStartMode.mockRejectedValueOnce(err);
+
+      const res = await app.inject({ method: "POST", url: "/api/mode/volume-max/start", payload: {} });
+      expect(res.statusCode).toBeGreaterThanOrEqual(400);
     });
 
     it("returns 400 for invalid mode", async () => {
-      const res = await app.inject({ method: "POST", url: "/api/mode/invalid/start" });
+      const res = await app.inject({ method: "POST", url: "/api/mode/invalid/start", payload: {} });
       expect(res.statusCode).toBe(400);
     });
   });
 
   describe("POST /api/mode/:mode/stop", () => {
-    it("returns stopped status for valid mode", async () => {
+    it("calls stopMode and returns stopped status for valid mode", async () => {
+      mockStopMode.mockResolvedValueOnce(undefined);
       const res = await app.inject({ method: "POST", url: "/api/mode/volume-max/stop" });
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ status: "stopped", mode: "volumeMax" });
+      expect(mockStopMode).toHaveBeenCalledWith("volumeMax");
     });
 
     it("returns 400 for invalid mode", async () => {

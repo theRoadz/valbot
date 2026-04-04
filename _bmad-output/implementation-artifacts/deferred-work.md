@@ -54,3 +54,10 @@
 - ~~DB insert failure after successful on-chain open orphans on-chain position~~ — resolved: DB insert wrapped in try/catch, closes on-chain and releases funds on failure
 - ~~`loadFromDb` resets remaining to full allocation, ignoring open positions~~ — resolved: added `reconcilePositions()` called from `initEngine()` after both loads
 - ~~Kill-switch does not set mode status to "kill-switch"~~ — resolved: added `_modeStatus` map, `getModeStatus()`, wired to status API
+
+## Deferred from: code review of story 2-3 (2026-04-04)
+
+- ~~Concurrent startMode calls race — no mutex/lock~~ — resolved: added per-mode lock via modeLocks Set in engine/index.ts
+- ~~Rapid stop-then-start overlaps closeAllForMode with new runner~~ — resolved: same per-mode lock guards both startMode and stopMode
+- ~~stopAllModes stops runners sequentially~~ — resolved: now uses Promise.allSettled for parallel shutdown
+- ~~Shutdown has no timeout~~ — resolved: added 15s hard deadline with forceTimer.unref() in shutdown.ts
