@@ -29,7 +29,7 @@ export interface Alert {
 
 export type TradeSide = "Long" | "Short";
 
-export type ModeStatus = "stopped" | "starting" | "running" | "error" | "kill-switch";
+export type ModeStatus = "stopped" | "starting" | "running" | "stopping" | "error" | "kill-switch";
 
 export interface Trade {
   id: number;
@@ -92,4 +92,21 @@ const MODE_URL_MAP: Record<string, ModeType> = {
 
 export function urlModeToModeType(urlMode: string): ModeType | undefined {
   return MODE_URL_MAP[urlMode];
+}
+
+const MODE_SLUG_MAP: Record<ModeType, string> = {
+  volumeMax: "volume-max",
+  profitHunter: "profit-hunter",
+  arbitrage: "arbitrage",
+};
+
+export function modeTypeToSlug(mode: ModeType): string {
+  return MODE_SLUG_MAP[mode];
+}
+
+export interface StatusResponse {
+  modes: Record<ModeType, ModeConfig>;
+  positions: Position[];
+  trades: Trade[];
+  connection: ConnectionState;
 }

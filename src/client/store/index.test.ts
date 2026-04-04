@@ -5,7 +5,6 @@ import { EVENTS } from "@shared/events";
 
 describe("ValBotStore", () => {
   beforeEach(() => {
-    // Reset store to initial state before each test
     useStore.setState({
       connection: { status: "disconnected", walletBalance: 0 },
       stats: {
@@ -16,6 +15,38 @@ describe("ValBotStore", () => {
         totalVolume: 0,
       },
       alerts: [],
+      modes: {
+        volumeMax: {
+          mode: "volumeMax",
+          status: "stopped",
+          allocation: 0,
+          pairs: ["SOL/USDC"],
+          slippage: 0.5,
+          stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          errorDetail: null,
+          killSwitchDetail: null,
+        },
+        profitHunter: {
+          mode: "profitHunter",
+          status: "stopped",
+          allocation: 0,
+          pairs: ["SOL/USDC"],
+          slippage: 0.5,
+          stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          errorDetail: null,
+          killSwitchDetail: null,
+        },
+        arbitrage: {
+          mode: "arbitrage",
+          status: "stopped",
+          allocation: 0,
+          pairs: ["SOL/USDC"],
+          slippage: 0.5,
+          stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          errorDetail: null,
+          killSwitchDetail: null,
+        },
+      },
     });
   });
 
@@ -61,7 +92,6 @@ describe("ValBotStore", () => {
   });
 
   it("updateConnection sets disconnected when rpc is false", () => {
-    // First set to connected
     useStore.getState().setConnectionStatus("connected");
 
     useStore.getState().updateConnection({
@@ -171,5 +201,188 @@ describe("ValBotStore", () => {
     const alerts = useStore.getState().alerts;
     expect(alerts).toHaveLength(1);
     expect(alerts[0].id).toBe(2);
+  });
+
+  // Mode state tests
+  describe("modes", () => {
+    it("initializes with default mode state", () => {
+      const modes = useStore.getState().modes;
+      expect(modes.volumeMax.status).toBe("stopped");
+      expect(modes.volumeMax.allocation).toBe(0);
+      expect(modes.volumeMax.pairs).toEqual(["SOL/USDC"]);
+      expect(modes.volumeMax.slippage).toBe(0.5);
+      expect(modes.volumeMax.stats.pnl).toBe(0);
+      expect(modes.volumeMax.errorDetail).toBeNull();
+      expect(modes.volumeMax.killSwitchDetail).toBeNull();
+    });
+
+    it("setModeStatus updates correct mode and clears errorDetail on non-error transition", () => {
+      // First set to error with detail
+      useStore.setState((s) => ({
+        modes: {
+          ...s.modes,
+          volumeMax: {
+            ...s.modes.volumeMax,
+            status: "error",
+            errorDetail: { code: "E", message: "err", details: null },
+          },
+        },
+      }));
+
+      useStore.getState().setModeStatus("volumeMax", "stopped");
+      const mode = useStore.getState().modes.volumeMax;
+      expect(mode.status).toBe("stopped");
+      expect(mode.errorDetail).toBeNull();
+    });
+
+    it("updateModeStats updates correct mode stats", () => {
+      const newStats = { pnl: 100, trades: 5, volume: 5000, allocated: 1000, remaining: 500 };
+      useStore.getState().updateModeStats("volumeMax", newStats);
+      expect(useStore.getState().modes.volumeMax.stats).toEqual(newStats);
+      // Other modes unaffected
+      expect(useStore.getState().modes.profitHunter.stats.pnl).toBe(0);
+    });
+
+    it("handleWsMessage MODE_STARTED sets status to running, clears errorDetail", () => {
+      useStore.setState((s) => ({
+        modes: {
+          ...s.modes,
+          volumeMax: {
+            ...s.modes.volumeMax,
+            status: "starting",
+            errorDetail: { code: "E", message: "old", details: null },
+          },
+        },
+      }));
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STARTED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax" },
+      });
+
+      const mode = useStore.getState().modes.volumeMax;
+      expect(mode.status).toBe("running");
+      expect(mode.errorDetail).toBeNull();
+    });
+
+    it("handleWsMessage MODE_STOPPED sets status to stopped and updates stats", () => {
+      useStore.setState((s) => ({
+        modes: { ...s.modes, volumeMax: { ...s.modes.volumeMax, status: "running" } },
+      }));
+
+      const finalStats = { pnl: 50, trades: 10, volume: 2000, allocated: 500, remaining: 450 };
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STOPPED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax", finalStats },
+      });
+
+      const mode = useStore.getState().modes.volumeMax;
+      expect(mode.status).toBe("stopped");
+      expect(mode.stats).toEqual(finalStats);
+    });
+
+    it("handleWsMessage MODE_ERROR sets status to error and stores errorDetail", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_ERROR,
+        timestamp: Date.now(),
+        data: {
+          mode: "volumeMax",
+          error: { code: "CHAIN_ERR", message: "RPC unavailable", details: "timeout" },
+        },
+      });
+
+      const mode = useStore.getState().modes.volumeMax;
+      expect(mode.status).toBe("error");
+      expect(mode.errorDetail).toEqual({ code: "CHAIN_ERR", message: "RPC unavailable", details: "timeout" });
+    });
+
+    it("handleWsMessage STATS_UPDATED updates mode stats", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: Date.now(),
+        data: { mode: "profitHunter", pnl: 200, trades: 15, volume: 8000, allocated: 2000, remaining: 1800 },
+      });
+
+      const stats = useStore.getState().modes.profitHunter.stats;
+      expect(stats.pnl).toBe(200);
+      expect(stats.trades).toBe(15);
+      expect(stats.volume).toBe(8000);
+    });
+
+    it("handleWsMessage ignores events for unknown modes (race condition guard)", () => {
+      const stateBefore = { ...useStore.getState().modes };
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STARTED,
+        timestamp: Date.now(),
+        data: { mode: "unknownMode" },
+      });
+
+      expect(useStore.getState().modes).toEqual(stateBefore);
+    });
+
+    it("loadInitialStatus hydrates all mode configs", () => {
+      useStore.getState().loadInitialStatus({
+        modes: {
+          volumeMax: {
+            mode: "volumeMax",
+            status: "running",
+            allocation: 500,
+            pairs: ["SOL/USDC", "ETH/USDC"],
+            slippage: 1.0,
+            stats: { pnl: 100, trades: 5, volume: 3000, allocated: 500, remaining: 400 },
+          },
+          profitHunter: {
+            mode: "profitHunter",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+          arbitrage: {
+            mode: "arbitrage",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+        },
+        positions: [],
+        trades: [],
+        connection: { status: "connected", walletBalance: 5000 },
+      });
+
+      const state = useStore.getState();
+      expect(state.modes.volumeMax.status).toBe("running");
+      expect(state.modes.volumeMax.allocation).toBe(500);
+      expect(state.modes.volumeMax.stats.pnl).toBe(100);
+      expect(state.connection.status).toBe("connected");
+      expect(state.connection.walletBalance).toBe(5000);
+    });
+
+    it("ALERT_TRIGGERED with KILL_SWITCH_TRIGGERED sets mode to kill-switch", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: Date.now(),
+        data: {
+          severity: "critical",
+          code: "KILL_SWITCH_TRIGGERED",
+          message: "Kill switch activated",
+          details: null,
+          resolution: "Review positions",
+          mode: "volumeMax",
+          positionsClosed: 3,
+          lossAmount: 150,
+        },
+      });
+
+      const mode = useStore.getState().modes.volumeMax;
+      expect(mode.status).toBe("kill-switch");
+      expect(mode.killSwitchDetail).toEqual({ positionsClosed: 3, lossAmount: 150 });
+    });
   });
 });

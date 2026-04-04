@@ -61,3 +61,9 @@
 - ~~Rapid stop-then-start overlaps closeAllForMode with new runner~~ — resolved: same per-mode lock guards both startMode and stopMode
 - ~~stopAllModes stops runners sequentially~~ — resolved: now uses Promise.allSettled for parallel shutdown
 - ~~Shutdown has no timeout~~ — resolved: added 15s hard deadline with forceTimer.unref() in shutdown.ts
+
+## Deferred from: code review of story 2-4 (2026-04-04)
+
+- ~~Safety timeout + API in-flight creates split-brain on slow API~~ — resolved: added AbortController to cancel in-flight fetch when timeout fires, clear timeout on successful API response
+- ~~Rapid toggles can cause concurrent API calls and stale reverts~~ — resolved: added togglingRef lock to prevent concurrent toggle operations
+- ~~fetchStatus JSON response not runtime-validated~~ — resolved: added isValidStatusResponse runtime shape validator, throws INVALID_RESPONSE ApiError on mismatch

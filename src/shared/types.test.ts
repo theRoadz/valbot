@@ -12,7 +12,7 @@ import type {
   ModeStats,
   ModeConfig,
 } from "./types";
-import { urlModeToModeType, fromSmallestUnit, toSmallestUnit } from "./types";
+import { urlModeToModeType, modeTypeToSlug, fromSmallestUnit, toSmallestUnit } from "./types";
 
 describe("shared types", () => {
   it("ConnectionStatus is a string literal union", () => {
@@ -83,16 +83,18 @@ describe("shared types", () => {
     expectTypeOf(short).toEqualTypeOf<TradeSide>();
   });
 
-  it("ModeStatus has all five values", () => {
+  it("ModeStatus has all six values including stopping", () => {
     expectTypeOf<ModeStatus>().toMatchTypeOf<string>();
     const stopped: ModeStatus = "stopped";
     const starting: ModeStatus = "starting";
     const running: ModeStatus = "running";
+    const stopping: ModeStatus = "stopping";
     const error: ModeStatus = "error";
     const killSwitch: ModeStatus = "kill-switch";
     expectTypeOf(stopped).toEqualTypeOf<ModeStatus>();
     expectTypeOf(starting).toEqualTypeOf<ModeStatus>();
     expectTypeOf(running).toEqualTypeOf<ModeStatus>();
+    expectTypeOf(stopping).toEqualTypeOf<ModeStatus>();
     expectTypeOf(error).toEqualTypeOf<ModeStatus>();
     expectTypeOf(killSwitch).toEqualTypeOf<ModeStatus>();
   });
@@ -166,6 +168,20 @@ describe("urlModeToModeType", () => {
 
   it("returns undefined for unknown mode", () => {
     expect(urlModeToModeType("invalid")).toBeUndefined();
+  });
+});
+
+describe("modeTypeToSlug", () => {
+  it("maps volumeMax to volume-max", () => {
+    expect(modeTypeToSlug("volumeMax")).toBe("volume-max");
+  });
+
+  it("maps profitHunter to profit-hunter", () => {
+    expect(modeTypeToSlug("profitHunter")).toBe("profit-hunter");
+  });
+
+  it("maps arbitrage to arbitrage", () => {
+    expect(modeTypeToSlug("arbitrage")).toBe("arbitrage");
   });
 });
 

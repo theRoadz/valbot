@@ -1,9 +1,27 @@
 import { create } from "zustand";
-import type { ConnectionStatus, SummaryStats, Alert } from "@shared/types";
+import type { ConnectionStatus, SummaryStats, Alert, ModeType, ModeStatus, ModeConfig, ModeStats, StatusResponse } from "@shared/types";
 import { EVENTS, type ConnectionStatusPayload, type WsMessage } from "@shared/events";
 
 let alertIdCounter = Date.now();
 const VALID_SEVERITIES = new Set(["info", "warning", "critical"]);
+
+export interface ModeStoreEntry extends ModeConfig {
+  errorDetail: { code: string; message: string; details: string | null } | null;
+  killSwitchDetail: { positionsClosed: number; lossAmount: number } | null;
+}
+
+function createDefaultMode(mode: ModeType): ModeStoreEntry {
+  return {
+    mode,
+    status: "stopped",
+    allocation: 0,
+    pairs: ["SOL/USDC"],
+    slippage: 0.5,
+    stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+    errorDetail: null,
+    killSwitchDetail: null,
+  };
+}
 
 interface ValBotStore {
   connection: {
@@ -12,11 +30,20 @@ interface ValBotStore {
   };
   stats: SummaryStats;
   alerts: Alert[];
+  modes: {
+    volumeMax: ModeStoreEntry;
+    profitHunter: ModeStoreEntry;
+    arbitrage: ModeStoreEntry;
+  };
   setConnectionStatus: (status: ConnectionStatus) => void;
   setWalletBalance: (balance: number) => void;
   updateConnection: (data: ConnectionStatusPayload) => void;
   addAlert: (alert: Alert) => void;
   dismissAlert: (id: number) => void;
+  setModeStatus: (mode: ModeType, status: ModeStatus) => void;
+  updateModeStats: (mode: ModeType, stats: ModeStats) => void;
+  setModeConfig: (mode: ModeType, config: Partial<ModeConfig>) => void;
+  loadInitialStatus: (data: StatusResponse) => void;
   handleWsMessage: (message: WsMessage) => void;
 }
 
@@ -33,6 +60,11 @@ const useStore = create<ValBotStore>()((set) => ({
     totalVolume: 0,
   },
   alerts: [],
+  modes: {
+    volumeMax: createDefaultMode("volumeMax"),
+    profitHunter: createDefaultMode("profitHunter"),
+    arbitrage: createDefaultMode("arbitrage"),
+  },
   setConnectionStatus: (status) =>
     set((state) => ({
       connection: { ...state.connection, status },
@@ -56,6 +88,56 @@ const useStore = create<ValBotStore>()((set) => ({
     set((state) => ({
       alerts: state.alerts.filter((a) => a.id !== id),
     })),
+  setModeStatus: (mode, status) =>
+    set((state) => ({
+      modes: {
+        ...state.modes,
+        [mode]: {
+          ...state.modes[mode],
+          status,
+          errorDetail: status !== "error" ? null : state.modes[mode].errorDetail,
+          killSwitchDetail: status !== "kill-switch" ? null : state.modes[mode].killSwitchDetail,
+        },
+      },
+    })),
+  updateModeStats: (mode, stats) =>
+    set((state) => ({
+      modes: {
+        ...state.modes,
+        [mode]: { ...state.modes[mode], stats },
+      },
+    })),
+  setModeConfig: (mode, config) =>
+    set((state) => ({
+      modes: {
+        ...state.modes,
+        [mode]: { ...state.modes[mode], ...config },
+      },
+    })),
+  loadInitialStatus: (data) =>
+    set((state) => {
+      const modes = { ...state.modes };
+      for (const key of Object.keys(data.modes) as ModeType[]) {
+        const mc = data.modes[key];
+        modes[key] = {
+          ...modes[key],
+          ...mc,
+          errorDetail: (mc as Record<string, unknown>).errorDetail !== undefined
+            ? (mc as ModeStoreEntry).errorDetail
+            : modes[key].errorDetail,
+          killSwitchDetail: (mc as Record<string, unknown>).killSwitchDetail !== undefined
+            ? (mc as ModeStoreEntry).killSwitchDetail
+            : modes[key].killSwitchDetail,
+        };
+      }
+      return {
+        modes,
+        connection: {
+          status: data.connection.status,
+          walletBalance: data.connection.walletBalance,
+        },
+      };
+    }),
   handleWsMessage: (message) => {
     if (message.event === EVENTS.CONNECTION_STATUS) {
       const data = message.data as Record<string, unknown>;
@@ -96,6 +178,113 @@ const useStore = create<ValBotStore>()((set) => ({
             alert,
           ],
         }));
+
+        // Handle kill switch alert for modes
+        if (data.code === "KILL_SWITCH_TRIGGERED") {
+          const details = data.details as string | undefined;
+          const modeMatch = details?.match(/mode[:\s]+(\w+)/i);
+          const mode = (data as Record<string, unknown>).mode as ModeType | undefined;
+          const targetMode = mode || (modeMatch ? modeMatch[1] as ModeType : undefined);
+          if (targetMode) {
+            set((state) => {
+              if (!state.modes[targetMode]) return state;
+              return {
+                modes: {
+                  ...state.modes,
+                  [targetMode]: {
+                    ...state.modes[targetMode],
+                    status: "kill-switch" as ModeStatus,
+                    killSwitchDetail: {
+                      positionsClosed: typeof (data as Record<string, unknown>).positionsClosed === "number"
+                        ? (data as Record<string, unknown>).positionsClosed as number
+                        : 0,
+                      lossAmount: typeof (data as Record<string, unknown>).lossAmount === "number"
+                        ? (data as Record<string, unknown>).lossAmount as number
+                        : 0,
+                    },
+                  },
+                },
+              };
+            });
+          }
+        }
+      }
+    } else if (message.event === EVENTS.MODE_STARTED) {
+      const data = message.data as Record<string, unknown>;
+      const mode = data?.mode as ModeType | undefined;
+      if (mode) {
+        set((state) => {
+          if (!state.modes[mode]) return state;
+          if (state.modes[mode].status === "kill-switch") return state;
+          return {
+            modes: {
+              ...state.modes,
+              [mode]: { ...state.modes[mode], status: "running" as ModeStatus, errorDetail: null },
+            },
+          };
+        });
+      }
+    } else if (message.event === EVENTS.MODE_STOPPED) {
+      const data = message.data as Record<string, unknown>;
+      const mode = data?.mode as ModeType | undefined;
+      if (mode) {
+        set((state) => {
+          if (!state.modes[mode]) return state;
+          const finalStats = data.finalStats as ModeStats | undefined;
+          return {
+            modes: {
+              ...state.modes,
+              [mode]: {
+                ...state.modes[mode],
+                status: "stopped" as ModeStatus,
+                errorDetail: null,
+                ...(finalStats ? { stats: finalStats } : {}),
+              },
+            },
+          };
+        });
+      }
+    } else if (message.event === EVENTS.MODE_ERROR) {
+      const data = message.data as Record<string, unknown>;
+      const mode = data?.mode as ModeType | undefined;
+      if (mode) {
+        set((state) => {
+          if (!state.modes[mode]) return state;
+          const error = data.error as { code: string; message: string; details: string | null } | undefined;
+          return {
+            modes: {
+              ...state.modes,
+              [mode]: {
+                ...state.modes[mode],
+                status: "error" as ModeStatus,
+                errorDetail: error ?? null,
+              },
+            },
+          };
+        });
+      }
+    } else if (message.event === EVENTS.STATS_UPDATED) {
+      const data = message.data as Record<string, unknown>;
+      const mode = data?.mode as ModeType | undefined;
+      if (mode) {
+        set((state) => {
+          if (!state.modes[mode]) return state;
+          return {
+            modes: {
+              ...state.modes,
+              [mode]: {
+                ...state.modes[mode],
+                stats: {
+                  pnl: data.pnl as number,
+                  trades: data.trades as number,
+                  volume: data.volume as number,
+                  allocated: data.allocated as number,
+                  remaining: data.remaining as number,
+                },
+              },
+            },
+          };
+        });
       }
     } else if (import.meta.env.DEV) {
       console.log(`[WS] Unhandled event: ${message.event}`);

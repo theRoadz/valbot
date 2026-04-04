@@ -1,23 +1,9 @@
 import { Card } from "./ui/card";
 import useStore from "@client/store";
 import { cn } from "@client/lib/utils";
+import { formatCurrency, formatInteger } from "@client/lib/format";
+import { fromSmallestUnit } from "@shared/types";
 import type { ConnectionStatus } from "@shared/types";
-
-function formatCurrency(valueSmallestUnit: number, showSign = false): string {
-  const value = valueSmallestUnit / 1e6;
-  const formatted = new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Math.abs(value));
-
-  if (showSign && value > 0) return `+$${formatted}`;
-  if (showSign && value < 0) return `-$${formatted}`;
-  return `$${formatted}`;
-}
-
-function formatInteger(value: number): string {
-  return new Intl.NumberFormat("en-US").format(value);
-}
 
 const STATUS_CONFIG: Record<
   ConnectionStatus,
@@ -92,18 +78,18 @@ export function TopBar() {
           <div className="flex items-center gap-6">
             <StatItem
               label="Wallet:"
-              value={formatCurrency(stats.walletBalance)}
-              ariaLabel={`Wallet balance: ${formatCurrency(stats.walletBalance)}`}
+              value={formatCurrency(fromSmallestUnit(stats.walletBalance))}
+              ariaLabel={`Wallet balance: ${formatCurrency(fromSmallestUnit(stats.walletBalance))}`}
             />
             <StatItem
               label="Total PnL:"
-              value={formatCurrency(stats.totalPnl, true)}
-              ariaLabel={`Total profit and loss: ${formatCurrency(stats.totalPnl, true)}`}
+              value={formatCurrency(fromSmallestUnit(stats.totalPnl), true)}
+              ariaLabel={`Total profit and loss: ${formatCurrency(fromSmallestUnit(stats.totalPnl), true)}`}
             />
             <StatItem
               label="Session PnL:"
-              value={formatCurrency(stats.sessionPnl, true)}
-              ariaLabel={`Session profit and loss: ${formatCurrency(stats.sessionPnl, true)}`}
+              value={formatCurrency(fromSmallestUnit(stats.sessionPnl), true)}
+              ariaLabel={`Session profit and loss: ${formatCurrency(fromSmallestUnit(stats.sessionPnl), true)}`}
             />
             <StatItem
               label="Trades:"
@@ -112,8 +98,8 @@ export function TopBar() {
             />
             <StatItem
               label="Volume:"
-              value={formatCurrency(stats.totalVolume)}
-              ariaLabel={`Total volume: ${formatCurrency(stats.totalVolume)}`}
+              value={formatCurrency(fromSmallestUnit(stats.totalVolume))}
+              ariaLabel={`Total volume: ${formatCurrency(fromSmallestUnit(stats.totalVolume))}`}
             />
           </div>
         </div>
