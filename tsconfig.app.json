@@ -6,7 +6,12 @@
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "noEmit": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": {
+      "@shared/*": ["./src/shared/*"],
+      "@client/*": ["./src/client/*"]
+    },
+    "rootDir": "."
   },
   "include": ["src/client/**/*", "src/shared/**/*"]
 }

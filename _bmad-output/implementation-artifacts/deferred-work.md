@@ -20,3 +20,10 @@
 - ~~`drizzle.config.ts` DB path is CWD-relative vs `index.ts` absolute path~~ — resolved: now uses `__dirname`-anchored resolution
 - ~~`__dirname` ESM shim breaks when bundled~~ — resolved: replaced with `process.cwd()` in index.ts and drizzle.config.ts.
 - ~~`getDb()`/`closeDb()` have no unit tests~~ — resolved: added 4 tests
+
+## Deferred from: code review of story 1-3 (2026-04-04)
+
+- ~~PositionsTable not scrollable when rows exceed available height~~ — resolved: added `overflow-auto` to CardContent
+- ~~TradeLog ScrollArea height chain may not resolve correctly~~ — resolved: added `overflow-hidden` to CardContent
+- ~~`min-w-[1280px]` causes horizontal scroll on narrow viewports~~ — resolved: added `overflow-hidden` to root container
+- ~~Non-standard bare `src/client` path alias~~ — resolved: renamed to `@client` across all configs and UI component imports

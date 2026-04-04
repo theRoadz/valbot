@@ -5,9 +5,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@shared': path.resolve(__dirname, 'src/shared'),
+      '@client': path.resolve(__dirname, 'src/client'),
     },
   },
   test: {
     globals: false,
+    setupFiles: ['src/client/vitest.setup.ts'],
   },
 });

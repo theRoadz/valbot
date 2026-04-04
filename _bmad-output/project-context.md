@@ -96,7 +96,7 @@ New events MUST be added to `shared/events.ts` before use. The event catalog in 
 - Use `@tailwindcss/vite` plugin, NOT PostCSS config.
 - shadcn/ui components go in `src/client/components/ui/`. Install with `npx shadcn@latest add <component>`.
 - Dark theme is the ONLY theme. No light mode toggle.
-- Custom color tokens use OKLCH: `--profit` (green), `--loss` (red), `--warning` (amber), `--neutral` (gray).
+- Custom color tokens use hex values: `--profit` (green), `--loss` (red), `--warning` (amber), `--neutral` (gray), `--accent-blue` (blue).
 - Financial numbers use `font-mono` (JetBrains Mono). UI text uses Inter.
 
 ### Testing Rules
