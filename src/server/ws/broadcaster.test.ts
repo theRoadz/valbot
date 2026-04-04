@@ -34,7 +34,7 @@ describe("broadcaster", () => {
     createMockWss();
     const { setupWebSocket } = await import("./broadcaster.js");
 
-    const mockServer = { server: {} } as never;
+    const mockServer = { server: {} } as unknown as Parameters<typeof setupWebSocket>[0];
     setupWebSocket(mockServer);
 
     // If it doesn't throw, setup succeeded
@@ -45,7 +45,7 @@ describe("broadcaster", () => {
     const wssInstance = createMockWss();
     const { setupWebSocket, broadcast } = await import("./broadcaster.js");
 
-    const mockServer = { server: {} } as never;
+    const mockServer = { server: {} } as unknown as Parameters<typeof setupWebSocket>[0];
     setupWebSocket(mockServer);
 
     const connectionHandler = wssInstance._handlers["connection"] as (ws: { send: ReturnType<typeof vi.fn>; on: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn>; readyState: number }) => void;
@@ -62,17 +62,17 @@ describe("broadcaster", () => {
     };
     connectionHandler(mockWs);
 
-    // No initial message sent (deferred to Story 1.5)
+    // No initial message sent (getConnectionStatus is async, mock doesn't resolve)
     expect(mockWs.send).not.toHaveBeenCalled();
 
     // Client receives broadcasts
-    broadcast("connection.status" as never, { test: true });
+    broadcast(EVENTS.CONNECTION_STATUS, { rpc: true, wallet: "abc", balance: 100 });
     expect(mockWs.send).toHaveBeenCalledTimes(1);
 
     // Simulate close — client should no longer receive broadcasts
     closeHandlers["close"]();
     mockWs.send.mockClear();
-    broadcast("connection.status" as never, { test: true });
+    broadcast(EVENTS.CONNECTION_STATUS, { rpc: true, wallet: "abc", balance: 100 });
     expect(mockWs.send).not.toHaveBeenCalled();
   });
 
@@ -80,7 +80,7 @@ describe("broadcaster", () => {
     const wssInstance = createMockWss();
     const { setupWebSocket, broadcast } = await import("./broadcaster.js");
 
-    const mockServer = { server: {} } as never;
+    const mockServer = { server: {} } as unknown as Parameters<typeof setupWebSocket>[0];
     setupWebSocket(mockServer);
 
     const connectionHandler = wssInstance._handlers["connection"] as (ws: { send: ReturnType<typeof vi.fn>; on: ReturnType<typeof vi.fn>; readyState: number }) => void;
@@ -90,13 +90,14 @@ describe("broadcaster", () => {
     connectionHandler(client1);
     connectionHandler(client2);
 
-    broadcast(EVENTS.STATS_UPDATED, { foo: "bar" });
+    const statsPayload = { mode: "volumeMax" as const, trades: 5, volume: 1000, pnl: 50, allocated: 500, remaining: 450 };
+    broadcast(EVENTS.STATS_UPDATED, statsPayload);
 
     expect(client1.send).toHaveBeenCalledTimes(1);
     expect(client2.send).toHaveBeenCalledTimes(1);
 
     const sent = JSON.parse(client1.send.mock.calls[0][0] as string);
     expect(sent.event).toBe(EVENTS.STATS_UPDATED);
-    expect(sent.data).toEqual({ foo: "bar" });
+    expect(sent.data).toEqual(statsPayload);
   });
 });

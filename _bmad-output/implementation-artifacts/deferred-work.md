@@ -41,3 +41,9 @@
 - ~~RPC call on every WS client connection~~ — resolved: added 5s TTL cache on `getConnectionStatus()`
 - ~~`loadSessionKey` doesn't explicitly check key length (64 bytes)~~ — resolved: added explicit length check with clear error message
 - ~~Session key `err.message` may contain key fragments in alert `details`~~ — resolved: raw error messages no longer forwarded to client, logged server-side only
+
+## Deferred from: code review of story 2-1 (2026-04-04)
+
+- ~~`AlertTriggeredPayload` lacks `id`/`timestamp` vs `Alert` interface~~ — resolved: documented mapping contract, made WsMessage generic for typed payload access
+- ~~DB integer (USDC x 1e6) vs shared type `number` — no conversion layer~~ — resolved: added `fromSmallestUnit()`/`toSmallestUnit()` helpers in shared/types.ts
+- ~~`PUT /api/mode/:mode/config` body has no range validation~~ — resolved: added minimum/maximum constraints on allocation, slippage, and pairs maxItems

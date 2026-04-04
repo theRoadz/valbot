@@ -1,6 +1,6 @@
 // WebSocket event type catalog for ValBot
-// Story 1.4: Event constants, WsMessage base type, ConnectionStatusPayload
-// Full payload types for other events will be added in Story 2.1
+
+import type { ModeType, TradeSide, ModeStats } from "./types.js";
 
 export const EVENTS = {
   TRADE_EXECUTED: "trade.executed",
@@ -16,10 +16,10 @@ export const EVENTS = {
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
 
-export interface WsMessage {
-  event: EventName;
+export interface WsMessage<E extends EventName = EventName> {
+  event: E;
   timestamp: number;
-  data: unknown;
+  data: E extends keyof EventPayloadMap ? EventPayloadMap[E] : unknown;
 }
 
 export interface ConnectionStatusPayload {
@@ -28,10 +28,76 @@ export interface ConnectionStatusPayload {
   balance: number;
 }
 
+// AlertTriggeredPayload intentionally omits `id` (DB-generated) and `timestamp`
+// (carried on WsMessage envelope). Client maps to Alert via:
+//   { ...payload, id: localCounter++, timestamp: wsMessage.timestamp }
 export interface AlertTriggeredPayload {
   severity: "info" | "warning" | "critical";
   code: string;
   message: string;
   details: string | null;
   resolution: string | null;
+}
+
+export interface TradeExecutedPayload {
+  mode: ModeType;
+  pair: string;
+  side: TradeSide;
+  size: number;
+  price: number;
+  pnl: number;
+  fees: number;
+}
+
+export interface StatsUpdatedPayload {
+  mode: ModeType;
+  trades: number;
+  volume: number;
+  pnl: number;
+  allocated: number;
+  remaining: number;
+}
+
+export interface ModeStartedPayload {
+  mode: ModeType;
+}
+
+export interface ModeStoppedPayload {
+  mode: ModeType;
+  finalStats: ModeStats;
+}
+
+export interface ModeErrorPayload {
+  mode: ModeType;
+  error: { code: string; message: string; details: string | null };
+}
+
+export interface PositionOpenedPayload {
+  mode: ModeType;
+  pair: string;
+  side: TradeSide;
+  size: number;
+  entryPrice: number;
+  stopLoss: number;
+}
+
+export interface PositionClosedPayload {
+  mode: ModeType;
+  pair: string;
+  side: TradeSide;
+  size: number;
+  exitPrice: number;
+  pnl: number;
+}
+
+export interface EventPayloadMap {
+  "trade.executed": TradeExecutedPayload;
+  "stats.updated": StatsUpdatedPayload;
+  "mode.started": ModeStartedPayload;
+  "mode.stopped": ModeStoppedPayload;
+  "mode.error": ModeErrorPayload;
+  "position.opened": PositionOpenedPayload;
+  "position.closed": PositionClosedPayload;
+  "alert.triggered": AlertTriggeredPayload;
+  "connection.status": ConnectionStatusPayload;
 }

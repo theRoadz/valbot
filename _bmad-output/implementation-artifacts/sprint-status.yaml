@@ -36,6 +36,9 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-04
+# last review: 2026-04-04 code review of story 2-1, all patches applied
+# last dev: 2026-04-04 story 2-1 implementation complete
+# last story created: 2026-04-04 story 2-1
 # last review: 2026-04-04 code review of story 1-5, all patches applied
 # last dev: 2026-04-04 story 1-5 implementation complete
 # last story created: 2026-04-04 story 1-5
@@ -65,8 +68,8 @@ development_status:
   epic-1-retrospective: optional
 
   # Epic 2: Single-Mode Trading — Volume Max
-  epic-2: backlog
-  2-1-shared-types-websocket-event-system-and-rest-api-skeleton: backlog
+  epic-2: in-progress
+  2-1-shared-types-websocket-event-system-and-rest-api-skeleton: done
   2-2-fund-allocator-and-position-manager-core: backlog
   2-3-mode-runner-and-volume-max-strategy: backlog
   2-4-modecard-component-with-controls: backlog

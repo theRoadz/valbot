@@ -7,26 +7,51 @@ import { setupWebSocket, broadcast, cacheAlert } from './ws/broadcaster.js';
 import { initBlockchainClient, getConnectionStatus } from './blockchain/client.js';
 import { AppError } from './lib/errors.js';
 import { logger } from './lib/logger.js';
+import { errorHandler } from './lib/error-handler.js';
 import { EVENTS } from '../shared/events.js';
+import modeRoutes from './api/mode.js';
+import statusRoutes from './api/status.js';
+import tradesRoutes from './api/trades.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const fastify = Fastify({ logger: true });
 
-fastify.get('/api/status', async () => {
-  return { status: 'ok' };
-});
+// Register API route plugins
+await fastify.register(modeRoutes);
+await fastify.register(statusRoutes);
+await fastify.register(tradesRoutes);
+
+// Error handler — API layer only, never calls broadcast()
+fastify.setErrorHandler(errorHandler);
 
 if (process.env.NODE_ENV === 'production') {
   const clientPath = path.join(__dirname, '..', 'client');
   await fastify.register(fastifyStatic, {
     root: clientPath,
   });
-
-  fastify.setNotFoundHandler(async (_request, reply) => {
-    return reply.sendFile('index.html');
-  });
 }
+
+// SPA catch-all scoped to non-API routes
+fastify.setNotFoundHandler(async (request, reply) => {
+  if (request.url.startsWith('/api/')) {
+    return reply.status(404).send({
+      error: {
+        severity: "warning",
+        code: "NOT_FOUND",
+        message: `Route ${request.method} ${request.url} not found`,
+        details: null,
+        resolution: null,
+      },
+    });
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    return reply.sendFile('index.html');
+  }
+
+  return reply.status(404).send({ error: { severity: "info", code: "NOT_FOUND", message: "Not found", details: null, resolution: null } });
+});
 
 const port = Number(process.env.PORT) || 3000;
 

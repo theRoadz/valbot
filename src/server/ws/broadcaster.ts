@@ -1,14 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { WebSocketServer, WebSocket } from "ws";
-import { EVENTS, type EventName } from "../../shared/events.js";
+import { EVENTS, type EventName, type EventPayloadMap } from "../../shared/events.js";
 import { getConnectionStatus } from "../blockchain/client.js";
 import { logger } from "../lib/logger.js";
 
 const clients = new Set<WebSocket>();
 let wss: WebSocketServer | null = null;
-let lastAlert: { event: string; timestamp: number; data: unknown } | null = null;
+let lastAlert: { event: typeof EVENTS.ALERT_TRIGGERED; timestamp: number; data: EventPayloadMap["alert.triggered"] } | null = null;
 
-export function cacheAlert(data: unknown): void {
+export function cacheAlert(data: EventPayloadMap["alert.triggered"]): void {
   lastAlert = { event: EVENTS.ALERT_TRIGGERED, timestamp: Date.now(), data };
 }
 
@@ -62,7 +62,7 @@ export function closeWebSocket(): Promise<void> {
   });
 }
 
-export function broadcast(event: EventName, data: unknown): void {
+export function broadcast<E extends EventName>(event: E, data: EventPayloadMap[E]): void {
   const message = JSON.stringify({
     event,
     timestamp: Date.now(),
