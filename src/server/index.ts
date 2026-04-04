@@ -9,6 +9,7 @@ import { AppError } from './lib/errors.js';
 import { logger } from './lib/logger.js';
 import { errorHandler } from './lib/error-handler.js';
 import { EVENTS } from '../shared/events.js';
+import { initEngine } from './engine/index.js';
 import modeRoutes from './api/mode.js';
 import statusRoutes from './api/status.js';
 import tradesRoutes from './api/trades.js';
@@ -89,6 +90,13 @@ try {
     broadcast(EVENTS.ALERT_TRIGGERED, alertPayload);
     cacheAlert(alertPayload);
     logger.error({ err }, "Blockchain client initialization failed");
+  }
+
+  // Initialize engine independently of blockchain — needed for crash recovery and status API
+  try {
+    await initEngine();
+  } catch (engineErr) {
+    logger.error({ err: engineErr }, "Engine initialization failed");
   }
 } catch (err) {
   fastify.log.error(err);

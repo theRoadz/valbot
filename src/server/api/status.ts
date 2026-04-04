@@ -1,5 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ModeConfig, ModeType } from "../../shared/types.js";
+import { fromSmallestUnit } from "../../shared/types.js";
+import { getEngine } from "../engine/index.js";
 
 function defaultModeConfig(mode: ModeType): ModeConfig {
   return {
@@ -12,15 +14,42 @@ function defaultModeConfig(mode: ModeType): ModeConfig {
   };
 }
 
+function getModeConfig(mode: ModeType): ModeConfig {
+  try {
+    const { fundAllocator, positionManager } = getEngine();
+    const alloc = fundAllocator.getAllocation(mode);
+    const stats = fundAllocator.getStats(mode);
+    const modeStatus = positionManager.getModeStatus(mode);
+    return {
+      mode,
+      status: modeStatus === "kill-switch" ? "kill-switch" : "stopped", // Mode runner (Story 2.3) will add running/starting states
+      allocation: fromSmallestUnit(alloc.allocation),
+      pairs: [],
+      slippage: 0.5,
+      stats,
+    };
+  } catch {
+    return defaultModeConfig(mode);
+  }
+}
+
 export default async function statusRoutes(fastify: FastifyInstance) {
   fastify.get("/api/status", async () => {
+    let positions: unknown[] = [];
+    try {
+      const { positionManager } = getEngine();
+      positions = positionManager.getPositions();
+    } catch {
+      // Engine not initialized — fall back to empty
+    }
+
     return {
       modes: {
-        volumeMax: defaultModeConfig("volumeMax"),
-        profitHunter: defaultModeConfig("profitHunter"),
-        arbitrage: defaultModeConfig("arbitrage"),
+        volumeMax: getModeConfig("volumeMax"),
+        profitHunter: getModeConfig("profitHunter"),
+        arbitrage: getModeConfig("arbitrage"),
       },
-      positions: [],
+      positions,
       trades: [],
       connection: { status: "disconnected", walletBalance: 0 },
     };

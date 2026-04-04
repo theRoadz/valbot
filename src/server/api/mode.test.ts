@@ -1,6 +1,19 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import modeRoutes from "./mode.js";
+
+// Mock engine
+vi.mock("../engine/index.js", () => {
+  const mockFundAllocator = {
+    setAllocation: vi.fn(),
+  };
+  return {
+    getEngine: vi.fn(() => ({ fundAllocator: mockFundAllocator })),
+    _getMockFundAllocator: () => mockFundAllocator,
+  };
+});
+
+import { _getMockFundAllocator } from "../engine/index.js";
 
 describe("mode routes", () => {
   let app: FastifyInstance;
@@ -64,6 +77,35 @@ describe("mode routes", () => {
       expect(res.json()).toEqual({ status: "updated", mode: "volumeMax" });
     });
 
+    it("calls fundAllocator.setAllocation when allocation is provided", async () => {
+      const mockAllocator = (_getMockFundAllocator as () => { setAllocation: ReturnType<typeof vi.fn> })();
+      mockAllocator.setAllocation.mockClear();
+
+      await app.inject({
+        method: "PUT",
+        url: "/api/mode/volume-max/config",
+        payload: { allocation: 500 },
+      });
+
+      expect(mockAllocator.setAllocation).toHaveBeenCalledWith(
+        "volumeMax",
+        500_000_000, // toSmallestUnit(500)
+      );
+    });
+
+    it("does not call setAllocation when allocation is not provided", async () => {
+      const mockAllocator = (_getMockFundAllocator as () => { setAllocation: ReturnType<typeof vi.fn> })();
+      mockAllocator.setAllocation.mockClear();
+
+      await app.inject({
+        method: "PUT",
+        url: "/api/mode/arbitrage/config",
+        payload: { slippage: 0.3 },
+      });
+
+      expect(mockAllocator.setAllocation).not.toHaveBeenCalled();
+    });
+
     it("accepts partial body", async () => {
       const res = await app.inject({
         method: "PUT",
@@ -125,7 +167,6 @@ describe("mode routes", () => {
         url: "/api/mode/volume-max/config",
         payload: { allocation: 100, unknown: "field" },
       });
-      // Fastify's default AJV removeAdditional strips unknown props; additionalProperties: false prevents them from reaching the handler
       expect(res.statusCode).toBe(200);
     });
   });

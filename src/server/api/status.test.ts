@@ -1,6 +1,21 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import statusRoutes from "./status.js";
+
+// Mock engine module
+vi.mock("../engine/index.js", () => {
+  let mockEngine: unknown = null;
+  return {
+    initEngine: vi.fn(),
+    getEngine: vi.fn(() => {
+      if (!mockEngine) throw new Error("Engine not initialized");
+      return mockEngine;
+    }),
+    _setMockEngine: (engine: unknown) => { mockEngine = engine; },
+  };
+});
+
+import { getEngine, _setMockEngine } from "../engine/index.js";
 
 describe("status route", () => {
   let app: FastifyInstance;
@@ -15,7 +30,11 @@ describe("status route", () => {
     await app.close();
   });
 
-  it("GET /api/status returns full bot state shape", async () => {
+  afterEach(() => {
+    (_setMockEngine as (e: unknown) => void)(null);
+  });
+
+  it("GET /api/status returns default stubs when engine not initialized", async () => {
     const res = await app.inject({ method: "GET", url: "/api/status" });
     expect(res.statusCode).toBe(200);
 
@@ -25,12 +44,10 @@ describe("status route", () => {
     expect(body).toHaveProperty("trades");
     expect(body).toHaveProperty("connection");
 
-    // Modes shape
     expect(body.modes).toHaveProperty("volumeMax");
     expect(body.modes).toHaveProperty("profitHunter");
     expect(body.modes).toHaveProperty("arbitrage");
 
-    // Default mode config shape
     const vm = body.modes.volumeMax;
     expect(vm).toEqual({
       mode: "volumeMax",
@@ -41,9 +58,46 @@ describe("status route", () => {
       stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
     });
 
-    // Stubs
     expect(body.positions).toEqual([]);
     expect(body.trades).toEqual([]);
     expect(body.connection).toEqual({ status: "disconnected", walletBalance: 0 });
+  });
+
+  it("GET /api/status returns live data from engine when initialized", async () => {
+    const mockFundAllocator = {
+      getAllocation: vi.fn((mode: string) => {
+        if (mode === "volumeMax") return { allocation: 1_000_000_000, remaining: 800_000_000 };
+        return { allocation: 0, remaining: 0 };
+      }),
+      getStats: vi.fn((mode: string) => {
+        if (mode === "volumeMax") return { pnl: 50, trades: 3, volume: 500, allocated: 1000, remaining: 800 };
+        return { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 };
+      }),
+    };
+    const mockPositionManager = {
+      getPositions: vi.fn(() => [
+        { id: 1, mode: "volumeMax", pair: "SOL/USDC", side: "Long", size: 10, entryPrice: 100, stopLoss: 95, timestamp: 1000 },
+      ]),
+      getModeStatus: vi.fn(() => undefined),
+    };
+
+    (_setMockEngine as (e: unknown) => void)({
+      fundAllocator: mockFundAllocator,
+      positionManager: mockPositionManager,
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/status" });
+    expect(res.statusCode).toBe(200);
+
+    const body = res.json();
+
+    // volumeMax should have live stats
+    expect(body.modes.volumeMax.allocation).toBe(1000); // fromSmallestUnit(1B) = 1000
+    expect(body.modes.volumeMax.stats.trades).toBe(3);
+    expect(body.modes.volumeMax.stats.pnl).toBe(50);
+
+    // Positions from engine
+    expect(body.positions).toHaveLength(1);
+    expect(body.positions[0].pair).toBe("SOL/USDC");
   });
 });

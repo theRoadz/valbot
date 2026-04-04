@@ -44,6 +44,35 @@ export function sessionKeyInvalidError(details?: string): AppError {
   });
 }
 
+export function insufficientFundsError(
+  mode: string,
+  requested: number,
+  available: number,
+): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "INSUFFICIENT_FUNDS",
+    message: `Insufficient funds for mode ${mode}: requested ${requested}, available ${available}`,
+    details: `Mode ${mode} has ${available} remaining but ${requested} was requested`,
+    resolution:
+      "Reduce position size or increase fund allocation for this mode.",
+  });
+}
+
+export function killSwitchTriggeredError(
+  mode: string,
+  details: string,
+): AppError {
+  return new AppError({
+    severity: "critical",
+    code: "KILL_SWITCH_TRIGGERED",
+    message: `Kill switch triggered on ${mode}`,
+    details,
+    resolution:
+      "Review positions and re-allocate funds to restart the mode.",
+  });
+}
+
 export function rpcConnectionFailedError(
   url: string,
   attempts: number,

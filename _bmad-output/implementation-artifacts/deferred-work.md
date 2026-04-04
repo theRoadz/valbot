@@ -47,3 +47,10 @@
 - ~~`AlertTriggeredPayload` lacks `id`/`timestamp` vs `Alert` interface~~ — resolved: documented mapping contract, made WsMessage generic for typed payload access
 - ~~DB integer (USDC x 1e6) vs shared type `number` — no conversion layer~~ — resolved: added `fromSmallestUnit()`/`toSmallestUnit()` helpers in shared/types.ts
 - ~~`PUT /api/mode/:mode/config` body has no range validation~~ — resolved: added minimum/maximum constraints on allocation, slippage, and pairs maxItems
+
+## Deferred from: code review of story 2-2 (2026-04-04)
+
+- ~~`closePosition` does not handle on-chain close failure~~ — resolved: wrapped in try/catch with AppError, position preserved for retry
+- ~~DB insert failure after successful on-chain open orphans on-chain position~~ — resolved: DB insert wrapped in try/catch, closes on-chain and releases funds on failure
+- ~~`loadFromDb` resets remaining to full allocation, ignoring open positions~~ — resolved: added `reconcilePositions()` called from `initEngine()` after both loads
+- ~~Kill-switch does not set mode status to "kill-switch"~~ — resolved: added `_modeStatus` map, `getModeStatus()`, wired to status API

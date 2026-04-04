@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import { urlModeToModeType } from "../../shared/types.js";
+import { urlModeToModeType, toSmallestUnit } from "../../shared/types.js";
 import { AppError } from "../lib/errors.js";
+import { getEngine } from "../engine/index.js";
 
 const modeEnum = ["volume-max", "profit-hunter", "arbitrage"] as const;
 
@@ -66,6 +67,21 @@ export default async function modeRoutes(fastify: FastifyInstance) {
         resolution: "Use one of: volume-max, profit-hunter, arbitrage",
       });
     }
+    // Persist allocation via fund allocator if provided
+    if (request.body.allocation !== undefined) {
+      try {
+        const { fundAllocator } = getEngine();
+        fundAllocator.setAllocation(modeType, toSmallestUnit(request.body.allocation));
+      } catch (err) {
+        // Only swallow engine-not-initialized; re-throw real errors
+        if (err instanceof Error && err.message.includes("Engine not initialized")) {
+          // Engine not ready — allocation will be set when engine starts
+        } else {
+          throw err;
+        }
+      }
+    }
+
     return { status: "updated", mode: modeType };
   });
 }
