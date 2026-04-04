@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { setupWebSocket } from './ws/broadcaster.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,6 +28,7 @@ const port = Number(process.env.PORT) || 3000;
 
 try {
   await fastify.listen({ port, host: '127.0.0.1' });
+  setupWebSocket(fastify);
 } catch (err) {
   fastify.log.error(err);
   process.exit(1);

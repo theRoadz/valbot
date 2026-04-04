@@ -2,6 +2,7 @@ import { TopBar } from "./components/top-bar";
 import { ModeCard } from "./components/mode-card";
 import { PositionsTable } from "./components/positions-table";
 import { TradeLog } from "./components/trade-log";
+import { useWebSocket } from "./hooks/use-websocket";
 
 const MODES = [
   { name: "Volume Max", color: "text-mode-volume" },
@@ -10,6 +11,8 @@ const MODES = [
 ] as const;
 
 function App() {
+  useWebSocket();
+
   return (
     <div className="flex flex-col h-screen min-w-[1280px] bg-background overflow-hidden">
       {/* Alert Banner slot — reserved for Story 3.4 */}

@@ -27,3 +27,9 @@
 - ~~TradeLog ScrollArea height chain may not resolve correctly~~ — resolved: added `overflow-hidden` to CardContent
 - ~~`min-w-[1280px]` causes horizontal scroll on narrow viewports~~ — resolved: added `overflow-hidden` to root container
 - ~~Non-standard bare `src/client` path alias~~ — resolved: renamed to `@client` across all configs and UI component imports
+
+## Deferred from: code review of story 1-4 (2026-04-04)
+
+- ~~`WsMessage.event` typed as `string`~~ — resolved: added `EventName` type, tightened `WsMessage.event` and `broadcast()` parameter
+- ~~Server sends `rpc: false` on initial connect causing flicker~~ — resolved: removed placeholder initial message
+- ~~No `teardown`/`close` for broadcaster singletons~~ — resolved: added `closeWebSocket()` export
