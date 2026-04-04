@@ -36,6 +36,9 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-04
+# last review: 2026-04-04 code review of story 2-5, all patches applied
+# last dev: 2026-04-04 story 2-5 implementation started
+# last story created: 2026-04-04 story 2-5
 # last review: 2026-04-04 code review of story 2-4, all patches applied
 # last dev: 2026-04-04 story 2-4 implementation complete
 # last story created: 2026-04-04 story 2-4
@@ -82,7 +85,7 @@ development_status:
   2-2-fund-allocator-and-position-manager-core: done
   2-3-mode-runner-and-volume-max-strategy: done
   2-4-modecard-component-with-controls: done
-  2-5-zustand-store-and-real-time-dashboard-updates: backlog
+  2-5-zustand-store-and-real-time-dashboard-updates: done
   2-6-live-trade-log: backlog
   2-7-open-positions-table: backlog
   epic-2-retrospective: optional

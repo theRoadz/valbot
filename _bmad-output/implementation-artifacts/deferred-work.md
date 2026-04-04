@@ -67,3 +67,7 @@
 - ~~Safety timeout + API in-flight creates split-brain on slow API~~ — resolved: added AbortController to cancel in-flight fetch when timeout fires, clear timeout on successful API response
 - ~~Rapid toggles can cause concurrent API calls and stale reverts~~ — resolved: added togglingRef lock to prevent concurrent toggle operations
 - ~~fetchStatus JSON response not runtime-validated~~ — resolved: added isValidStatusResponse runtime shape validator, throws INVALID_RESPONSE ApiError on mismatch
+
+## Deferred from: code review of story 2-5 (2026-04-04)
+
+- ~~`setModeConfig` can overwrite `stats` via `Partial<ModeConfig>` spread without calling `aggregateSummaryStats()` — summary stats silently diverge until next STATS_UPDATED event~~ — resolved: added `aggregateSummaryStats()` call to `setModeConfig` [src/client/store/index.ts:125]

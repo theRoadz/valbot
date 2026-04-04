@@ -5,6 +5,17 @@ import { EVENTS, type ConnectionStatusPayload, type WsMessage } from "@shared/ev
 let alertIdCounter = Date.now();
 const VALID_SEVERITIES = new Set(["info", "warning", "critical"]);
 
+function aggregateSummaryStats(modes: ValBotStore["modes"], walletBalance: number): SummaryStats {
+  const allModes = Object.values(modes);
+  return {
+    walletBalance,
+    totalPnl: allModes.reduce((sum, m) => sum + m.stats.pnl, 0),
+    sessionPnl: allModes.reduce((sum, m) => sum + m.stats.pnl, 0),
+    totalTrades: allModes.reduce((sum, m) => sum + m.stats.trades, 0),
+    totalVolume: allModes.reduce((sum, m) => sum + m.stats.volume, 0),
+  };
+}
+
 export interface ModeStoreEntry extends ModeConfig {
   errorDetail: { code: string; message: string; details: string | null } | null;
   killSwitchDetail: { positionsClosed: number; lossAmount: number } | null;
@@ -101,23 +112,32 @@ const useStore = create<ValBotStore>()((set) => ({
       },
     })),
   updateModeStats: (mode, stats) =>
-    set((state) => ({
-      modes: {
+    set((state) => {
+      const modes = {
         ...state.modes,
         [mode]: { ...state.modes[mode], stats },
-      },
-    })),
+      };
+      return {
+        modes,
+        stats: aggregateSummaryStats(modes, state.stats.walletBalance),
+      };
+    }),
   setModeConfig: (mode, config) =>
-    set((state) => ({
-      modes: {
+    set((state) => {
+      const modes = {
         ...state.modes,
         [mode]: { ...state.modes[mode], ...config },
-      },
-    })),
+      };
+      return {
+        modes,
+        stats: aggregateSummaryStats(modes, state.stats.walletBalance),
+      };
+    }),
   loadInitialStatus: (data) =>
     set((state) => {
       const modes = { ...state.modes };
-      for (const key of Object.keys(data.modes) as ModeType[]) {
+      const validModes = new Set<string>(Object.keys(modes));
+      for (const key of Object.keys(data.modes).filter((k) => validModes.has(k)) as ModeType[]) {
         const mc = data.modes[key];
         modes[key] = {
           ...modes[key],
@@ -136,6 +156,7 @@ const useStore = create<ValBotStore>()((set) => ({
           status: data.connection.status,
           walletBalance: data.connection.walletBalance,
         },
+        stats: aggregateSummaryStats(modes, data.connection.walletBalance),
       };
     }),
   handleWsMessage: (message) => {
@@ -231,16 +252,18 @@ const useStore = create<ValBotStore>()((set) => ({
         set((state) => {
           if (!state.modes[mode]) return state;
           const finalStats = data.finalStats as ModeStats | undefined;
-          return {
-            modes: {
-              ...state.modes,
-              [mode]: {
-                ...state.modes[mode],
-                status: "stopped" as ModeStatus,
-                errorDetail: null,
-                ...(finalStats ? { stats: finalStats } : {}),
-              },
+          const modes = {
+            ...state.modes,
+            [mode]: {
+              ...state.modes[mode],
+              status: "stopped" as ModeStatus,
+              errorDetail: null,
+              ...(finalStats ? { stats: finalStats } : {}),
             },
+          };
+          return {
+            modes,
+            stats: aggregateSummaryStats(modes, state.stats.walletBalance),
           };
         });
       }
@@ -266,26 +289,41 @@ const useStore = create<ValBotStore>()((set) => ({
     } else if (message.event === EVENTS.STATS_UPDATED) {
       const data = message.data as Record<string, unknown>;
       const mode = data?.mode as ModeType | undefined;
-      if (mode) {
+      if (
+        mode &&
+        typeof data.pnl === "number" &&
+        typeof data.trades === "number" &&
+        typeof data.volume === "number" &&
+        typeof data.allocated === "number" &&
+        typeof data.remaining === "number"
+      ) {
         set((state) => {
           if (!state.modes[mode]) return state;
-          return {
-            modes: {
-              ...state.modes,
-              [mode]: {
-                ...state.modes[mode],
-                stats: {
-                  pnl: data.pnl as number,
-                  trades: data.trades as number,
-                  volume: data.volume as number,
-                  allocated: data.allocated as number,
-                  remaining: data.remaining as number,
-                },
+          const modes = {
+            ...state.modes,
+            [mode]: {
+              ...state.modes[mode],
+              stats: {
+                pnl: data.pnl,
+                trades: data.trades,
+                volume: data.volume,
+                allocated: data.allocated,
+                remaining: data.remaining,
               },
             },
           };
+          return {
+            modes,
+            stats: aggregateSummaryStats(modes, state.stats.walletBalance),
+          };
         });
       }
+    } else if (message.event === EVENTS.TRADE_EXECUTED) {
+      // No-op — trade log (Story 2.6) will consume these
+    } else if (message.event === EVENTS.POSITION_OPENED) {
+      // No-op — positions table (Story 2.7) will consume these
+    } else if (message.event === EVENTS.POSITION_CLOSED) {
+      // No-op — positions table (Story 2.7) will consume these
     } else if (import.meta.env.DEV) {
       console.log(`[WS] Unhandled event: ${message.event}`);
     }

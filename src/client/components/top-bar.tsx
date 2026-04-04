@@ -30,22 +30,30 @@ function StatItem({
   label,
   value,
   ariaLabel,
+  valueClassName,
 }: {
   label: string;
   value: string;
   ariaLabel: string;
+  valueClassName?: string;
 }) {
   return (
     <div className="flex items-center gap-2">
       <span className="text-xs font-medium text-text-secondary">{label}</span>
       <span
-        className="text-sm font-bold font-mono text-text-muted"
+        className={cn("text-sm font-bold font-mono", valueClassName ?? "text-text-muted")}
         aria-label={ariaLabel}
       >
         {value}
       </span>
     </div>
   );
+}
+
+function pnlColorClass(value: number): string {
+  if (value > 0) return "text-profit";
+  if (value < 0) return "text-loss";
+  return "text-text-muted";
 }
 
 export function TopBar() {
@@ -83,13 +91,15 @@ export function TopBar() {
             />
             <StatItem
               label="Total PnL:"
-              value={formatCurrency(fromSmallestUnit(stats.totalPnl), true)}
-              ariaLabel={`Total profit and loss: ${formatCurrency(fromSmallestUnit(stats.totalPnl), true)}`}
+              value={formatCurrency(stats.totalPnl, true)}
+              ariaLabel={`Total profit and loss: ${formatCurrency(stats.totalPnl, true)}`}
+              valueClassName={pnlColorClass(stats.totalPnl)}
             />
             <StatItem
               label="Session PnL:"
-              value={formatCurrency(fromSmallestUnit(stats.sessionPnl), true)}
-              ariaLabel={`Session profit and loss: ${formatCurrency(fromSmallestUnit(stats.sessionPnl), true)}`}
+              value={formatCurrency(stats.sessionPnl, true)}
+              ariaLabel={`Session profit and loss: ${formatCurrency(stats.sessionPnl, true)}`}
+              valueClassName={pnlColorClass(stats.sessionPnl)}
             />
             <StatItem
               label="Trades:"
@@ -98,8 +108,8 @@ export function TopBar() {
             />
             <StatItem
               label="Volume:"
-              value={formatCurrency(fromSmallestUnit(stats.totalVolume))}
-              ariaLabel={`Total volume: ${formatCurrency(fromSmallestUnit(stats.totalVolume))}`}
+              value={formatCurrency(stats.totalVolume)}
+              ariaLabel={`Total volume: ${formatCurrency(stats.totalVolume)}`}
             />
           </div>
         </div>

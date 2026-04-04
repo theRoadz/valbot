@@ -364,6 +364,239 @@ describe("ValBotStore", () => {
       expect(state.connection.walletBalance).toBe(5000);
     });
 
+    it("loadInitialStatus sets stats.walletBalance from connection data", () => {
+      useStore.getState().loadInitialStatus({
+        modes: {
+          volumeMax: {
+            mode: "volumeMax",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+          profitHunter: {
+            mode: "profitHunter",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+          arbitrage: {
+            mode: "arbitrage",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+        },
+        positions: [],
+        trades: [],
+        connection: { status: "connected", walletBalance: 9999000 },
+      });
+
+      expect(useStore.getState().stats.walletBalance).toBe(9999000);
+    });
+
+    it("loadInitialStatus populates aggregated stats from mode stats", () => {
+      useStore.getState().loadInitialStatus({
+        modes: {
+          volumeMax: {
+            mode: "volumeMax",
+            status: "running",
+            allocation: 500,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 100, trades: 5, volume: 3000, allocated: 500, remaining: 400 },
+          },
+          profitHunter: {
+            mode: "profitHunter",
+            status: "running",
+            allocation: 300,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 50, trades: 3, volume: 1000, allocated: 300, remaining: 250 },
+          },
+          arbitrage: {
+            mode: "arbitrage",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+        },
+        positions: [],
+        trades: [],
+        connection: { status: "connected", walletBalance: 7000 },
+      });
+
+      const stats = useStore.getState().stats;
+      expect(stats.totalPnl).toBe(150); // 100 + 50
+      expect(stats.sessionPnl).toBe(150);
+      expect(stats.totalTrades).toBe(8); // 5 + 3
+      expect(stats.totalVolume).toBe(4000); // 3000 + 1000
+      expect(stats.walletBalance).toBe(7000);
+    });
+
+    it("STATS_UPDATED recalculates aggregated summary stats", () => {
+      // Set some initial stats on profitHunter
+      useStore.setState((s) => ({
+        modes: {
+          ...s.modes,
+          profitHunter: {
+            ...s.modes.profitHunter,
+            stats: { pnl: 50, trades: 3, volume: 1000, allocated: 300, remaining: 250 },
+          },
+        },
+      }));
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax", pnl: 200, trades: 15, volume: 8000, allocated: 2000, remaining: 1800 },
+      });
+
+      const stats = useStore.getState().stats;
+      expect(stats.totalPnl).toBe(250); // 200 + 50
+      expect(stats.totalTrades).toBe(18); // 15 + 3
+      expect(stats.totalVolume).toBe(9000); // 8000 + 1000
+    });
+
+    it("MODE_STOPPED with finalStats recalculates aggregated summary stats", () => {
+      // Set volumeMax as running with stats
+      useStore.setState((s) => ({
+        modes: {
+          ...s.modes,
+          volumeMax: {
+            ...s.modes.volumeMax,
+            status: "running",
+            stats: { pnl: 100, trades: 10, volume: 5000, allocated: 1000, remaining: 500 },
+          },
+          profitHunter: {
+            ...s.modes.profitHunter,
+            stats: { pnl: 30, trades: 2, volume: 500, allocated: 200, remaining: 170 },
+          },
+        },
+      }));
+
+      const finalStats = { pnl: 120, trades: 12, volume: 6000, allocated: 1000, remaining: 400 };
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STOPPED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax", finalStats },
+      });
+
+      const stats = useStore.getState().stats;
+      expect(stats.totalPnl).toBe(150); // 120 + 30
+      expect(stats.totalTrades).toBe(14); // 12 + 2
+      expect(stats.totalVolume).toBe(6500); // 6000 + 500
+    });
+
+    it("stats.walletBalance comes from connection events not mode stats", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.CONNECTION_STATUS,
+        timestamp: Date.now(),
+        data: { rpc: true, wallet: "wallet1", balance: 5000000 },
+      });
+
+      expect(useStore.getState().stats.walletBalance).toBe(5000000);
+
+      // STATS_UPDATED should NOT change walletBalance
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax", pnl: 100, trades: 5, volume: 3000, allocated: 500, remaining: 400 },
+      });
+
+      expect(useStore.getState().stats.walletBalance).toBe(5000000);
+    });
+
+    it("aggregation works correctly when one mode has zero stats", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax", pnl: 300, trades: 20, volume: 10000, allocated: 2000, remaining: 1700 },
+      });
+
+      const stats = useStore.getState().stats;
+      // profitHunter and arbitrage are zero
+      expect(stats.totalPnl).toBe(300);
+      expect(stats.totalTrades).toBe(20);
+      expect(stats.totalVolume).toBe(10000);
+    });
+
+    it("aggregation reflects stopped mode finalStats while others continue", () => {
+      // volumeMax running
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax", pnl: 200, trades: 10, volume: 5000, allocated: 1000, remaining: 800 },
+      });
+      // profitHunter running
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: Date.now(),
+        data: { mode: "profitHunter", pnl: 80, trades: 4, volume: 2000, allocated: 500, remaining: 420 },
+      });
+
+      // Stop volumeMax with final stats
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STOPPED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax", finalStats: { pnl: 220, trades: 11, volume: 5500, allocated: 1000, remaining: 780 } },
+      });
+
+      const stats = useStore.getState().stats;
+      expect(stats.totalPnl).toBe(300); // 220 + 80
+      expect(stats.totalTrades).toBe(15); // 11 + 4
+      expect(stats.totalVolume).toBe(7500); // 5500 + 2000
+    });
+
+    it("updateModeStats recalculates aggregated summary stats", () => {
+      const newStats = { pnl: 100, trades: 5, volume: 5000, allocated: 1000, remaining: 500 };
+      useStore.getState().updateModeStats("volumeMax", newStats);
+
+      const stats = useStore.getState().stats;
+      expect(stats.totalPnl).toBe(100);
+      expect(stats.totalTrades).toBe(5);
+      expect(stats.totalVolume).toBe(5000);
+    });
+
+    it("TRADE_EXECUTED events are handled without throwing", () => {
+      expect(() => {
+        useStore.getState().handleWsMessage({
+          event: EVENTS.TRADE_EXECUTED,
+          timestamp: Date.now(),
+          data: { mode: "volumeMax", pair: "SOL/USDC", side: "long", size: 100, price: 150, pnl: 10, fees: 0.5 },
+        });
+      }).not.toThrow();
+      // Store state should be unchanged (no-op handler)
+      expect(useStore.getState().modes.volumeMax.stats.pnl).toBe(0);
+    });
+
+    it("POSITION_OPENED events are handled without throwing", () => {
+      expect(() => {
+        useStore.getState().handleWsMessage({
+          event: EVENTS.POSITION_OPENED,
+          timestamp: Date.now(),
+          data: { mode: "volumeMax", pair: "SOL/USDC", side: "long", size: 100, entryPrice: 150, stopLoss: 140 },
+        });
+      }).not.toThrow();
+    });
+
+    it("POSITION_CLOSED events are handled without throwing", () => {
+      expect(() => {
+        useStore.getState().handleWsMessage({
+          event: EVENTS.POSITION_CLOSED,
+          timestamp: Date.now(),
+          data: { mode: "volumeMax", pair: "SOL/USDC", side: "long", size: 100, exitPrice: 160, pnl: 10 },
+        });
+      }).not.toThrow();
+    });
+
     it("ALERT_TRIGGERED with KILL_SWITCH_TRIGGERED sets mode to kill-switch", () => {
       useStore.getState().handleWsMessage({
         event: EVENTS.ALERT_TRIGGERED,

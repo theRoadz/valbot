@@ -65,22 +65,22 @@ describe("TopBar", () => {
     expect(screen.getByText("0")).toBeInTheDocument();
   });
 
-  it("formats stat values correctly with currency formatting", () => {
+  it("formats stat values correctly — wallet in smallest-unit, PnL/volume in display units", () => {
     useStore.setState({
       stats: {
-        walletBalance: 1500000000, // 1500 USDC
-        totalPnl: 250000000, // +250 USDC
-        sessionPnl: -50000000, // -50 USDC
+        walletBalance: 1500000000, // smallest-unit: 1500 USDC after fromSmallestUnit
+        totalPnl: 250, // display units — already converted by server
+        sessionPnl: -50, // display units
         totalTrades: 42,
-        totalVolume: 10000000000, // 10000 USDC
+        totalVolume: 10000, // display units
       },
     });
     render(<TopBar />);
-    expect(screen.getByText("$1,500.00")).toBeInTheDocument();
-    expect(screen.getByText("+$250.00")).toBeInTheDocument();
-    expect(screen.getByText("-$50.00")).toBeInTheDocument();
-    expect(screen.getByText("42")).toBeInTheDocument();
-    expect(screen.getByText("$10,000.00")).toBeInTheDocument();
+    expect(screen.getByText("$1,500.00")).toBeInTheDocument(); // wallet: fromSmallestUnit applied
+    expect(screen.getByText("+$250.00")).toBeInTheDocument(); // totalPnl: no fromSmallestUnit
+    expect(screen.getByText("-$50.00")).toBeInTheDocument(); // sessionPnl: no fromSmallestUnit
+    expect(screen.getByText("42")).toBeInTheDocument(); // trades: formatInteger
+    expect(screen.getByText("$10,000.00")).toBeInTheDocument(); // volume: no fromSmallestUnit
   });
 
   it("has aria-live attribute on connection status container", () => {
@@ -102,5 +102,88 @@ describe("TopBar", () => {
     expect(
       screen.getByLabelText("Total profit and loss: $0.00"),
     ).toBeInTheDocument();
+  });
+
+  it("PnL stats render with text-profit class when positive", () => {
+    useStore.setState({
+      stats: { walletBalance: 0, totalPnl: 100, sessionPnl: 50, totalTrades: 0, totalVolume: 0 },
+    });
+    render(<TopBar />);
+    const totalPnl = screen.getByLabelText(/Total profit and loss/);
+    expect(totalPnl.className).toContain("text-profit");
+    const sessionPnl = screen.getByLabelText(/Session profit and loss/);
+    expect(sessionPnl.className).toContain("text-profit");
+  });
+
+  it("PnL stats render with text-loss class when negative", () => {
+    useStore.setState({
+      stats: { walletBalance: 0, totalPnl: -100, sessionPnl: -50, totalTrades: 0, totalVolume: 0 },
+    });
+    render(<TopBar />);
+    const totalPnl = screen.getByLabelText(/Total profit and loss/);
+    expect(totalPnl.className).toContain("text-loss");
+    const sessionPnl = screen.getByLabelText(/Session profit and loss/);
+    expect(sessionPnl.className).toContain("text-loss");
+  });
+
+  it("PnL stats render with text-text-muted class when zero", () => {
+    useStore.setState({
+      stats: { walletBalance: 0, totalPnl: 0, sessionPnl: 0, totalTrades: 0, totalVolume: 0 },
+    });
+    render(<TopBar />);
+    const totalPnl = screen.getByLabelText(/Total profit and loss/);
+    expect(totalPnl.className).toContain("text-text-muted");
+    const sessionPnl = screen.getByLabelText(/Session profit and loss/);
+    expect(sessionPnl.className).toContain("text-text-muted");
+  });
+
+  it("non-PnL stats remain text-text-muted", () => {
+    useStore.setState({
+      stats: { walletBalance: 5000000, totalPnl: 100, sessionPnl: 50, totalTrades: 10, totalVolume: 5000 },
+    });
+    render(<TopBar />);
+    const wallet = screen.getByLabelText(/Wallet balance/);
+    expect(wallet.className).toContain("text-text-muted");
+    const trades = screen.getByLabelText(/Total trades/);
+    expect(trades.className).toContain("text-text-muted");
+    const volume = screen.getByLabelText(/Total volume/);
+    expect(volume.className).toContain("text-text-muted");
+  });
+
+  it("positive PnL values show + prefix", () => {
+    useStore.setState({
+      stats: { walletBalance: 0, totalPnl: 1247.83, sessionPnl: 500, totalTrades: 0, totalVolume: 0 },
+    });
+    render(<TopBar />);
+    expect(screen.getByText("+$1,247.83")).toBeInTheDocument();
+    expect(screen.getByText("+$500.00")).toBeInTheDocument();
+  });
+
+  it("wallet balance uses fromSmallestUnit (smallest-unit → display)", () => {
+    useStore.setState({
+      stats: { walletBalance: 2000000000, totalPnl: 0, sessionPnl: 0, totalTrades: 0, totalVolume: 0 },
+    });
+    render(<TopBar />);
+    // 2000000000 / 1e6 = 2000
+    expect(screen.getByText("$2,000.00")).toBeInTheDocument();
+  });
+
+  it("totalPnl/totalVolume do NOT use fromSmallestUnit (already display units)", () => {
+    useStore.setState({
+      stats: { walletBalance: 0, totalPnl: 42.5, sessionPnl: 42.5, totalTrades: 0, totalVolume: 1500 },
+    });
+    render(<TopBar />);
+    // If fromSmallestUnit was wrongly applied, 42.5 / 1e6 would show ~$0.00
+    // Both totalPnl and sessionPnl are 42.5, so two elements match
+    expect(screen.getAllByText("+$42.50")).toHaveLength(2);
+    expect(screen.getByText("$1,500.00")).toBeInTheDocument();
+  });
+
+  it("totalTrades uses formatInteger directly (no unit conversion)", () => {
+    useStore.setState({
+      stats: { walletBalance: 0, totalPnl: 0, sessionPnl: 0, totalTrades: 1234, totalVolume: 0 },
+    });
+    render(<TopBar />);
+    expect(screen.getByText("1,234")).toBeInTheDocument();
   });
 });
