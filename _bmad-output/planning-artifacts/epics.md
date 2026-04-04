@@ -215,6 +215,8 @@ So that the persistence layer is ready for trade and session data storage.
 **And** the `positions` table has columns: id, mode, pair, side, size, entryPrice, stopLoss, timestamp
 **And** the `sessions` table has columns: id, startTime, endTime, mode, trades, volume, pnl
 **And** the `config` table has columns: key, value
+**And** all monetary/financial columns use `integer()` storing smallest-unit values (ADR-001)
+**And** the DB connection uses lazy `getDb()` initialization, not module-level side effect (ADR-002)
 **And** all column names use camelCase per Architecture naming conventions
 **And** Drizzle schema TypeScript types are exported from src/server/db/schema.ts
 

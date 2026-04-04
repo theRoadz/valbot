@@ -165,6 +165,16 @@ valbot/
 
 **Rationale:** Four tables cover all PRD data requirements (FR16-FR24). `positions` table mirrors live state for crash recovery — on restart, the bot can detect orphaned positions and close them. `config` persists dashboard settings across restarts so the user doesn't re-enter allocations.
 
+**Numeric Precision Strategy (ADR-001):** All monetary/financial columns (`size`, `price`, `pnl`, `fees`, `entryPrice`, `stopLoss`, `volume`) use `integer()` storing values in **smallest-unit denomination** (e.g., USDC = 6 decimals → multiply by 1,000,000). This eliminates IEEE 754 floating-point rounding errors that compound across thousands of aggregated trades. Conversion to display units happens only at the frontend display boundary. This is the standard pattern in blockchain/trading systems — the chain already returns values in lamports/smallest-unit. A `DECIMALS` constant per token defines the conversion factor.
+
+**DB Connection Pattern (ADR-002):** The database connection in `src/server/db/index.ts` uses **lazy initialization** via `getDb()`. The connection is NOT opened at module import time — it opens on first call to `getDb()`. This prevents accidental file I/O and lock acquisition when modules import schema types or when CLI tools need DB types without a live connection. `closeDb()` closes the connection and nulls references to prevent use-after-close.
+
+```typescript
+// Pattern — src/server/db/index.ts
+export function getDb() { /* opens connection on first call, returns cached instance */ }
+export function closeDb() { /* closes + nulls, safe to call multiple times */ }
+```
+
 **Migration Strategy:** drizzle-kit generate + drizzle-kit migrate. Schema-first approach — TypeScript schema definitions are the source of truth.
 
 **Caching Strategy:** In-memory maps for hot data (current positions, live stats per mode, fund balances). SQLite writes are async-batched for trade history — trades log to memory first, flush to SQLite in batches to avoid per-trade write latency. On shutdown, flush remaining buffer before closing.
@@ -460,11 +470,11 @@ export interface Trade {
 // server/engine/strategies/volume-max.ts — kebab-case file
 export class VolumeMaxStrategy { ... }
 
-// server/db/schema.ts — camelCase columns
+// server/db/schema.ts — camelCase columns, integer smallest-unit for money
 export const trades = sqliteTable('trades', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   mode: text('mode').notNull(),
-  entryPrice: real('entryPrice').notNull(),
+  entryPrice: integer('entryPrice').notNull(), // smallest-unit (e.g., USDC × 1e6)
   createdAt: integer('createdAt').notNull(),
 });
 ```
@@ -472,7 +482,10 @@ export const trades = sqliteTable('trades', {
 **Anti-Patterns:**
 ```typescript
 // ❌ snake_case columns
-entry_price: real('entry_price')
+entry_price: integer('entry_price')
+
+// ❌ real() for monetary values — use integer() with smallest-unit
+price: real('price').notNull()
 
 // ❌ PascalCase file names
 VolumeMax.ts, TradeLog.tsx

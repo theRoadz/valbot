@@ -34,7 +34,7 @@ _Critical rules and patterns for implementing ValBot. Focus on unobvious details
 
 - `src/server/api/` — ONLY layer that handles HTTP request/response. Never access DB or blockchain directly from routes.
 - `src/server/blockchain/` — ONLY code that touches FOGOChain RPC or Valiant Perps contracts. Never emits WebSocket events or writes to DB.
-- `src/server/db/` — ONLY code that imports `better-sqlite3` or uses Drizzle queries. No other layer uses raw SQL.
+- `src/server/db/` — ONLY code that imports `better-sqlite3` or uses Drizzle queries. No other layer uses raw SQL. DB connection is lazy via `getDb()`, NOT module-level.
 - `src/server/ws/broadcaster.ts` — ONLY code that manages WebSocket connections. Only engine and error handler call `broadcast()`.
 - `src/client/` — NEVER imports from `src/server/`. Communication only via REST API and WebSocket.
 - `src/shared/` — Shared types imported by BOTH sides via TypeScript path aliases. Define types here BEFORE using them.
@@ -54,7 +54,7 @@ _Critical rules and patterns for implementing ValBot. Focus on unobvious details
 - **Dates:** Unix millisecond timestamps (`Date.now()`) in ALL payloads. NEVER ISO strings. Frontend formats for display with `Intl.DateTimeFormat`.
 - **JSON fields:** `camelCase` everywhere — API, WebSocket, Zustand store. No snake_case.
 - **Nulls:** Explicit `null` for absent optional values. NEVER `undefined` in API payloads.
-- **Numbers:** Plain numbers for prices/quantities. Frontend formats to fixed decimals for display.
+- **Numbers:** Monetary/financial values stored as **integer smallest-unit** (e.g., USDC × 1e6). Frontend converts to display units with fixed decimals. NEVER use `real()` for money — IEEE 754 rounding compounds across aggregated trades.
 - **API success:** Direct payload `{ modes: [...] }`. NO wrapper `{ success: true, data: {...} }`.
 - **API error:** `{ error: { severity, code, message, details, resolution } }`
 
@@ -133,4 +133,4 @@ New events MUST be added to `shared/events.ts` before use. The event catalog in 
 - Update when technology stack changes
 - Remove rules that become obvious over time
 
-Last Updated: 2026-04-03
+Last Updated: 2026-04-04
