@@ -26,14 +26,14 @@ _Critical rules and patterns for implementing ValBot. Focus on unobvious details
 - **Testing:** Vitest 4.1.x + @vitest/coverage-v8
 - **WebSocket:** ws (native, not Socket.io)
 - **State Management:** Zustand
-- **Blockchain:** SVM-Web3 libraries for FOGOChain, Pyth Network SDK
+- **Blockchain:** `@nktkas/hyperliquid` (Hyperliquid TypeScript SDK), `viem` (EVM wallet), Pyth Network SDK
 
 ## Critical Implementation Rules
 
 ### Boundary Rules (NEVER violate)
 
 - `src/server/api/` — ONLY layer that handles HTTP request/response. Never access DB or blockchain directly from routes.
-- `src/server/blockchain/` — ONLY code that touches FOGOChain RPC or Valiant Perps contracts. Never emits WebSocket events or writes to DB.
+- `src/server/blockchain/` — ONLY code that touches Hyperliquid API or Valiant Perps order management. Never emits WebSocket events or writes to DB.
 - `src/server/db/` — ONLY code that imports `better-sqlite3` or uses Drizzle queries. No other layer uses raw SQL. DB connection is lazy via `getDb()`, NOT module-level.
 - `src/server/ws/broadcaster.ts` — ONLY code that manages WebSocket connections. Only engine and error handler call `broadcast()`.
 - `src/client/` — NEVER imports from `src/server/`. Communication only via REST API and WebSocket.
@@ -105,11 +105,12 @@ New events MUST be added to `shared/events.ts` before use. The event catalog in 
 - No separate `__tests__/` directory.
 - Vitest config shares Vite transforms.
 
-### RPC & Blockchain Rules
+### API & Blockchain Rules
 
-- RPC retry: Exponential backoff (1s, 2s, 4s), max 3 retries, then emit critical alert.
+- Hyperliquid API retry: Exponential backoff (1s, 2s, 4s), max 3 retries, then emit critical alert.
 - WebSocket reconnection (client-side): 1s/2s/4s backoff, max 5 attempts.
-- Session keys loaded from `.env` via dotenv. NEVER log, expose in UI, or transmit beyond chain transactions.
+- Agent key (SESSION_KEY) and master wallet (WALLET) loaded from `.env` via dotenv. NEVER log keys, expose in UI, or transmit beyond API signatures.
+- Agent key is secp256k1 EVM private key (0x hex). Master wallet address used for Hyperliquid info queries — NOT the agent key's derived address.
 
 ### Development Workflow
 

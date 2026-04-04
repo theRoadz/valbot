@@ -21,7 +21,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 ### Requirements Overview
 
 **Functional Requirements:**
-35 FRs across 8 categories. The core architectural challenge is the trading engine — three independent strategy modes (Volume Max, Profit Hunter, Arbitrage) that must execute in parallel with isolated fund pools, each interfacing with FOGOChain smart contracts through SVM-Web3 libraries. The dashboard layer (FR16-FR26) requires real-time WebSocket updates for trade streaming, stats, and position monitoring. The safety layer (FR12-FR15, FR30-FR33) enforces per-mode kill switches, stop-loss protection, and graceful error recovery — this cross-cuts every trading mode.
+35 FRs across 8 categories. The core architectural challenge is the trading engine — three independent strategy modes (Volume Max, Profit Hunter, Arbitrage) that must execute in parallel with isolated fund pools, each placing orders through Hyperliquid's REST API via EVM-signed requests. The dashboard layer (FR16-FR26) requires real-time WebSocket updates for trade streaming, stats, and position monitoring. The safety layer (FR12-FR15, FR30-FR33) enforces per-mode kill switches, stop-loss protection, and graceful error recovery — this cross-cuts every trading mode.
 
 **Non-Functional Requirements:**
 - Performance: Sub-second trade execution, real-time WebSocket dashboard updates, continuous Pyth oracle feeds
@@ -35,11 +35,11 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 ### Technical Constraints & Dependencies
 
-- **FOGOChain (SVM-based):** All trading operations go through SVM-Web3 libraries; gas covered by Fogo sessions
+- **Hyperliquid (EVM-based execution):** All trading operations go through Hyperliquid REST API with EIP-712 signatures; Fogo provides chain identity and session management (SVM). SDK: `@nktkas/hyperliquid` + `viem` for EVM wallet.
 - **Pyth Network:** Required for Profit Hunter mode price feeds; must maintain continuous connection
-- **Valiant Perps contracts:** Smart contract interface for position open/close/manage
+- **Valiant Perps / Hyperliquid:** Valiant is UI layer; trades execute on Hyperliquid's order book via REST API (Exchange endpoint for orders, Info endpoint for account state)
 - **Session key auth:** Extracted from browser console, stored in `.env`, rotated every 7 days or on expiry
-- **Public RPC endpoints:** Single point of external dependency; must handle failures gracefully
+- **Hyperliquid API endpoints:** Single point of external dependency (`https://api.hyperliquid.xyz`); must handle failures gracefully
 - **Design system:** Tailwind CSS + shadcn/ui (dark theme, React-based dashboard)
 
 ### Cross-Cutting Concerns Identified
@@ -264,7 +264,7 @@ Store shape:
 **Implementation Sequence:**
 1. Project scaffolding (Vite + Fastify + SQLite setup)
 2. Database schema + Drizzle config
-3. Blockchain client (FOGOChain RPC + Valiant Perps contract interface)
+3. Blockchain client (Hyperliquid API + order management interface)
 4. Trading engine core (position manager, fund allocator, mode runner)
 5. REST API endpoints
 6. WebSocket event streaming
@@ -329,7 +329,7 @@ src/
 │   │       ├── profit-hunter.ts
 │   │       └── arbitrage.ts
 │   ├── blockchain/       # Chain interaction layer
-│   │   ├── client.ts     # FOGOChain RPC connection
+│   │   ├── client.ts     # Hyperliquid API connection + EVM wallet
 │   │   ├── contracts.ts  # Valiant Perps contract interface
 │   │   └── oracle.ts     # Pyth price feed client
 │   ├── ws/               # WebSocket event broadcasting
@@ -535,7 +535,7 @@ valbot/
 │   │   │       ├── profit-hunter.ts  # Pyth oracle mean reversion
 │   │   │       └── arbitrage.ts      # Cross-market price exploitation
 │   │   ├── blockchain/
-│   │   │   ├── client.ts         # FOGOChain RPC connection + retry logic
+│   │   │   ├── client.ts         # Hyperliquid API connection + EVM wallet + retry logic
 │   │   │   ├── contracts.ts      # Valiant Perps contract interface (open, close, query)
 │   │   │   └── oracle.ts         # Pyth Network price feed subscription
 │   │   ├── ws/
@@ -588,7 +588,7 @@ valbot/
 - Strategies implement a common interface defined by `mode-runner.ts`
 
 **Blockchain Boundary:**
-- `src/server/blockchain/` is the only code that touches FOGOChain RPC or Valiant Perps contracts
+- `src/server/blockchain/` is the only code that touches Hyperliquid API or Valiant Perps order management
 - Exposes typed functions: `openPosition()`, `closePosition()`, `getPrice()`, `getBalance()`
 - Handles RPC retry logic internally — callers get either a result or an `AppError`
 - Never emits WebSocket events or writes to the database
@@ -648,12 +648,12 @@ Engine ──emits──→ Broadcaster ──WS──→ Dashboard Store ──
 
 | External System | Integration Point | Protocol |
 |---|---|---|
-| FOGOChain RPC | `server/blockchain/client.ts` | JSON-RPC over HTTPS |
-| Valiant Perps Contracts | `server/blockchain/contracts.ts` | SVM transactions via RPC |
+| Hyperliquid Info API | `server/blockchain/client.ts` | REST over HTTPS (account state, balance, positions) |
+| Hyperliquid Exchange API | `server/blockchain/contracts.ts` | REST over HTTPS with EIP-712 signatures (orders, cancels, stop-loss) |
 | Pyth Network Oracle | `server/blockchain/oracle.ts` | WebSocket price feed subscription |
 
 **Data Flow:**
-1. **Trade execution:** Strategy → position-manager → blockchain/contracts → on-chain confirmation → position-manager updates in-memory state → broadcaster emits `trade.executed` + `stats.updated` → db batches write
+1. **Trade execution:** Strategy → position-manager → blockchain/contracts → Hyperliquid API response → position-manager updates in-memory state → broadcaster emits `trade.executed` + `stats.updated` → db batches write
 2. **User command:** Dashboard → REST API → engine.startMode() → mode-runner begins loop → broadcaster emits `mode.started`
 3. **Kill switch:** fund-allocator detects 10% drop → position-manager closes all mode positions → broadcaster emits `alert.triggered` → mode-runner stops
 
@@ -714,14 +714,14 @@ Naming conventions cover database, API, code, and events. Format patterns cover 
 **Critical Gaps:** None.
 
 **Minor Gaps:**
-- `.env.example` variable list not specified — should include: `SESSION_KEY`, `RPC_URL`, `PORT=3000`. Addressed in first implementation story.
+- `.env.example` variable list: `SESSION_KEY` (0x-prefixed agent key), `WALLET` (0x master wallet address), `PORT=3000`, `VALBOT_DB_PATH=./valbot.db`.
 
 ### Architecture Completeness Checklist
 
 **✅ Requirements Analysis**
 - [x] Project context thoroughly analyzed
 - [x] Scale and complexity assessed (Low-Medium)
-- [x] Technical constraints identified (FOGOChain, Pyth, session keys)
+- [x] Technical constraints identified (Hyperliquid API, Pyth, session keys, EVM agent key)
 - [x] Cross-cutting concerns mapped (6 concerns)
 
 **✅ Architectural Decisions**

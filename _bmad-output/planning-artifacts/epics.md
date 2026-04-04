@@ -54,7 +54,7 @@ FR29: System detects expired session keys and alerts the user with resolution st
 FR30: System displays clear error messages with details when issues occur
 FR31: System provides resolution steps for every error type
 FR32: System alerts user when per-mode kill switch is triggered with full details (positions closed, prices, loss amount)
-FR33: System handles RPC connection failures with retry logic and dashboard alerts
+FR33: System handles API connection failures with retry logic and dashboard alerts
 FR34: System supports a pluggable strategy architecture allowing new trading strategies to be added in the future
 FR35: User can view and manage all available trading strategies from the dashboard
 
@@ -69,9 +69,9 @@ NFR6: Per-mode kill switch triggers independently even if other modes crash
 NFR7: Automatic retry on RPC connection failures (max 3 retries before alerting user)
 NFR8: All position-opening transactions confirm stop-loss is set before proceeding
 NFR9: On unexpected shutdown, bot closes all open positions gracefully
-NFR10: Stable connection to FOGOChain public RPC endpoints
+NFR10: Stable connection to Hyperliquid REST API endpoints
 NFR11: Reliable Pyth Network oracle price feed for Profit Hunter mode
-NFR12: Valiant Perps smart contract interaction for all position management
+NFR12: Hyperliquid Exchange API interaction for all position management
 
 ### Additional Requirements
 
@@ -84,10 +84,10 @@ NFR12: Valiant Perps smart contract interaction for all position management
 - In-memory caching: hot data maps for positions, live stats, fund balances; async-batched SQLite writes for trade history
 - Logging: Fastify pino logger, structured JSON in production, pretty-printed in dev
 - Project structure: single project (no monorepo), server organized by domain, client organized by type, flat component files
-- Blockchain client with RPC retry logic (exponential backoff 1s/2s/4s, max 3 retries)
+- Blockchain client with API retry logic (exponential backoff 1s/2s/4s, max 3 retries)
 - WebSocket event catalog: 9 defined events (trade.executed, stats.updated, mode.started, mode.stopped, mode.error, position.opened, position.closed, alert.triggered, connection.status)
 - Co-located tests: `*.test.ts` / `*.test.tsx` next to source files, Vitest auto-discovery
-- `.env.example` with SESSION_KEY, RPC_URL, PORT=3000
+- `.env.example` with SESSION_KEY, WALLET, PORT=3000, VALBOT_DB_PATH
 
 ### UX Design Requirements
 
@@ -142,14 +142,14 @@ FR29: Epic 1 — Expired session key detection
 FR30: Epic 3 — Clear error messages
 FR31: Epic 3 — Resolution steps for errors
 FR32: Epic 3 — Kill switch alert details
-FR33: Epic 3 — RPC retry + dashboard alerts
+FR33: Epic 3 — API retry + dashboard alerts
 FR34: Epic 6 — Pluggable strategy architecture
 FR35: Epic 6 — View/manage strategies
 
 ## Epic List
 
 ### Epic 1: Project Foundation & First Boot
-theRoad can run the bot, see the dashboard open in the browser with an empty state, and confirm the system connects to FOGOChain with a valid session key.
+theRoad can run the bot, see the dashboard open in the browser with an empty state, and confirm the system connects to Hyperliquid API with a valid agent key.
 **FRs covered:** FR27, FR28, FR29
 
 ### Epic 2: Single-Mode Trading — Volume Max
@@ -180,7 +180,7 @@ The dashboard meets accessibility baseline and all transition/animation patterns
 
 ## Epic 1: Project Foundation & First Boot
 
-theRoad can run the bot, see the dashboard open in the browser with an empty state, and confirm the system connects to FOGOChain with a valid session key.
+theRoad can run the bot, see the dashboard open in the browser with an empty state, and confirm the system connects to Hyperliquid API with a valid agent key.
 
 ### Story 1.1: Project Scaffolding & Dev Environment
 
@@ -256,19 +256,20 @@ So that I can see at a glance whether the system is connected and ready.
 **And** financial numbers use JetBrains Mono font
 **And** the WebSocket hook (use-websocket.ts) connects to the backend and dispatches to Zustand store
 
-### Story 1.5: FOGOChain Connection & Session Key Authentication
+### Story 1.5: Hyperliquid Connection & Agent Key Authentication
 
 As theRoad,
-I want the bot to authenticate using my session key from `.env` and connect to FOGOChain RPC,
+I want the bot to authenticate using my agent key from `.env` and connect to Hyperliquid API,
 So that I can confirm my wallet is connected and see my balance on the dashboard.
 
 **Acceptance Criteria:**
 
-**Given** a valid SESSION_KEY and RPC_URL are set in `.env`
+**Given** a valid SESSION_KEY and WALLET are set in `.env`
 **When** the bot starts
-**Then** the blockchain client connects to FOGOChain RPC
-**And** the session key is loaded from `.env` via dotenv
-**And** the wallet balance is fetched and displayed in the SummaryBar
+**Then** the blockchain client connects to Hyperliquid API
+**And** the agent key is loaded from `.env` (0x-prefixed EVM private key) via dotenv
+**And** the master wallet address from WALLET is used for account queries
+**And** the wallet balance is fetched from Hyperliquid clearinghouseState and displayed in the SummaryBar
 **And** connection.status WebSocket event broadcasts the connected state
 **And** the dashboard shows green "Connected" status
 
@@ -279,7 +280,7 @@ So that I can confirm my wallet is connected and see my balance on the dashboard
 **And** the dashboard shows the message: "Session key expired — re-extract from browser console and update .env"
 **And** the resolution steps are displayed to the user
 
-**Given** the RPC_URL is unreachable
+**Given** the Hyperliquid API is unreachable
 **When** the bot attempts to connect
 **Then** the system retries with exponential backoff (1s, 2s, 4s) up to 3 times
 **And** if all retries fail, an alert is broadcast with severity "critical" and resolution steps
@@ -483,7 +484,7 @@ So that I never have unmonitored open positions with real money at risk.
 **And** any confirmed open positions are closed
 **And** the user is alerted about recovered positions with details
 
-### Story 3.3: RPC Connection Resilience
+### Story 3.3: API Connection Resilience
 
 As theRoad,
 I want the bot to retry RPC connection failures automatically and alert me when retries are exhausted,
@@ -491,15 +492,15 @@ So that temporary network issues don't require my intervention but persistent fa
 
 **Acceptance Criteria:**
 
-**Given** the bot is connected to FOGOChain RPC
-**When** an RPC call fails
+**Given** the bot is connected to Hyperliquid API
+**When** an API call fails
 **Then** the system retries with exponential backoff: 1s, 2s, 4s (max 3 retries)
-**And** during retries, a warning toast appears on the dashboard: "RPC connection lost — retrying (1/3)..."
+**And** during retries, a warning toast appears on the dashboard: "API connection lost — retrying (1/3)..."
 **And** if a retry succeeds, the toast updates to green "Reconnected" and auto-dismisses after 5s
-**And** if all 3 retries fail, the alert escalates to a persistent critical banner: "RPC connection failed after 3 retries — check network"
-**And** trading modes pause during RPC failure (no new trades attempted)
-**And** existing positions remain with their on-chain stop-losses active
-**And** when RPC reconnects, modes resume trading automatically
+**And** if all 3 retries fail, the alert escalates to a persistent critical banner: "API connection failed after 3 retries — check network"
+**And** trading modes pause during API failure (no new trades attempted)
+**And** existing positions remain with their stop-losses active on Hyperliquid
+**And** when API reconnects, modes resume trading automatically
 
 ### Story 3.4: AlertBanner & Toast Notification System
 

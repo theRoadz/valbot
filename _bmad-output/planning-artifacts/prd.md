@@ -36,7 +36,7 @@ classification:
 
 ## Executive Summary
 
-ValBot is a personal multi-mode trading bot for Valiant Perps on FOGOChain. It automates three distinct trading strategies — volume farming for Flames rewards, oracle-driven profit hunting, and cross-market arbitrage — switchable on demand. Built with Node.js/TypeScript and SVM-Web3 libraries, it replaces manual trading execution with a single tool that handles whichever strategy fits the moment.
+ValBot is a personal multi-mode trading bot for Valiant Perps on FOGOChain. It automates three distinct trading strategies — volume farming for Flames rewards, oracle-driven profit hunting, and cross-market arbitrage — switchable on demand. Built with Node.js/TypeScript using the Hyperliquid TypeScript SDK (Valiant routes trades through Hyperliquid's order book), it replaces manual trading execution with a single tool that handles whichever strategy fits the moment.
 
 ValBot is not a platform. It consolidates three trading strategies into one bot with simple mode toggling: farm Flames when chasing leaderboard rewards, hunt profits when the market presents opportunities, or run arbitrage to exploit price differences. The core value is simplicity — eliminating repetitive manual execution across multiple strategies through a unified interface built for one user.
 
@@ -105,7 +105,7 @@ ValBot is not a platform. It consolidates three trading strategies into one bot 
 
 ### Risk Mitigation
 
-- **Technical:** FOGOChain RPC reliability — mitigate with graceful error handling, automatic retry logic, and dashboard alerts. All positions protected by stop-loss before execution.
+- **Technical:** Hyperliquid API reliability — mitigate with graceful error handling, automatic retry logic, and dashboard alerts. All positions protected by stop-loss before execution.
 - **Market:** Minimal — personal tool. Strategy effectiveness validated through real trading with small position sizes first.
 - **Resource:** Low risk — resources available. Build one mode at a time, integrate into dashboard incrementally.
 
@@ -144,18 +144,20 @@ theRoad opens the dashboard after running the bot overnight. He sees total profi
 
 ### Technical Architecture
 
-- **Chain:** FOGOChain (SVM-based)
-- **Wallet Integration:** Session keys extracted from Valiant Perps browser console via agent key script, stored in `.env`
-- **Gas:** Covered by Fogo sessions — no gas optimization needed
-- **RPC:** Public FOGOChain API endpoints
+- **Chain Identity:** FOGOChain (SVM-based) for wallet/session management
+- **Trade Execution:** Hyperliquid REST API (`https://api.hyperliquid.xyz/exchange`) — Valiant Perps routes all perpetual trades through Hyperliquid's order book
+- **Wallet Integration:** Agent key (secp256k1 EVM private key) extracted from Valiant Perps browser console, stored in `.env`. Master wallet address (0x format) also stored for account queries.
+- **Gas:** Covered by Hyperliquid — no gas token needed for trading
+- **API:** Hyperliquid Info API for account state/balance, Exchange API for order placement with EIP-712 signatures
 - **Transaction Speed:** Sub-second execution (nice-to-have)
-- **Oracle Integration:** Pyth Network for price feeds (Profit Hunter mode)
+- **Oracle Integration:** Pyth Network for price feeds (Profit Hunter mode), or Hyperliquid `allMids` as alternative price source
 
-### Smart Contract Interaction
+### Hyperliquid API Interaction
 
-- Interact with Valiant Perps contracts for opening/closing positions
-- Support long and short positions with configurable leverage
-- Handle order placement, cancellation, and position management
+- Place and cancel orders via Hyperliquid Exchange API with EIP-712 signed requests
+- Support long and short perpetual positions with configurable leverage
+- Handle order placement (IOC/GTC), cancellation, stop-loss trigger orders, and position management
+- Query account state (balance, positions, orders) via Hyperliquid Info API using master wallet address
 
 ### Asset & Pair Selection
 
@@ -230,7 +232,7 @@ theRoad opens the dashboard after running the bot overnight. He sees total profi
 - FR30: System displays clear error messages with details when issues occur
 - FR31: System provides resolution steps for every error type
 - FR32: System alerts user when per-mode kill switch is triggered with full details (positions closed, prices, loss amount)
-- FR33: System handles RPC connection failures with retry logic and dashboard alerts
+- FR33: System handles API connection failures with retry logic and dashboard alerts
 
 ### Extensibility
 
@@ -256,6 +258,6 @@ theRoad opens the dashboard after running the bot overnight. He sees total profi
 
 ### Integration
 
-- Stable connection to FOGOChain public RPC endpoints
-- Reliable Pyth Network oracle price feed for Profit Hunter mode
-- Valiant Perps smart contract interaction for all position management
+- Stable connection to Hyperliquid REST API endpoints
+- Reliable Pyth Network oracle price feed for Profit Hunter mode (or Hyperliquid allMids as fallback)
+- Hyperliquid Exchange API interaction for all position management
