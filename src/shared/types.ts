@@ -4,11 +4,13 @@ export type ConnectionStatus = "connected" | "reconnecting" | "disconnected";
 
 export interface ConnectionState {
   status: ConnectionStatus;
-  walletBalance: number;
+  equity: number;
+  available: number;
 }
 
 export interface SummaryStats {
-  walletBalance: number;
+  equity: number;
+  available: number;
   totalPnl: number;
   sessionPnl: number;
   totalTrades: number;

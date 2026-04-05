@@ -88,10 +88,10 @@ describe("useWebSocket", () => {
     MockWebSocket.instances[0].simulateMessage({
       event: "connection.status",
       timestamp: Date.now(),
-      data: { rpc: true, wallet: "test", balance: 1000000 },
+      data: { rpc: true, wallet: "test", equity: 1000000, available: 500000 },
     });
 
-    expect(useStore.getState().connection.walletBalance).toBe(1000000);
+    expect(useStore.getState().connection.equity).toBe(1000000);
   });
 
   it("attempts reconnection with backoff on close", async () => {

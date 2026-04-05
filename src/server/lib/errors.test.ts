@@ -3,7 +3,8 @@ import {
   AppError,
   sessionKeyExpiredError,
   sessionKeyInvalidError,
-  rpcConnectionFailedError,
+  apiConnectionFailedError,
+  walletAddressMissingError,
 } from "./errors.js";
 
 describe("AppError", () => {
@@ -69,14 +70,24 @@ describe("sessionKeyInvalidError", () => {
   });
 });
 
-describe("rpcConnectionFailedError", () => {
+describe("apiConnectionFailedError", () => {
   it("returns AppError with correct fields", () => {
-    const err = rpcConnectionFailedError("https://rpc.fogo.chain", 3);
+    const err = apiConnectionFailedError(3);
     expect(err).toBeInstanceOf(AppError);
     expect(err.severity).toBe("critical");
-    expect(err.code).toBe("RPC_CONNECTION_FAILED");
+    expect(err.code).toBe("API_CONNECTION_FAILED");
     expect(err.message).toContain("3 retries");
-    expect(err.details).toContain("https://rpc.fogo.chain");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("walletAddressMissingError", () => {
+  it("returns AppError with correct fields", () => {
+    const err = walletAddressMissingError();
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("critical");
+    expect(err.code).toBe("WALLET_ADDRESS_MISSING");
+    expect(err.message).toContain("WALLET");
     expect(err.resolution).toBeDefined();
   });
 });

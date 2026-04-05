@@ -25,7 +25,8 @@ export interface WsMessage<E extends EventName = EventName> {
 export interface ConnectionStatusPayload {
   rpc: boolean;
   wallet: string;
-  balance: number;
+  equity: number;
+  available: number;
 }
 
 // AlertTriggeredPayload intentionally omits `id` (DB-generated) and `timestamp`
@@ -35,6 +36,7 @@ export interface AlertTriggeredPayload {
   severity: "info" | "warning" | "critical";
   code: string;
   message: string;
+  mode?: ModeType;
   details: string | null;
   resolution: string | null;
 }

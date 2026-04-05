@@ -71,7 +71,7 @@ export class PositionManager {
         severity: "critical",
         code: "NO_BLOCKCHAIN_CLIENT",
         message: "Blockchain client not initialized",
-        resolution: "Check RPC connection and restart the bot.",
+        resolution: "Check Hyperliquid API connection and restart the bot.",
       });
     }
 
@@ -82,8 +82,8 @@ export class PositionManager {
     let openResult;
     try {
       openResult = await contractOpenPosition({
-        connection: client.connection,
-        keypair: client.keypair,
+        exchange: client.exchange,
+        info: client.info,
         pair,
         side,
         size,
@@ -104,9 +104,10 @@ export class PositionManager {
     // Step 3: Set stop-loss
     try {
       await contractSetStopLoss({
-        connection: client.connection,
-        keypair: client.keypair,
-        positionId: openResult.positionId,
+        exchange: client.exchange,
+        pair,
+        side,
+        size,
         stopLossPrice,
       });
     } catch (err) {
@@ -114,8 +115,8 @@ export class PositionManager {
       logger.error({ err, positionId: openResult.positionId }, "Failed to set stop-loss, closing position");
       try {
         await contractClosePosition({
-          connection: client.connection,
-          keypair: client.keypair,
+          exchange: client.exchange,
+          info: client.info,
           positionId: openResult.positionId,
           pair,
           side,
@@ -161,8 +162,8 @@ export class PositionManager {
       logger.error({ dbErr, positionId: openResult.positionId }, "DB insert failed after on-chain open, closing position");
       try {
         await contractClosePosition({
-          connection: client.connection,
-          keypair: client.keypair,
+          exchange: client.exchange,
+          info: client.info,
           positionId: openResult.positionId,
           pair,
           side,
@@ -235,7 +236,7 @@ export class PositionManager {
         severity: "critical",
         code: "NO_BLOCKCHAIN_CLIENT",
         message: "Blockchain client not initialized",
-        resolution: "Check RPC connection and restart the bot.",
+        resolution: "Check Hyperliquid API connection and restart the bot.",
       });
     }
 
@@ -243,8 +244,8 @@ export class PositionManager {
     let closeResult;
     try {
       closeResult = await contractClosePosition({
-        connection: client.connection,
-        keypair: client.keypair,
+        exchange: client.exchange,
+        info: client.info,
         positionId: pos.chainPositionId,
         pair: pos.pair,
         side: pos.side,
@@ -261,7 +262,9 @@ export class PositionManager {
       });
     }
 
-    // Step 3: Write trade record
+    // Step 3: Write trade record + delete position from DB
+    // Wrapped in try/catch — on-chain close already succeeded, so DB failure
+    // must not leave funds locked or position stuck in memory
     const now = Date.now();
     assertSafeInteger(pos.size, "trade.size");
     assertSafeInteger(closeResult.exitPrice, "trade.price");
@@ -269,22 +272,31 @@ export class PositionManager {
     assertSafeInteger(closeResult.fees, "trade.fees");
     assertSafeInteger(now, "trade.timestamp");
 
-    const db = getDb();
-    db.insert(tradesTable)
-      .values({
-        mode: pos.mode,
-        pair: pos.pair,
-        side: pos.side,
-        size: pos.size,
-        price: closeResult.exitPrice,
-        pnl: closeResult.pnl,
-        fees: closeResult.fees,
-        timestamp: now,
-      })
-      .run();
+    try {
+      const db = getDb();
+      db.insert(tradesTable)
+        .values({
+          mode: pos.mode,
+          pair: pos.pair,
+          side: pos.side,
+          size: pos.size,
+          price: closeResult.exitPrice,
+          pnl: closeResult.pnl,
+          fees: closeResult.fees,
+          timestamp: now,
+        })
+        .run();
 
-    // Step 4: Delete position from DB
-    db.delete(positionsTable).where(eq(positionsTable.id, positionId)).run();
+      // Step 4: Delete position from DB
+      db.delete(positionsTable).where(eq(positionsTable.id, positionId)).run();
+    } catch (dbErr) {
+      // On-chain position is already closed — log critically but continue
+      // to release funds and clean up in-memory state
+      logger.error(
+        { dbErr, positionId, mode: pos.mode },
+        "DB write failed after on-chain close — position closed but trade record may be missing",
+      );
+    }
 
     // Step 5: Remove from in-memory map
     this.positions.delete(positionId);
@@ -336,6 +348,7 @@ export class PositionManager {
           severity: "critical",
           code: "KILL_SWITCH_TRIGGERED",
           message: `Kill switch triggered on ${pos.mode}`,
+          mode: pos.mode,
           details: `Closed ${summary.count} positions. Loss: $${Math.abs(summary.totalPnl).toFixed(2)}.`,
           resolution: "Review positions and re-allocate funds to restart the mode.",
         });
@@ -363,7 +376,13 @@ export class PositionManager {
           skipKillSwitchCheck: true,
         });
         closedPositions.push(result.position);
-        totalPnl += result.pnl;
+        // Compute actual PnL from entry vs exit price (contracts returns pnl: 0)
+        // PnL = size * (exit - entry) / entry for Long, inverted for Short
+        const priceDelta = result.exitPrice - pos.entryPrice;
+        const rawPnl = pos.entryPrice !== 0
+          ? Math.round(pos.size * priceDelta / pos.entryPrice)
+          : 0;
+        totalPnl += pos.side === "Long" ? rawPnl : -rawPnl;
       } catch (err) {
         logger.error(
           { err, positionId: pos.id, mode },

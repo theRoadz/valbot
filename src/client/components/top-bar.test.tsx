@@ -6,9 +6,10 @@ import useStore from "@client/store";
 
 beforeEach(() => {
   useStore.setState({
-    connection: { status: "disconnected", walletBalance: 0 },
+    connection: { status: "disconnected", equity: 0, available: 0 },
     stats: {
-      walletBalance: 0,
+      equity: 0,
+      available: 0,
       totalPnl: 0,
       sessionPnl: 0,
       totalTrades: 0,
@@ -34,7 +35,7 @@ describe("TopBar", () => {
 
   it('shows "Connected" with green dot when connected', () => {
     useStore.setState({
-      connection: { status: "connected", walletBalance: 0 },
+      connection: { status: "connected", equity: 0, available: 0 },
     });
     render(<TopBar />);
     expect(screen.getByText("Connected")).toBeInTheDocument();
@@ -44,7 +45,7 @@ describe("TopBar", () => {
 
   it('shows "Reconnecting..." with pulsing yellow dot', () => {
     useStore.setState({
-      connection: { status: "reconnecting", walletBalance: 0 },
+      connection: { status: "reconnecting", equity: 0, available: 0 },
     });
     render(<TopBar />);
     expect(screen.getByText("Reconnecting...")).toBeInTheDocument();
@@ -55,20 +56,22 @@ describe("TopBar", () => {
 
   it("renders all stat placeholders with zero values", () => {
     render(<TopBar />);
-    expect(screen.getByText("Wallet:")).toBeInTheDocument();
+    expect(screen.getByText("Equity:")).toBeInTheDocument();
+    expect(screen.getByText("Available:")).toBeInTheDocument();
     expect(screen.getByText("Total PnL:")).toBeInTheDocument();
     expect(screen.getByText("Session PnL:")).toBeInTheDocument();
     expect(screen.getByText("Trades:")).toBeInTheDocument();
     expect(screen.getByText("Volume:")).toBeInTheDocument();
     const zeroValues = screen.getAllByText("$0.00");
-    expect(zeroValues.length).toBe(4);
+    expect(zeroValues.length).toBe(5);
     expect(screen.getByText("0")).toBeInTheDocument();
   });
 
   it("formats stat values correctly — wallet in smallest-unit, PnL/volume in display units", () => {
     useStore.setState({
       stats: {
-        walletBalance: 1500000000, // smallest-unit: 1500 USDC after fromSmallestUnit
+        equity: 1500000000, // smallest-unit: 1500 USDC after fromSmallestUnit
+        available: 0,
         totalPnl: 250, // display units — already converted by server
         sessionPnl: -50, // display units
         totalTrades: 42,
@@ -97,7 +100,10 @@ describe("TopBar", () => {
   it("has aria-label on stat values", () => {
     render(<TopBar />);
     expect(
-      screen.getByLabelText("Wallet balance: $0.00"),
+      screen.getByLabelText("Account equity: $0.00"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Available balance: $0.00"),
     ).toBeInTheDocument();
     expect(
       screen.getByLabelText("Total profit and loss: $0.00"),
@@ -106,7 +112,7 @@ describe("TopBar", () => {
 
   it("PnL stats render with text-profit class when positive", () => {
     useStore.setState({
-      stats: { walletBalance: 0, totalPnl: 100, sessionPnl: 50, totalTrades: 0, totalVolume: 0 },
+      stats: { equity: 0, available: 0, totalPnl: 100, sessionPnl: 50, totalTrades: 0, totalVolume: 0 },
     });
     render(<TopBar />);
     const totalPnl = screen.getByLabelText(/Total profit and loss/);
@@ -117,7 +123,7 @@ describe("TopBar", () => {
 
   it("PnL stats render with text-loss class when negative", () => {
     useStore.setState({
-      stats: { walletBalance: 0, totalPnl: -100, sessionPnl: -50, totalTrades: 0, totalVolume: 0 },
+      stats: { equity: 0, available: 0, totalPnl: -100, sessionPnl: -50, totalTrades: 0, totalVolume: 0 },
     });
     render(<TopBar />);
     const totalPnl = screen.getByLabelText(/Total profit and loss/);
@@ -128,7 +134,7 @@ describe("TopBar", () => {
 
   it("PnL stats render with text-text-muted class when zero", () => {
     useStore.setState({
-      stats: { walletBalance: 0, totalPnl: 0, sessionPnl: 0, totalTrades: 0, totalVolume: 0 },
+      stats: { equity: 0, available: 0, totalPnl: 0, sessionPnl: 0, totalTrades: 0, totalVolume: 0 },
     });
     render(<TopBar />);
     const totalPnl = screen.getByLabelText(/Total profit and loss/);
@@ -139,10 +145,10 @@ describe("TopBar", () => {
 
   it("non-PnL stats remain text-text-muted", () => {
     useStore.setState({
-      stats: { walletBalance: 5000000, totalPnl: 100, sessionPnl: 50, totalTrades: 10, totalVolume: 5000 },
+      stats: { equity: 5000000, available: 0, totalPnl: 100, sessionPnl: 50, totalTrades: 10, totalVolume: 5000 },
     });
     render(<TopBar />);
-    const wallet = screen.getByLabelText(/Wallet balance/);
+    const wallet = screen.getByLabelText(/Available balance/);
     expect(wallet.className).toContain("text-text-muted");
     const trades = screen.getByLabelText(/Total trades/);
     expect(trades.className).toContain("text-text-muted");
@@ -152,7 +158,7 @@ describe("TopBar", () => {
 
   it("positive PnL values show + prefix", () => {
     useStore.setState({
-      stats: { walletBalance: 0, totalPnl: 1247.83, sessionPnl: 500, totalTrades: 0, totalVolume: 0 },
+      stats: { equity: 0, available: 0, totalPnl: 1247.83, sessionPnl: 500, totalTrades: 0, totalVolume: 0 },
     });
     render(<TopBar />);
     expect(screen.getByText("+$1,247.83")).toBeInTheDocument();
@@ -161,7 +167,7 @@ describe("TopBar", () => {
 
   it("wallet balance uses fromSmallestUnit (smallest-unit → display)", () => {
     useStore.setState({
-      stats: { walletBalance: 2000000000, totalPnl: 0, sessionPnl: 0, totalTrades: 0, totalVolume: 0 },
+      stats: { equity: 2000000000, available: 0, totalPnl: 0, sessionPnl: 0, totalTrades: 0, totalVolume: 0 },
     });
     render(<TopBar />);
     // 2000000000 / 1e6 = 2000
@@ -170,7 +176,7 @@ describe("TopBar", () => {
 
   it("totalPnl/totalVolume do NOT use fromSmallestUnit (already display units)", () => {
     useStore.setState({
-      stats: { walletBalance: 0, totalPnl: 42.5, sessionPnl: 42.5, totalTrades: 0, totalVolume: 1500 },
+      stats: { equity: 0, available: 0, totalPnl: 42.5, sessionPnl: 42.5, totalTrades: 0, totalVolume: 1500 },
     });
     render(<TopBar />);
     // If fromSmallestUnit was wrongly applied, 42.5 / 1e6 would show ~$0.00
@@ -181,7 +187,7 @@ describe("TopBar", () => {
 
   it("totalTrades uses formatInteger directly (no unit conversion)", () => {
     useStore.setState({
-      stats: { walletBalance: 0, totalPnl: 0, sessionPnl: 0, totalTrades: 1234, totalVolume: 0 },
+      stats: { equity: 0, available: 0, totalPnl: 0, sessionPnl: 0, totalTrades: 1234, totalVolume: 0 },
     });
     render(<TopBar />);
     expect(screen.getByText("1,234")).toBeInTheDocument();

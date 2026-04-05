@@ -85,9 +85,14 @@ export function TopBar() {
           </div>
           <div className="flex items-center gap-6">
             <StatItem
-              label="Wallet:"
-              value={formatCurrency(fromSmallestUnit(stats.walletBalance))}
-              ariaLabel={`Wallet balance: ${formatCurrency(fromSmallestUnit(stats.walletBalance))}`}
+              label="Equity:"
+              value={formatCurrency(fromSmallestUnit(stats.equity))}
+              ariaLabel={`Account equity: ${formatCurrency(fromSmallestUnit(stats.equity))}`}
+            />
+            <StatItem
+              label="Available:"
+              value={formatCurrency(fromSmallestUnit(stats.available))}
+              ariaLabel={`Available balance: ${formatCurrency(fromSmallestUnit(stats.available))}`}
             />
             <StatItem
               label="Total PnL:"

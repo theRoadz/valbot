@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { setupWebSocket, broadcast, cacheAlert } from './ws/broadcaster.js';
 import { initBlockchainClient, getConnectionStatus } from './blockchain/client.js';
+import { initAssetIndices } from './blockchain/contracts.js';
 import { AppError } from './lib/errors.js';
 import { logger } from './lib/logger.js';
 import { errorHandler } from './lib/error-handler.js';
@@ -62,7 +63,8 @@ try {
 
   // Initialize blockchain client — server stays running even if this fails
   try {
-    await initBlockchainClient();
+    const bcClient = await initBlockchainClient();
+    await initAssetIndices(bcClient.info);
     const status = await getConnectionStatus();
     if (status) {
       broadcast(EVENTS.CONNECTION_STATUS, status);
@@ -70,7 +72,7 @@ try {
     logger.info("Blockchain client initialized, balance broadcast");
   } catch (err) {
     // Broadcast disconnected status so dashboard shows explicit state
-    broadcast(EVENTS.CONNECTION_STATUS, { rpc: false, wallet: "", balance: 0 });
+    broadcast(EVENTS.CONNECTION_STATUS, { rpc: false, wallet: "", equity: 0, available: 0 });
 
     const appErr = err instanceof AppError
       ? err

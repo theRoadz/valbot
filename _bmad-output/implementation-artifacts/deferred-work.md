@@ -71,3 +71,11 @@
 ## Deferred from: code review of story 2-5 (2026-04-04)
 
 - ~~`setModeConfig` can overwrite `stats` via `Partial<ModeConfig>` spread without calling `aggregateSummaryStats()` — summary stats silently diverge until next STATS_UPDATED event~~ — resolved: added `aggregateSummaryStats()` call to `setModeConfig` [src/client/store/index.ts:125]
+
+## Deferred from: code review of story 8-2-hyperliquid-blockchain-layer-rewrite (2026-04-05)
+
+- ~~W1: `status.ts` always returns hardcoded `disconnected`~~ — resolved: wired `getConnectionStatus()` into `/api/status` with fallback
+- ~~W2: Asset cache never refreshes after init~~ — resolved: added 1h TTL with background refresh on cache miss
+- W3: `loadFromDb` recovered positions use fabricated `chainPositionId: "recovered-${id}"` — close order may use stale base size if on-chain position changed during downtime [position-manager.ts:406]. Requires DB migration — Story 3.2 reconciliation.
+- ~~W4: `getConnectionStatus` has no stale-while-revalidate~~ — resolved: returns stale cached data on API failure instead of throwing
+- ~~W5: Hardcoded 0.025% taker fee~~ — resolved: fee rate now configurable via `TAKER_FEE_RATE` env var (defaults to 0.025%)

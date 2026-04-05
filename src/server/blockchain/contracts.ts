@@ -1,13 +1,76 @@
-// TODO: Replace stubs with real Valiant Perps contract calls
-
-import type { Connection, Keypair } from "@solana/web3.js";
+import type { ExchangeClient, InfoClient } from "@nktkas/hyperliquid";
 import type { TradeSide } from "../../shared/types.js";
+import { logger } from "../lib/logger.js";
+import { AppError } from "../lib/errors.js";
+
+// Estimated taker fee rate — Hyperliquid doesn't return fees in order responses,
+// so we approximate. Actual fees vary by volume tier (0.01%-0.035%).
+// Override via TAKER_FEE_RATE env var if needed.
+const TAKER_FEE_RATE = parseFloat(process.env.TAKER_FEE_RATE || "0.00025");
+
+// --- Asset index cache ---
+
+interface AssetInfo {
+  index: number;
+  coin: string;
+  szDecimals: number;
+}
+
+const assetCache = new Map<string, AssetInfo>();
+const ASSET_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+let assetCacheExpiry = 0;
+let cachedInfoClient: InfoClient | null = null;
+
+export async function initAssetIndices(
+  info: InfoClient,
+): Promise<void> {
+  cachedInfoClient = info;
+  await refreshAssetCache(info);
+}
+
+async function refreshAssetCache(info: InfoClient): Promise<void> {
+  const meta = await info.meta();
+  assetCache.clear();
+  for (let i = 0; i < meta.universe.length; i++) {
+    const asset = meta.universe[i];
+    assetCache.set(asset.name, {
+      index: i,
+      coin: asset.name,
+      szDecimals: asset.szDecimals,
+    });
+  }
+  assetCacheExpiry = Date.now() + ASSET_CACHE_TTL_MS;
+  logger.info({ assetCount: assetCache.size }, "Asset indices loaded");
+}
+
+export function resolveAsset(
+  pair: string,
+): AssetInfo {
+  // Convert "BTC/USDC" → "BTC"
+  const coin = pair.split("/")[0];
+  const info = assetCache.get(coin);
+  if (!info) {
+    // Trigger background refresh if cache is stale — next call may succeed
+    if (cachedInfoClient && Date.now() > assetCacheExpiry) {
+      refreshAssetCache(cachedInfoClient).catch((err) =>
+        logger.warn({ err }, "Background asset cache refresh failed"),
+      );
+    }
+    throw new AppError({
+      severity: "warning",
+      code: "ASSET_NOT_FOUND",
+      message: `Unknown asset: ${coin} (from pair ${pair})`,
+      resolution: `Check pair format (e.g., "BTC/USDC"). Asset may not be listed on Hyperliquid.`,
+    });
+  }
+  return info;
+}
 
 // --- Param / Result interfaces ---
 
 export interface OpenPositionParams {
-  connection: Connection;
-  keypair: Keypair;
+  exchange: ExchangeClient;
+  info: InfoClient;
   pair: string;
   side: TradeSide;
   size: number; // smallest-unit
@@ -18,11 +81,12 @@ export interface OpenPositionResult {
   txHash: string;
   positionId: string;
   entryPrice: number; // smallest-unit
+  actualSize?: number; // smallest-unit — filled notional; undefined if not available
 }
 
 export interface ClosePositionParams {
-  connection: Connection;
-  keypair: Keypair;
+  exchange: ExchangeClient;
+  info: InfoClient;
   positionId: string;
   pair: string;
   side: TradeSide;
@@ -37,9 +101,10 @@ export interface ClosePositionResult {
 }
 
 export interface SetStopLossParams {
-  connection: Connection;
-  keypair: Keypair;
-  positionId: string;
+  exchange: ExchangeClient;
+  pair: string;
+  side: TradeSide;
+  size: number; // smallest-unit (position size for the stop-loss)
   stopLossPrice: number; // smallest-unit
 }
 
@@ -47,44 +112,257 @@ export interface SetStopLossResult {
   txHash: string;
 }
 
-// --- Module-level counter for unique mock txHashes ---
-let txCounter = 0;
+// --- Helpers ---
 
-function mockTxHash(): string {
-  return `mock-tx-${Date.now()}-${++txCounter}`;
+function roundToSzDecimals(value: number, szDecimals: number): string {
+  return value.toFixed(szDecimals);
 }
 
-// --- Stub implementations ---
+function roundPrice(price: number): string {
+  // Hyperliquid prices: up to 5 significant figures
+  if (price >= 10000) return price.toFixed(0);
+  if (price >= 1000) return price.toFixed(1);
+  if (price >= 100) return price.toFixed(2);
+  if (price >= 10) return price.toFixed(3);
+  if (price >= 1) return price.toFixed(4);
+  return price.toFixed(5);
+}
+
+async function getMidPrice(
+  info: InfoClient,
+  coin: string,
+): Promise<number> {
+  const mids = await info.allMids();
+  const midStr = (mids as Record<string, string>)[coin];
+  if (!midStr) {
+    throw new AppError({
+      severity: "warning",
+      code: "MID_PRICE_UNAVAILABLE",
+      message: `No mid price available for ${coin}`,
+      resolution: "Asset may be delisted or temporarily unavailable.",
+    });
+  }
+  const mid = parseFloat(midStr);
+  if (!Number.isFinite(mid) || mid <= 0) {
+    throw new AppError({
+      severity: "warning",
+      code: "MID_PRICE_INVALID",
+      message: `Invalid mid price for ${coin}: "${midStr}"`,
+      resolution: "Market data may be stale. Try again shortly.",
+    });
+  }
+  return mid;
+}
+
+// --- Contract functions ---
 
 export async function openPosition(
-  _params: OpenPositionParams,
+  params: OpenPositionParams,
 ): Promise<OpenPositionResult> {
-  await new Promise((r) => setTimeout(r, 50));
-  return {
-    txHash: mockTxHash(),
-    positionId: `pos-${Date.now()}-${txCounter}`,
-    entryPrice: 100_000_000, // 100 USDC in smallest-unit
-  };
+  const { exchange, info, pair, side, size, slippage } = params;
+  const asset = resolveAsset(pair);
+  const isBuy = side === "Long";
+
+  // Get mid price and calculate limit with slippage
+  const midPrice = await getMidPrice(info, asset.coin);
+  const slippageMultiplier = isBuy ? 1 + slippage / 100 : 1 - slippage / 100;
+  const limitPrice = midPrice * slippageMultiplier;
+
+  // Convert size from smallest-unit to display-unit for order
+  const sizeDisplay = size / 1e6;
+  // Convert to base currency units: sizeDisplay (USDC) / midPrice = base units
+  const baseSize = sizeDisplay / midPrice;
+
+  const result = await exchange.order({
+    orders: [
+      {
+        a: asset.index,
+        b: isBuy,
+        p: roundPrice(limitPrice),
+        s: roundToSzDecimals(baseSize, asset.szDecimals),
+        r: false,
+        t: { limit: { tif: "Ioc" } },
+      },
+    ],
+    grouping: "na",
+  });
+
+  // Parse response
+  const status = result.response.data.statuses[0];
+  if (!status || typeof status === "string" || "error" in status) {
+    const errorMsg =
+      typeof status === "string"
+        ? status
+        : status && "error" in status
+          ? status.error
+          : "Unknown order error";
+    throw new AppError({
+      severity: "warning",
+      code: "ORDER_FAILED",
+      message: `Failed to open ${side} position on ${pair}: ${errorMsg}`,
+      resolution: "Check order parameters and try again.",
+    });
+  }
+
+  if ("filled" in status) {
+    const avgPx = parseFloat(status.filled.avgPx);
+    const totalSz = parseFloat(status.filled.totalSz);
+    const entryPriceSmallest = Math.round(avgPx * 1e6);
+
+    // Detect partial fills — actual filled size vs intended base size
+    const filledNotional = Math.round(totalSz * avgPx * 1e6);
+    if (filledNotional < size * 0.95) {
+      logger.warn(
+        { pair, side, requestedSize: size, filledNotional, totalSz, avgPx },
+        "Partial fill detected on IOC open — filled significantly less than requested",
+      );
+    }
+
+    return {
+      txHash: `hl-${status.filled.oid}`,
+      positionId: `${asset.coin}-${side}`,
+      entryPrice: entryPriceSmallest,
+      actualSize: filledNotional,
+    };
+  }
+
+  // "resting" means not filled (IOC should fill or cancel, so this is unexpected)
+  throw new AppError({
+    severity: "warning",
+    code: "ORDER_NOT_FILLED",
+    message: `IOC order for ${pair} was not filled`,
+    resolution: "Market may be illiquid. Try again or increase slippage.",
+  });
 }
 
 export async function closePosition(
   params: ClosePositionParams,
 ): Promise<ClosePositionResult> {
-  await new Promise((r) => setTimeout(r, 50));
-  const fees = Math.round(params.size * 0.001); // 0.1% of size
-  return {
-    txHash: mockTxHash(),
-    exitPrice: 100_000_000, // 100 USDC in smallest-unit
-    pnl: 0, // break-even by default
-    fees,
-  };
+  const { exchange, info, pair, side, size } = params;
+  const asset = resolveAsset(pair);
+  // Close = opposite side, reduce-only
+  const isBuy = side === "Short"; // Closing a Short means buying back
+
+  const midPrice = await getMidPrice(info, asset.coin);
+  // 1% slippage for closes — generous to avoid CLOSE_NOT_FILLED during volatility
+  const slippageMultiplier = isBuy ? 1.01 : 0.99;
+  const limitPrice = midPrice * slippageMultiplier;
+
+  const sizeDisplay = size / 1e6;
+  const baseSize = sizeDisplay / midPrice;
+
+  const result = await exchange.order({
+    orders: [
+      {
+        a: asset.index,
+        b: isBuy,
+        p: roundPrice(limitPrice),
+        s: roundToSzDecimals(baseSize, asset.szDecimals),
+        r: true, // reduce-only
+        t: { limit: { tif: "Ioc" } },
+      },
+    ],
+    grouping: "na",
+  });
+
+  const status = result.response.data.statuses[0];
+  if (!status || typeof status === "string" || "error" in status) {
+    const errorMsg =
+      typeof status === "string"
+        ? status
+        : status && "error" in status
+          ? status.error
+          : "Unknown order error";
+    throw new AppError({
+      severity: "warning",
+      code: "CLOSE_FAILED",
+      message: `Failed to close ${side} position on ${pair}: ${errorMsg}`,
+      resolution: "Check position and try again.",
+    });
+  }
+
+  if ("filled" in status) {
+    const avgPx = parseFloat(status.filled.avgPx);
+    const exitPriceSmallest = Math.round(avgPx * 1e6);
+    // Approximate PnL: (exitPrice - entryPrice) * baseSize for Long, inverse for Short
+    // Actual PnL will be refined by position-manager using stored entryPrice
+    // Here we return 0 for pnl — the caller computes actual pnl from entry vs exit
+    // Fees: Hyperliquid charges ~0.025% taker fee
+    const totalSz = parseFloat(status.filled.totalSz);
+    const fees = Math.round(totalSz * avgPx * TAKER_FEE_RATE * 1e6);
+    return {
+      txHash: `hl-${status.filled.oid}`,
+      exitPrice: exitPriceSmallest,
+      pnl: 0, // caller computes actual pnl
+      fees,
+    };
+  }
+
+  throw new AppError({
+    severity: "warning",
+    code: "CLOSE_NOT_FILLED",
+    message: `IOC close order for ${pair} was not filled`,
+    resolution: "Market may be illiquid. Try again.",
+  });
 }
 
 export async function setStopLoss(
-  _params: SetStopLossParams,
+  params: SetStopLossParams,
 ): Promise<SetStopLossResult> {
-  await new Promise((r) => setTimeout(r, 50));
+  const { exchange, pair, side, size, stopLossPrice } = params;
+  const asset = resolveAsset(pair);
+  // Stop-loss: when price hits trigger, sell (for Long) or buy (for Short)
+  const isBuy = side === "Short"; // SL for Short = buy back
+
+  const triggerPx = stopLossPrice / 1e6;
+  // Use market order when triggered
+  const sizeDisplay = size / 1e6;
+  // We need base size — approximate from trigger price
+  const baseSize = sizeDisplay / triggerPx;
+
+  const result = await exchange.order({
+    orders: [
+      {
+        a: asset.index,
+        b: isBuy,
+        p: roundPrice(triggerPx), // limit price = trigger price for SL
+        s: roundToSzDecimals(baseSize, asset.szDecimals),
+        r: true, // reduce-only
+        t: {
+          trigger: {
+            isMarket: true,
+            triggerPx: roundPrice(triggerPx),
+            tpsl: "sl",
+          },
+        },
+      },
+    ],
+    grouping: "positionTpsl",
+  });
+
+  const status = result.response.data.statuses[0];
+  if (!status || (typeof status !== "string" && "error" in status)) {
+    const errorMsg =
+      status && typeof status !== "string" && "error" in status
+        ? status.error
+        : "Unknown error";
+    throw new AppError({
+      severity: "warning",
+      code: "STOP_LOSS_FAILED",
+      message: `Failed to set stop-loss on ${pair}: ${errorMsg}`,
+      resolution: "Check stop-loss price and try again.",
+    });
+  }
+
+  // Trigger orders return "waitingForTrigger" on success, or "resting" with an oid
+  let oid = 0;
+  if (typeof status === "string") {
+    // "waitingForTrigger" — no oid available for trigger orders
+    logger.info({ pair, status }, "Stop-loss trigger order accepted");
+  } else if ("resting" in status) {
+    oid = status.resting.oid;
+  }
   return {
-    txHash: mockTxHash(),
+    txHash: `hl-sl-${oid || Date.now()}`,
   };
 }

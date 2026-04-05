@@ -35,7 +35,8 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-03
-last_updated: 2026-04-04
+last_updated: 2026-04-05
+# last review: 2026-04-05 code review of story 8-2, all patches applied
 # last review: 2026-04-04 code review of story 2-5, all patches applied
 # last dev: 2026-04-04 story 2-5 implementation started
 # last story created: 2026-04-04 story 2-5

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { ModeConfig, ModeType } from "../../shared/types.js";
 import { fromSmallestUnit } from "../../shared/types.js";
 import { getEngine, getModeStatus } from "../engine/index.js";
+import { getConnectionStatus } from "../blockchain/client.js";
 
 function defaultModeConfig(mode: ModeType): ModeConfig {
   return {
@@ -34,6 +35,18 @@ function getModeConfig(mode: ModeType): ModeConfig {
   }
 }
 
+async function getConnectionData() {
+  try {
+    const status = await getConnectionStatus();
+    if (status) {
+      return { status: "connected" as const, equity: status.equity, available: status.available };
+    }
+  } catch {
+    // Connection query failed — fall back to disconnected
+  }
+  return { status: "disconnected" as const, equity: 0, available: 0 };
+}
+
 export default async function statusRoutes(fastify: FastifyInstance) {
   fastify.get("/api/status", async () => {
     let positions: unknown[] = [];
@@ -52,7 +65,7 @@ export default async function statusRoutes(fastify: FastifyInstance) {
       },
       positions,
       trades: [],
-      connection: { status: "disconnected", walletBalance: 0 },
+      connection: await getConnectionData(),
     };
   });
 }

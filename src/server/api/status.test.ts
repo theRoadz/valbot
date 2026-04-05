@@ -2,6 +2,13 @@ import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } 
 import Fastify, { type FastifyInstance } from "fastify";
 import statusRoutes from "./status.js";
 
+// Mock blockchain client module
+vi.mock("../blockchain/client.js", () => ({
+  getConnectionStatus: vi.fn(() => Promise.resolve(null)),
+}));
+
+import { getConnectionStatus } from "../blockchain/client.js";
+
 // Mock engine module
 vi.mock("../engine/index.js", () => {
   let mockEngine: unknown = null;
@@ -61,7 +68,7 @@ describe("status route", () => {
 
     expect(body.positions).toEqual([]);
     expect(body.trades).toEqual([]);
-    expect(body.connection).toEqual({ status: "disconnected", walletBalance: 0 });
+    expect(body.connection).toEqual({ status: "disconnected", equity: 0, available: 0 });
   });
 
   it("GET /api/status returns live data from engine when initialized", async () => {
@@ -100,5 +107,30 @@ describe("status route", () => {
     // Positions from engine
     expect(body.positions).toHaveLength(1);
     expect(body.positions[0].pair).toBe("SOL/USDC");
+  });
+
+  it("GET /api/status returns live connection data when blockchain client is connected", async () => {
+    vi.mocked(getConnectionStatus).mockResolvedValueOnce({
+      rpc: true,
+      wallet: "0x1234",
+      equity: 150_000_000,
+      available: 80_000_000,
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/status" });
+    expect(res.statusCode).toBe(200);
+
+    const body = res.json();
+    expect(body.connection).toEqual({ status: "connected", equity: 150_000_000, available: 80_000_000 });
+  });
+
+  it("GET /api/status returns disconnected when getConnectionStatus throws", async () => {
+    vi.mocked(getConnectionStatus).mockRejectedValueOnce(new Error("API down"));
+
+    const res = await app.inject({ method: "GET", url: "/api/status" });
+    expect(res.statusCode).toBe(200);
+
+    const body = res.json();
+    expect(body.connection).toEqual({ status: "disconnected", equity: 0, available: 0 });
   });
 });

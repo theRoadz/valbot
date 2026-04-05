@@ -6,9 +6,10 @@ import { EVENTS } from "@shared/events";
 describe("ValBotStore", () => {
   beforeEach(() => {
     useStore.setState({
-      connection: { status: "disconnected", walletBalance: 0 },
+      connection: { status: "disconnected", equity: 0, available: 0 },
       stats: {
-        walletBalance: 0,
+        equity: 0,
+        available: 0,
         totalPnl: 0,
         sessionPnl: 0,
         totalTrades: 0,
@@ -53,8 +54,8 @@ describe("ValBotStore", () => {
   it("initializes with disconnected status and zero stats", () => {
     const state = useStore.getState();
     expect(state.connection.status).toBe("disconnected");
-    expect(state.connection.walletBalance).toBe(0);
-    expect(state.stats.walletBalance).toBe(0);
+    expect(state.connection.equity).toBe(0);
+    expect(state.stats.equity).toBe(0);
     expect(state.stats.totalPnl).toBe(0);
     expect(state.stats.sessionPnl).toBe(0);
     expect(state.stats.totalTrades).toBe(0);
@@ -72,23 +73,20 @@ describe("ValBotStore", () => {
     expect(useStore.getState().connection.status).toBe("disconnected");
   });
 
-  it("setWalletBalance updates both connection and stats walletBalance", () => {
-    useStore.getState().setWalletBalance(5000000);
-    expect(useStore.getState().connection.walletBalance).toBe(5000000);
-    expect(useStore.getState().stats.walletBalance).toBe(5000000);
-  });
-
   it("updateConnection updates status based on rpc flag and balance in both places", () => {
     useStore.getState().updateConnection({
       rpc: true,
       wallet: "abc123",
-      balance: 10000000,
+      equity: 10000000,
+      available: 5000000,
     });
 
     const state = useStore.getState();
     expect(state.connection.status).toBe("connected");
-    expect(state.connection.walletBalance).toBe(10000000);
-    expect(state.stats.walletBalance).toBe(10000000);
+    expect(state.connection.equity).toBe(10000000);
+    expect(state.connection.available).toBe(5000000);
+    expect(state.stats.equity).toBe(10000000);
+    expect(state.stats.available).toBe(5000000);
   });
 
   it("updateConnection sets disconnected when rpc is false", () => {
@@ -97,7 +95,8 @@ describe("ValBotStore", () => {
     useStore.getState().updateConnection({
       rpc: false,
       wallet: "",
-      balance: 0,
+      equity: 0,
+      available: 0,
     });
 
     expect(useStore.getState().connection.status).toBe("disconnected");
@@ -107,13 +106,15 @@ describe("ValBotStore", () => {
     useStore.getState().handleWsMessage({
       event: EVENTS.CONNECTION_STATUS,
       timestamp: Date.now(),
-      data: { rpc: true, wallet: "wallet123", balance: 7500000 },
+      data: { rpc: true, wallet: "wallet123", equity: 7500000, available: 3000000 },
     });
 
     const state = useStore.getState();
     expect(state.connection.status).toBe("connected");
-    expect(state.connection.walletBalance).toBe(7500000);
-    expect(state.stats.walletBalance).toBe(7500000);
+    expect(state.connection.equity).toBe(7500000);
+    expect(state.connection.available).toBe(3000000);
+    expect(state.stats.equity).toBe(7500000);
+    expect(state.stats.available).toBe(3000000);
   });
 
   it("handleWsMessage ignores unknown events", () => {
@@ -353,7 +354,7 @@ describe("ValBotStore", () => {
         },
         positions: [],
         trades: [],
-        connection: { status: "connected", walletBalance: 5000 },
+        connection: { status: "connected", equity: 5000, available: 0 },
       });
 
       const state = useStore.getState();
@@ -361,10 +362,10 @@ describe("ValBotStore", () => {
       expect(state.modes.volumeMax.allocation).toBe(500);
       expect(state.modes.volumeMax.stats.pnl).toBe(100);
       expect(state.connection.status).toBe("connected");
-      expect(state.connection.walletBalance).toBe(5000);
+      expect(state.connection.equity).toBe(5000);
     });
 
-    it("loadInitialStatus sets stats.walletBalance from connection data", () => {
+    it("loadInitialStatus sets stats.equity from connection data", () => {
       useStore.getState().loadInitialStatus({
         modes: {
           volumeMax: {
@@ -394,10 +395,10 @@ describe("ValBotStore", () => {
         },
         positions: [],
         trades: [],
-        connection: { status: "connected", walletBalance: 9999000 },
+        connection: { status: "connected", equity: 9999000, available: 0 },
       });
 
-      expect(useStore.getState().stats.walletBalance).toBe(9999000);
+      expect(useStore.getState().stats.equity).toBe(9999000);
     });
 
     it("loadInitialStatus populates aggregated stats from mode stats", () => {
@@ -430,7 +431,7 @@ describe("ValBotStore", () => {
         },
         positions: [],
         trades: [],
-        connection: { status: "connected", walletBalance: 7000 },
+        connection: { status: "connected", equity: 7000, available: 0 },
       });
 
       const stats = useStore.getState().stats;
@@ -438,7 +439,7 @@ describe("ValBotStore", () => {
       expect(stats.sessionPnl).toBe(150);
       expect(stats.totalTrades).toBe(8); // 5 + 3
       expect(stats.totalVolume).toBe(4000); // 3000 + 1000
-      expect(stats.walletBalance).toBe(7000);
+      expect(stats.equity).toBe(7000);
     });
 
     it("STATS_UPDATED recalculates aggregated summary stats", () => {
@@ -495,14 +496,14 @@ describe("ValBotStore", () => {
       expect(stats.totalVolume).toBe(6500); // 6000 + 500
     });
 
-    it("stats.walletBalance comes from connection events not mode stats", () => {
+    it("stats.equity comes from connection events not mode stats", () => {
       useStore.getState().handleWsMessage({
         event: EVENTS.CONNECTION_STATUS,
         timestamp: Date.now(),
-        data: { rpc: true, wallet: "wallet1", balance: 5000000 },
+        data: { rpc: true, wallet: "wallet1", equity: 5000000, available: 2000000 },
       });
 
-      expect(useStore.getState().stats.walletBalance).toBe(5000000);
+      expect(useStore.getState().stats.equity).toBe(5000000);
 
       // STATS_UPDATED should NOT change walletBalance
       useStore.getState().handleWsMessage({
@@ -511,7 +512,7 @@ describe("ValBotStore", () => {
         data: { mode: "volumeMax", pnl: 100, trades: 5, volume: 3000, allocated: 500, remaining: 400 },
       });
 
-      expect(useStore.getState().stats.walletBalance).toBe(5000000);
+      expect(useStore.getState().stats.equity).toBe(5000000);
     });
 
     it("aggregation works correctly when one mode has zero stats", () => {

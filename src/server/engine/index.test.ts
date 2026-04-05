@@ -17,6 +17,25 @@ vi.mock("../blockchain/client.js", () => ({
   getConnectionStatus: vi.fn().mockResolvedValue(null),
 }));
 
+// Mock contracts (needed by position manager)
+vi.mock("../blockchain/contracts.js", () => ({
+  openPosition: vi.fn().mockResolvedValue({
+    txHash: "mock-tx-open",
+    positionId: "pos-mock-1",
+    entryPrice: 100_000_000,
+  }),
+  closePosition: vi.fn().mockResolvedValue({
+    txHash: "mock-tx-close",
+    exitPrice: 100_000_000,
+    pnl: 0,
+    fees: 10_000,
+  }),
+  setStopLoss: vi.fn().mockResolvedValue({
+    txHash: "mock-tx-sl",
+  }),
+  initAssetIndices: vi.fn().mockResolvedValue(undefined),
+}));
+
 function setupTestDb() {
   process.env.VALBOT_DB_PATH = TEST_DB_PATH;
   _resetDbState();

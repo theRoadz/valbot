@@ -40,7 +40,7 @@ export function sessionKeyInvalidError(details?: string): AppError {
     message: "Session key is invalid — check .env and re-extract if needed",
     details,
     resolution:
-      "Verify SESSION_KEY in .env is a valid base58-encoded secret key. Re-extract from browser console if needed.",
+      "Verify SESSION_KEY in .env is a valid 0x-prefixed 32-byte hex key. Re-extract from Valiant browser console if needed.",
   });
 }
 
@@ -100,16 +100,24 @@ export function modeKillSwitchedError(mode: string): AppError {
   });
 }
 
-export function rpcConnectionFailedError(
-  url: string,
+export function apiConnectionFailedError(
   attempts: number,
 ): AppError {
   return new AppError({
     severity: "critical",
-    code: "RPC_CONNECTION_FAILED",
-    message: `RPC connection failed after ${attempts} retries — check network and RPC_URL`,
-    details: `Failed to connect to ${url}`,
+    code: "API_CONNECTION_FAILED",
+    message: `Hyperliquid API connection failed after ${attempts} retries`,
     resolution:
-      "1. Check your internet connection\n2. Verify RPC_URL in .env is correct\n3. Try an alternative FOGOChain RPC endpoint\n4. Restart the bot",
+      "1. Check your internet connection\n2. Verify WALLET address in .env is correct\n3. Check Hyperliquid API status\n4. Restart the bot",
+  });
+}
+
+export function walletAddressMissingError(): AppError {
+  return new AppError({
+    severity: "critical",
+    code: "WALLET_ADDRESS_MISSING",
+    message: "WALLET address not found in .env",
+    resolution:
+      "Add WALLET=0x<your-master-wallet-address> to .env. This is the master wallet address from Valiant, needed for Hyperliquid info queries.",
   });
 }

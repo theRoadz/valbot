@@ -5,10 +5,11 @@ import { EVENTS, type ConnectionStatusPayload, type WsMessage } from "@shared/ev
 let alertIdCounter = Date.now();
 const VALID_SEVERITIES = new Set(["info", "warning", "critical"]);
 
-function aggregateSummaryStats(modes: ValBotStore["modes"], walletBalance: number): SummaryStats {
+function aggregateSummaryStats(modes: ValBotStore["modes"], equity: number, available: number): SummaryStats {
   const allModes = Object.values(modes);
   return {
-    walletBalance,
+    equity,
+    available,
     totalPnl: allModes.reduce((sum, m) => sum + m.stats.pnl, 0),
     sessionPnl: allModes.reduce((sum, m) => sum + m.stats.pnl, 0),
     totalTrades: allModes.reduce((sum, m) => sum + m.stats.trades, 0),
@@ -37,7 +38,8 @@ function createDefaultMode(mode: ModeType): ModeStoreEntry {
 interface ValBotStore {
   connection: {
     status: ConnectionStatus;
-    walletBalance: number;
+    equity: number;
+    available: number;
   };
   stats: SummaryStats;
   alerts: Alert[];
@@ -47,7 +49,6 @@ interface ValBotStore {
     arbitrage: ModeStoreEntry;
   };
   setConnectionStatus: (status: ConnectionStatus) => void;
-  setWalletBalance: (balance: number) => void;
   updateConnection: (data: ConnectionStatusPayload) => void;
   addAlert: (alert: Alert) => void;
   dismissAlert: (id: number) => void;
@@ -61,10 +62,12 @@ interface ValBotStore {
 const useStore = create<ValBotStore>()((set) => ({
   connection: {
     status: "disconnected",
-    walletBalance: 0,
+    equity: 0,
+    available: 0,
   },
   stats: {
-    walletBalance: 0,
+    equity: 0,
+    available: 0,
     totalPnl: 0,
     sessionPnl: 0,
     totalTrades: 0,
@@ -80,18 +83,14 @@ const useStore = create<ValBotStore>()((set) => ({
     set((state) => ({
       connection: { ...state.connection, status },
     })),
-  setWalletBalance: (balance) =>
-    set((state) => ({
-      connection: { ...state.connection, walletBalance: balance },
-      stats: { ...state.stats, walletBalance: balance },
-    })),
   updateConnection: (data) =>
     set((state) => ({
       connection: {
         status: data.rpc ? "connected" : "disconnected",
-        walletBalance: data.balance,
+        equity: data.equity,
+        available: data.available,
       },
-      stats: { ...state.stats, walletBalance: data.balance },
+      stats: { ...state.stats, equity: data.equity, available: data.available },
     })),
   addAlert: (alert) =>
     set((state) => ({ alerts: [...state.alerts, alert] })),
@@ -119,7 +118,7 @@ const useStore = create<ValBotStore>()((set) => ({
       };
       return {
         modes,
-        stats: aggregateSummaryStats(modes, state.stats.walletBalance),
+        stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available),
       };
     }),
   setModeConfig: (mode, config) =>
@@ -130,7 +129,7 @@ const useStore = create<ValBotStore>()((set) => ({
       };
       return {
         modes,
-        stats: aggregateSummaryStats(modes, state.stats.walletBalance),
+        stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available),
       };
     }),
   loadInitialStatus: (data) =>
@@ -154,9 +153,10 @@ const useStore = create<ValBotStore>()((set) => ({
         modes,
         connection: {
           status: data.connection.status,
-          walletBalance: data.connection.walletBalance,
+          equity: data.connection.equity,
+          available: data.connection.available,
         },
-        stats: aggregateSummaryStats(modes, data.connection.walletBalance),
+        stats: aggregateSummaryStats(modes, data.connection.equity, data.connection.available),
       };
     }),
   handleWsMessage: (message) => {
@@ -165,14 +165,16 @@ const useStore = create<ValBotStore>()((set) => ({
       if (
         typeof data?.rpc === "boolean" &&
         typeof data?.wallet === "string" &&
-        typeof data?.balance === "number"
+        typeof data?.equity === "number" &&
+        typeof data?.available === "number"
       ) {
         set((state) => ({
           connection: {
             status: data.rpc ? "connected" : "disconnected",
-            walletBalance: data.balance,
+            equity: data.equity,
+            available: data.available,
           },
-          stats: { ...state.stats, walletBalance: data.balance },
+          stats: { ...state.stats, equity: data.equity, available: data.available },
         }));
       }
     } else if (message.event === EVENTS.ALERT_TRIGGERED) {
@@ -263,7 +265,7 @@ const useStore = create<ValBotStore>()((set) => ({
           };
           return {
             modes,
-            stats: aggregateSummaryStats(modes, state.stats.walletBalance),
+            stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available),
           };
         });
       }
@@ -314,7 +316,7 @@ const useStore = create<ValBotStore>()((set) => ({
           };
           return {
             modes,
-            stats: aggregateSummaryStats(modes, state.stats.walletBalance),
+            stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available),
           };
         });
       }

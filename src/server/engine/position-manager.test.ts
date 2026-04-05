@@ -12,9 +12,10 @@ const TEST_DB_PATH = path.resolve(process.cwd(), "test-position-manager.db");
 // Mock blockchain client
 vi.mock("../blockchain/client.js", () => ({
   getBlockchainClient: () => ({
-    connection: null as never,
-    keypair: null as never,
-    walletAddress: null as never,
+    exchange: null as never,
+    info: null as never,
+    walletAddress: "0x0000000000000000000000000000000000000000",
+    agentAddress: "0x0000000000000000000000000000000000000001",
   }),
 }));
 
