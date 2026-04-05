@@ -1,9 +1,12 @@
 import { create } from "zustand";
-import type { ConnectionStatus, SummaryStats, Alert, ModeType, ModeStatus, ModeConfig, ModeStats, StatusResponse } from "@shared/types";
+import type { ConnectionStatus, SummaryStats, Alert, ModeType, ModeStatus, ModeConfig, ModeStats, StatusResponse, Trade } from "@shared/types";
 import { EVENTS, type ConnectionStatusPayload, type WsMessage } from "@shared/events";
 
 let alertIdCounter = Date.now();
+let tradeIdCounter = 0;
 const VALID_SEVERITIES = new Set(["info", "warning", "critical"]);
+const VALID_MODES = new Set<string>(["volumeMax", "profitHunter", "arbitrage"]);
+const VALID_SIDES = new Set<string>(["Long", "Short"]);
 
 function aggregateSummaryStats(modes: ValBotStore["modes"], equity: number, available: number): SummaryStats {
   const allModes = Object.values(modes);
@@ -43,6 +46,7 @@ interface ValBotStore {
   };
   stats: SummaryStats;
   alerts: Alert[];
+  trades: Trade[];
   modes: {
     volumeMax: ModeStoreEntry;
     profitHunter: ModeStoreEntry;
@@ -74,6 +78,7 @@ const useStore = create<ValBotStore>()((set) => ({
     totalVolume: 0,
   },
   alerts: [],
+  trades: [],
   modes: {
     volumeMax: createDefaultMode("volumeMax"),
     profitHunter: createDefaultMode("profitHunter"),
@@ -149,8 +154,13 @@ const useStore = create<ValBotStore>()((set) => ({
             : modes[key].killSwitchDetail,
         };
       }
+      const loadedTrades = data.trades?.slice(0, 500) ?? [];
+      if (loadedTrades.length > 0) {
+        tradeIdCounter = Math.max(tradeIdCounter, ...loadedTrades.map((t) => t.id));
+      }
       return {
         modes,
+        trades: loadedTrades,
         connection: {
           status: data.connection.status,
           equity: data.connection.equity,
@@ -293,11 +303,11 @@ const useStore = create<ValBotStore>()((set) => ({
       const mode = data?.mode as ModeType | undefined;
       if (
         mode &&
-        typeof data.pnl === "number" &&
-        typeof data.trades === "number" &&
-        typeof data.volume === "number" &&
-        typeof data.allocated === "number" &&
-        typeof data.remaining === "number"
+        Number.isFinite(data.pnl) &&
+        Number.isFinite(data.trades) &&
+        Number.isFinite(data.volume) &&
+        Number.isFinite(data.allocated) &&
+        Number.isFinite(data.remaining)
       ) {
         set((state) => {
           if (!state.modes[mode]) return state;
@@ -321,7 +331,34 @@ const useStore = create<ValBotStore>()((set) => ({
         });
       }
     } else if (message.event === EVENTS.TRADE_EXECUTED) {
-      // No-op — trade log (Story 2.6) will consume these
+      const data = message.data as Record<string, unknown>;
+      if (
+        typeof data?.mode === "string" &&
+        VALID_MODES.has(data.mode) &&
+        typeof data?.pair === "string" &&
+        data.pair.length > 0 &&
+        typeof data?.side === "string" &&
+        VALID_SIDES.has(data.side) &&
+        Number.isFinite(data?.size) &&
+        Number.isFinite(data?.price) &&
+        Number.isFinite(data?.pnl) &&
+        Number.isFinite(data?.fees)
+      ) {
+        const trade: Trade = {
+          id: ++tradeIdCounter,
+          mode: data.mode as ModeType,
+          pair: data.pair,
+          side: data.side as Trade["side"],
+          size: data.size,
+          price: data.price,
+          pnl: data.pnl,
+          fees: data.fees,
+          timestamp: message.timestamp,
+        };
+        set((state) => ({
+          trades: [...state.trades, trade].slice(-500),
+        }));
+      }
     } else if (message.event === EVENTS.POSITION_OPENED) {
       // No-op — positions table (Story 2.7) will consume these
     } else if (message.event === EVENTS.POSITION_CLOSED) {

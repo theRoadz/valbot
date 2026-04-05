@@ -79,3 +79,8 @@
 - W3: `loadFromDb` recovered positions use fabricated `chainPositionId: "recovered-${id}"` — close order may use stale base size if on-chain position changed during downtime [position-manager.ts:406]. Requires DB migration — Story 3.2 reconciliation.
 - ~~W4: `getConnectionStatus` has no stale-while-revalidate~~ — resolved: returns stale cached data on API failure instead of throwing
 - ~~W5: Hardcoded 0.025% taker fee~~ — resolved: fee rate now configurable via `TAKER_FEE_RATE` env var (defaults to 0.025%)
+
+## Deferred from: code review of story 2-6-live-trade-log (2026-04-05)
+
+- ~~W1: `typeof` guards on WS payload numeric fields accept `NaN` and `Infinity`~~ — resolved: replaced with `Number.isFinite()` in both STATS_UPDATED and TRADE_EXECUTED handlers
+- ~~W2: `typeof` guard on `pair` field accepts empty string~~ — resolved: added `data.pair.length > 0` guard in TRADE_EXECUTED handler

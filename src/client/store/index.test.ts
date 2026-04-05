@@ -16,6 +16,7 @@ describe("ValBotStore", () => {
         totalVolume: 0,
       },
       alerts: [],
+      trades: [],
       modes: {
         volumeMax: {
           mode: "volumeMax",
@@ -566,16 +567,159 @@ describe("ValBotStore", () => {
       expect(stats.totalVolume).toBe(5000);
     });
 
-    it("TRADE_EXECUTED events are handled without throwing", () => {
-      expect(() => {
+    it("STATS_UPDATED rejects NaN and Infinity values", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax", pnl: NaN, trades: 5, volume: 5000, allocated: 1000, remaining: 500 },
+      });
+      expect(useStore.getState().modes.volumeMax.stats.pnl).toBe(0);
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax", pnl: 100, trades: Infinity, volume: 5000, allocated: 1000, remaining: 500 },
+      });
+      expect(useStore.getState().modes.volumeMax.stats.trades).toBe(0);
+    });
+
+    it("TRADE_EXECUTED appends trade to trades array", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.TRADE_EXECUTED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, price: 150, pnl: 0, fees: 0.5 },
+      });
+
+      const trades = useStore.getState().trades;
+      expect(trades).toHaveLength(1);
+      expect(trades[0].mode).toBe("volumeMax");
+      expect(trades[0].pair).toBe("SOL-PERP");
+      expect(trades[0].side).toBe("Long");
+      expect(trades[0].size).toBe(100);
+      expect(trades[0].price).toBe(150);
+      expect(trades[0].pnl).toBe(0);
+      expect(trades[0].fees).toBe(0.5);
+      expect(trades[0].timestamp).toBe(1000);
+      expect(trades[0].id).toBeGreaterThan(0);
+    });
+
+    it("TRADE_EXECUTED appends new trades (newest last)", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.TRADE_EXECUTED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, price: 150, pnl: 0, fees: 0.5 },
+      });
+      useStore.getState().handleWsMessage({
+        event: EVENTS.TRADE_EXECUTED,
+        timestamp: 2000,
+        data: { mode: "profitHunter", pair: "ETH-PERP", side: "Short", size: 50, price: 3000, pnl: 0, fees: 1.0 },
+      });
+
+      const trades = useStore.getState().trades;
+      expect(trades).toHaveLength(2);
+      expect(trades[0].pair).toBe("SOL-PERP");
+      expect(trades[1].pair).toBe("ETH-PERP");
+    });
+
+    it("TRADE_EXECUTED enforces 500-entry cap", () => {
+      // Fill with 500 trades
+      for (let i = 0; i < 500; i++) {
         useStore.getState().handleWsMessage({
           event: EVENTS.TRADE_EXECUTED,
-          timestamp: Date.now(),
-          data: { mode: "volumeMax", pair: "SOL/USDC", side: "long", size: 100, price: 150, pnl: 10, fees: 0.5 },
+          timestamp: i,
+          data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 1, price: 1, pnl: 0, fees: 0 },
         });
-      }).not.toThrow();
-      // Store state should be unchanged (no-op handler)
-      expect(useStore.getState().modes.volumeMax.stats.pnl).toBe(0);
+      }
+      expect(useStore.getState().trades).toHaveLength(500);
+
+      // Add one more
+      useStore.getState().handleWsMessage({
+        event: EVENTS.TRADE_EXECUTED,
+        timestamp: 9999,
+        data: { mode: "volumeMax", pair: "ETH-PERP", side: "Short", size: 1, price: 1, pnl: 0, fees: 0 },
+      });
+
+      const trades = useStore.getState().trades;
+      expect(trades).toHaveLength(500);
+      expect(trades[499].pair).toBe("ETH-PERP"); // newest is last
+    });
+
+    it("TRADE_EXECUTED validates payload fields with typeof guards", () => {
+      // Missing mode
+      useStore.getState().handleWsMessage({
+        event: EVENTS.TRADE_EXECUTED,
+        timestamp: 1000,
+        data: { pair: "SOL-PERP", side: "Long", size: 100, price: 150, pnl: 0, fees: 0.5 },
+      });
+      expect(useStore.getState().trades).toHaveLength(0);
+
+      // Invalid side
+      useStore.getState().handleWsMessage({
+        event: EVENTS.TRADE_EXECUTED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "invalid", size: 100, price: 150, pnl: 0, fees: 0.5 },
+      });
+      expect(useStore.getState().trades).toHaveLength(0);
+
+      // Non-number size
+      useStore.getState().handleWsMessage({
+        event: EVENTS.TRADE_EXECUTED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: "100", price: 150, pnl: 0, fees: 0.5 },
+      });
+      expect(useStore.getState().trades).toHaveLength(0);
+
+      // Unknown mode
+      useStore.getState().handleWsMessage({
+        event: EVENTS.TRADE_EXECUTED,
+        timestamp: 1000,
+        data: { mode: "unknownMode", pair: "SOL-PERP", side: "Long", size: 100, price: 150, pnl: 0, fees: 0.5 },
+      });
+      expect(useStore.getState().trades).toHaveLength(0);
+
+      // NaN size
+      useStore.getState().handleWsMessage({
+        event: EVENTS.TRADE_EXECUTED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: NaN, price: 150, pnl: 0, fees: 0.5 },
+      });
+      expect(useStore.getState().trades).toHaveLength(0);
+
+      // Infinity price
+      useStore.getState().handleWsMessage({
+        event: EVENTS.TRADE_EXECUTED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, price: Infinity, pnl: 0, fees: 0.5 },
+      });
+      expect(useStore.getState().trades).toHaveLength(0);
+
+      // Empty pair
+      useStore.getState().handleWsMessage({
+        event: EVENTS.TRADE_EXECUTED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "", side: "Long", size: 100, price: 150, pnl: 0, fees: 0.5 },
+      });
+      expect(useStore.getState().trades).toHaveLength(0);
+    });
+
+    it("loadInitialStatus populates trades", () => {
+      const trades = [
+        { id: 1, mode: "volumeMax" as const, pair: "SOL-PERP", side: "Long" as const, size: 100, price: 150, pnl: 0, fees: 0.5, timestamp: 1000 },
+        { id: 2, mode: "profitHunter" as const, pair: "ETH-PERP", side: "Short" as const, size: 50, price: 3000, pnl: 14.2, fees: 1.0, timestamp: 2000 },
+      ];
+      useStore.getState().loadInitialStatus({
+        modes: {
+          volumeMax: { mode: "volumeMax", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
+          profitHunter: { mode: "profitHunter", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
+          arbitrage: { mode: "arbitrage", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
+        },
+        positions: [],
+        trades,
+        connection: { status: "connected", equity: 5000, available: 0 },
+      });
+
+      expect(useStore.getState().trades).toHaveLength(2);
+      expect(useStore.getState().trades[0].pair).toBe("SOL-PERP");
     });
 
     it("POSITION_OPENED events are handled without throwing", () => {
