@@ -55,7 +55,7 @@ describe("API client", () => {
 
   describe("fetchStatus", () => {
     it("returns parsed response", async () => {
-      const mockData = { modes: {}, positions: [], trades: [], connection: { status: "connected", walletBalance: 0 } };
+      const mockData = { modes: {}, positions: [], trades: [], connection: { status: "connected", equity: 0, available: 0 } };
       mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(mockData) });
       const result = await fetchStatus();
       expect(result).toEqual(mockData);
@@ -73,7 +73,7 @@ describe("API client", () => {
       }
     });
 
-    it("throws ApiError when connection lacks walletBalance", async () => {
+    it("throws ApiError when connection lacks equity", async () => {
       mockFetch.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({ modes: {}, positions: [], trades: [], connection: { status: "connected" } }),

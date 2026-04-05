@@ -36,6 +36,9 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-05
+# last review: 2026-04-05 code review of story 2-7, all patches applied
+# last dev: 2026-04-05 story 2-7 implementation complete
+# last story created: 2026-04-05 story 2-7
 # last review: 2026-04-05 code review of story 2-6, all patches applied
 # last dev: 2026-04-05 story 2-6 implementation started
 # last story created: 2026-04-05 story 2-6
@@ -91,7 +94,7 @@ development_status:
   2-4-modecard-component-with-controls: done
   2-5-zustand-store-and-real-time-dashboard-updates: done
   2-6-live-trade-log: done
-  2-7-open-positions-table: backlog
+  2-7-open-positions-table: done
   epic-2-retrospective: optional
 
   # Epic 3: Safety Systems — Kill Switch & Graceful Shutdown

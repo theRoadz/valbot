@@ -1,12 +1,32 @@
 import { create } from "zustand";
-import type { ConnectionStatus, SummaryStats, Alert, ModeType, ModeStatus, ModeConfig, ModeStats, StatusResponse, Trade } from "@shared/types";
-import { EVENTS, type ConnectionStatusPayload, type WsMessage } from "@shared/events";
+import type { ConnectionStatus, SummaryStats, Alert, ModeType, ModeStatus, ModeConfig, ModeStats, StatusResponse, Trade, Position } from "@shared/types";
+import { EVENTS, type ConnectionStatusPayload, type PositionOpenedPayload, type PositionClosedPayload, type WsMessage } from "@shared/events";
 
 let alertIdCounter = Date.now();
 let tradeIdCounter = 0;
+let positionIdCounter = 0;
+const pendingCloseTimers: Map<number, ReturnType<typeof setTimeout>> = new Map();
 const VALID_SEVERITIES = new Set(["info", "warning", "critical"]);
 const VALID_MODES = new Set<string>(["volumeMax", "profitHunter", "arbitrage"]);
 const VALID_SIDES = new Set<string>(["Long", "Short"]);
+
+function isValidPosition(p: unknown): p is Position {
+  if (p == null || typeof p !== "object") return false;
+  const pos = p as Record<string, unknown>;
+  return (
+    Number.isFinite(pos.id) &&
+    typeof pos.mode === "string" &&
+    VALID_MODES.has(pos.mode) &&
+    typeof pos.pair === "string" &&
+    (pos.pair as string).length > 0 &&
+    typeof pos.side === "string" &&
+    VALID_SIDES.has(pos.side) &&
+    Number.isFinite(pos.size) &&
+    Number.isFinite(pos.entryPrice) &&
+    Number.isFinite(pos.stopLoss) &&
+    Number.isFinite(pos.timestamp)
+  );
+}
 
 function aggregateSummaryStats(modes: ValBotStore["modes"], equity: number, available: number): SummaryStats {
   const allModes = Object.values(modes);
@@ -47,6 +67,8 @@ interface ValBotStore {
   stats: SummaryStats;
   alerts: Alert[];
   trades: Trade[];
+  positions: Position[];
+  closingPositions: number[];
   modes: {
     volumeMax: ModeStoreEntry;
     profitHunter: ModeStoreEntry;
@@ -79,6 +101,8 @@ const useStore = create<ValBotStore>()((set) => ({
   },
   alerts: [],
   trades: [],
+  positions: [],
+  closingPositions: [],
   modes: {
     volumeMax: createDefaultMode("volumeMax"),
     profitHunter: createDefaultMode("profitHunter"),
@@ -158,9 +182,18 @@ const useStore = create<ValBotStore>()((set) => ({
       if (loadedTrades.length > 0) {
         tradeIdCounter = Math.max(tradeIdCounter, ...loadedTrades.map((t) => t.id));
       }
+      const loadedPositions = (data.positions ?? []).filter(isValidPosition).slice(0, 200);
+      if (loadedPositions.length > 0) {
+        positionIdCounter = Math.max(positionIdCounter, ...loadedPositions.map((p) => p.id));
+      }
+      // Clear any pending close timers from previous session
+      for (const timer of pendingCloseTimers.values()) clearTimeout(timer);
+      pendingCloseTimers.clear();
       return {
         modes,
         trades: loadedTrades,
+        positions: loadedPositions,
+        closingPositions: [],
         connection: {
           status: data.connection.status,
           equity: data.connection.equity,
@@ -360,9 +393,68 @@ const useStore = create<ValBotStore>()((set) => ({
         }));
       }
     } else if (message.event === EVENTS.POSITION_OPENED) {
-      // No-op — positions table (Story 2.7) will consume these
+      const data = message.data as Record<string, unknown>;
+      if (
+        typeof data?.mode === "string" &&
+        VALID_MODES.has(data.mode) &&
+        typeof data?.pair === "string" &&
+        data.pair.length > 0 &&
+        typeof data?.side === "string" &&
+        VALID_SIDES.has(data.side) &&
+        Number.isFinite(data?.size) &&
+        Number.isFinite(data?.entryPrice) &&
+        Number.isFinite(data?.stopLoss)
+      ) {
+        const position: Position = {
+          id: ++positionIdCounter,
+          mode: data.mode as ModeType,
+          pair: data.pair,
+          side: data.side as Position["side"],
+          size: data.size as number,
+          entryPrice: data.entryPrice as number,
+          stopLoss: data.stopLoss as number,
+          timestamp: message.timestamp,
+        };
+        set((state) => ({
+          positions: [...state.positions, position].slice(-200),
+        }));
+      }
     } else if (message.event === EVENTS.POSITION_CLOSED) {
-      // No-op — positions table (Story 2.7) will consume these
+      const data = message.data as Record<string, unknown>;
+      if (
+        typeof data?.mode === "string" &&
+        VALID_MODES.has(data.mode) &&
+        typeof data?.pair === "string" &&
+        data.pair.length > 0 &&
+        typeof data?.side === "string" &&
+        VALID_SIDES.has(data.side) &&
+        Number.isFinite(data?.size) &&
+        Number.isFinite(data?.exitPrice) &&
+        Number.isFinite(data?.pnl)
+      ) {
+        let matchedId: number | null = null;
+        set((state) => {
+          const matched = state.positions.find(
+            (p) => p.mode === data.mode && p.pair === data.pair && p.side === data.side
+          );
+          if (!matched || state.closingPositions.includes(matched.id)) return state;
+          matchedId = matched.id;
+          return {
+            closingPositions: [...state.closingPositions, matched.id],
+          };
+        });
+        if (matchedId !== null) {
+          const idToRemove = matchedId;
+          const timer = setTimeout(() => {
+            pendingCloseTimers.delete(idToRemove);
+            set((state) => ({
+              positions: state.positions.filter((p) => p.id !== idToRemove),
+              closingPositions: state.closingPositions.filter((id) => id !== idToRemove),
+            }));
+          }, 300);
+          pendingCloseTimers.set(idToRemove, timer);
+        }
+      }
     } else if (import.meta.env.DEV) {
       console.log(`[WS] Unhandled event: ${message.event}`);
     }

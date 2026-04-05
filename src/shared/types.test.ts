@@ -25,23 +25,27 @@ describe("shared types", () => {
     expectTypeOf(disconnected).toEqualTypeOf<ConnectionStatus>();
   });
 
-  it("ConnectionState has status and walletBalance", () => {
+  it("ConnectionState has status, equity, and available", () => {
     expectTypeOf<ConnectionState>().toHaveProperty("status");
-    expectTypeOf<ConnectionState>().toHaveProperty("walletBalance");
-    const state: ConnectionState = { status: "disconnected", walletBalance: 0 };
+    expectTypeOf<ConnectionState>().toHaveProperty("equity");
+    expectTypeOf<ConnectionState>().toHaveProperty("available");
+    const state: ConnectionState = { status: "disconnected", equity: 0, available: 0 };
     expectTypeOf(state.status).toEqualTypeOf<ConnectionStatus>();
-    expectTypeOf(state.walletBalance).toEqualTypeOf<number>();
+    expectTypeOf(state.equity).toEqualTypeOf<number>();
+    expectTypeOf(state.available).toEqualTypeOf<number>();
   });
 
   it("SummaryStats has all required fields", () => {
     const stats: SummaryStats = {
-      walletBalance: 0,
+      equity: 0,
+      available: 0,
       totalPnl: 0,
       sessionPnl: 0,
       totalTrades: 0,
       totalVolume: 0,
     };
-    expectTypeOf(stats.walletBalance).toEqualTypeOf<number>();
+    expectTypeOf(stats.equity).toEqualTypeOf<number>();
+    expectTypeOf(stats.available).toEqualTypeOf<number>();
     expectTypeOf(stats.totalPnl).toEqualTypeOf<number>();
     expectTypeOf(stats.sessionPnl).toEqualTypeOf<number>();
     expectTypeOf(stats.totalTrades).toEqualTypeOf<number>();

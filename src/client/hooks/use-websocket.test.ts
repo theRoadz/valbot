@@ -52,9 +52,10 @@ describe("useWebSocket", () => {
     vi.stubGlobal("WebSocket", MockWebSocket);
     vi.useFakeTimers();
     useStore.setState({
-      connection: { status: "disconnected", walletBalance: 0 },
+      connection: { status: "disconnected", equity: 0, available: 0 },
       stats: {
-        walletBalance: 0,
+        equity: 0,
+        available: 0,
         totalPnl: 0,
         sessionPnl: 0,
         totalTrades: 0,

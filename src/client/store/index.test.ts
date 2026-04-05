@@ -17,6 +17,8 @@ describe("ValBotStore", () => {
       },
       alerts: [],
       trades: [],
+      positions: [],
+      closingPositions: [],
       modes: {
         volumeMax: {
           mode: "volumeMax",
@@ -722,24 +724,166 @@ describe("ValBotStore", () => {
       expect(useStore.getState().trades[0].pair).toBe("SOL-PERP");
     });
 
-    it("POSITION_OPENED events are handled without throwing", () => {
-      expect(() => {
-        useStore.getState().handleWsMessage({
-          event: EVENTS.POSITION_OPENED,
-          timestamp: Date.now(),
-          data: { mode: "volumeMax", pair: "SOL/USDC", side: "long", size: 100, entryPrice: 150, stopLoss: 140 },
-        });
-      }).not.toThrow();
+    it("POSITION_OPENED adds position to positions array", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_OPENED,
+        timestamp: 5000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, entryPrice: 150, stopLoss: 140 },
+      });
+
+      const positions = useStore.getState().positions;
+      expect(positions).toHaveLength(1);
+      expect(positions[0].mode).toBe("volumeMax");
+      expect(positions[0].pair).toBe("SOL-PERP");
+      expect(positions[0].side).toBe("Long");
+      expect(positions[0].size).toBe(100);
+      expect(positions[0].entryPrice).toBe(150);
+      expect(positions[0].stopLoss).toBe(140);
+      expect(positions[0].timestamp).toBe(5000);
+      expect(positions[0].id).toBeGreaterThan(0);
     });
 
-    it("POSITION_CLOSED events are handled without throwing", () => {
-      expect(() => {
-        useStore.getState().handleWsMessage({
-          event: EVENTS.POSITION_CLOSED,
-          timestamp: Date.now(),
-          data: { mode: "volumeMax", pair: "SOL/USDC", side: "long", size: 100, exitPrice: 160, pnl: 10 },
-        });
-      }).not.toThrow();
+    it("POSITION_OPENED validates payload — rejects invalid mode", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_OPENED,
+        timestamp: 1000,
+        data: { mode: "unknownMode", pair: "SOL-PERP", side: "Long", size: 100, entryPrice: 150, stopLoss: 140 },
+      });
+      expect(useStore.getState().positions).toHaveLength(0);
+    });
+
+    it("POSITION_OPENED validates payload — rejects invalid side", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_OPENED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "invalid", size: 100, entryPrice: 150, stopLoss: 140 },
+      });
+      expect(useStore.getState().positions).toHaveLength(0);
+    });
+
+    it("POSITION_OPENED validates payload — rejects empty pair", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_OPENED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "", side: "Long", size: 100, entryPrice: 150, stopLoss: 140 },
+      });
+      expect(useStore.getState().positions).toHaveLength(0);
+    });
+
+    it("POSITION_OPENED validates payload — rejects NaN/Infinity numbers", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_OPENED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: NaN, entryPrice: 150, stopLoss: 140 },
+      });
+      expect(useStore.getState().positions).toHaveLength(0);
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_OPENED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, entryPrice: Infinity, stopLoss: 140 },
+      });
+      expect(useStore.getState().positions).toHaveLength(0);
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_OPENED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, entryPrice: 150, stopLoss: NaN },
+      });
+      expect(useStore.getState().positions).toHaveLength(0);
+    });
+
+    it("POSITION_OPENED validates payload — rejects non-number fields", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_OPENED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: "100", entryPrice: 150, stopLoss: 140 },
+      });
+      expect(useStore.getState().positions).toHaveLength(0);
+    });
+
+    it("POSITION_CLOSED removes matching position after delay", async () => {
+      // Add a position first
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_OPENED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, entryPrice: 150, stopLoss: 140 },
+      });
+      expect(useStore.getState().positions).toHaveLength(1);
+
+      // Close it
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_CLOSED,
+        timestamp: 2000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, exitPrice: 160, pnl: 10 },
+      });
+
+      // Should be in closingPositions immediately
+      expect(useStore.getState().closingPositions).toHaveLength(1);
+      // Position still in array (for animation)
+      expect(useStore.getState().positions).toHaveLength(1);
+
+      // After 300ms timeout, position should be removed
+      await new Promise((r) => setTimeout(r, 350));
+      expect(useStore.getState().positions).toHaveLength(0);
+      expect(useStore.getState().closingPositions).toHaveLength(0);
+    });
+
+    it("POSITION_CLOSED ignores when no matching position found", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_CLOSED,
+        timestamp: 2000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, exitPrice: 160, pnl: 10 },
+      });
+
+      expect(useStore.getState().positions).toHaveLength(0);
+      expect(useStore.getState().closingPositions).toHaveLength(0);
+    });
+
+    it("POSITION_CLOSED validates payload — rejects invalid data", () => {
+      // Add a position first
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_OPENED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, entryPrice: 150, stopLoss: 140 },
+      });
+
+      // Try to close with invalid mode
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_CLOSED,
+        timestamp: 2000,
+        data: { mode: "unknownMode", pair: "SOL-PERP", side: "Long", size: 100, exitPrice: 160, pnl: 10 },
+      });
+      expect(useStore.getState().closingPositions).toHaveLength(0);
+
+      // Try to close with NaN exitPrice
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_CLOSED,
+        timestamp: 2000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, exitPrice: NaN, pnl: 10 },
+      });
+      expect(useStore.getState().closingPositions).toHaveLength(0);
+    });
+
+    it("loadInitialStatus populates positions", () => {
+      const positions = [
+        { id: 10, mode: "volumeMax" as const, pair: "SOL-PERP", side: "Long" as const, size: 100, entryPrice: 150, stopLoss: 140, timestamp: 1000 },
+        { id: 20, mode: "profitHunter" as const, pair: "ETH-PERP", side: "Short" as const, size: 50, entryPrice: 3000, stopLoss: 3100, timestamp: 2000 },
+      ];
+      useStore.getState().loadInitialStatus({
+        modes: {
+          volumeMax: { mode: "volumeMax", status: "running", allocation: 500, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
+          profitHunter: { mode: "profitHunter", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
+          arbitrage: { mode: "arbitrage", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
+        },
+        positions,
+        trades: [],
+        connection: { status: "connected", equity: 5000, available: 0 },
+      });
+
+      expect(useStore.getState().positions).toHaveLength(2);
+      expect(useStore.getState().positions[0].pair).toBe("SOL-PERP");
+      expect(useStore.getState().positions[1].pair).toBe("ETH-PERP");
     });
 
     it("ALERT_TRIGGERED with KILL_SWITCH_TRIGGERED sets mode to kill-switch", () => {

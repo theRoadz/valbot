@@ -119,7 +119,7 @@ function isValidStatusResponse(data: unknown): data is StatusResponse {
   if (!Array.isArray(d.trades)) return false;
   if (d.connection == null || typeof d.connection !== "object") return false;
   const conn = d.connection as Record<string, unknown>;
-  if (typeof conn.status !== "string" || typeof conn.walletBalance !== "number") return false;
+  if (typeof conn.status !== "string" || !Number.isFinite(conn.equity) || !Number.isFinite(conn.available)) return false;
   return true;
 }
 

@@ -84,3 +84,15 @@
 
 - ~~W1: `typeof` guards on WS payload numeric fields accept `NaN` and `Infinity`~~ — resolved: replaced with `Number.isFinite()` in both STATS_UPDATED and TRADE_EXECUTED handlers
 - ~~W2: `typeof` guard on `pair` field accepts empty string~~ — resolved: added `data.pair.length > 0` guard in TRADE_EXECUTED handler
+
+## Deferred from: story 2-7-open-positions-table (2026-04-05)
+
+- [ ] Live mark price and PnL for PositionsTable — requires a position.updated WS event or Pyth oracle feed integration (Story 2.7 renders "—" for Mark/PnL columns until this is available)
+
+## Deferred from: code review of story 2-7-open-positions-table (2026-04-05)
+
+- [ ] D1: Position close matching by (mode, pair, side) is ambiguous when duplicates exist — needs server-side position ID in close events
+- ~~D2: No upper bound on positions array from WS events~~ — resolved: added `.slice(-200)` cap in POSITION_OPENED handler
+- ~~D3: loadInitialStatus does not validate individual position objects~~ — resolved: added `isValidPosition()` filter in loadInitialStatus
+- ~~D4: POSITION_CLOSED setTimeout is never cancelled on unmount/reconnect~~ — resolved: added `pendingCloseTimers` Map tracking with cleanup on rehydration
+- ~~D5: TableRow base hover:bg-muted/50 may conflict with custom hover:bg-surface-elevated~~ — dismissed: `cn()` uses `twMerge` which correctly resolves the conflict
