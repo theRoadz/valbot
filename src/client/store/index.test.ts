@@ -886,6 +886,73 @@ describe("ValBotStore", () => {
       expect(useStore.getState().positions[1].pair).toBe("ETH-PERP");
     });
 
+    it("MODE_STOPPED does NOT overwrite kill-switch status", () => {
+      // Set mode to kill-switch first
+      useStore.setState((s) => ({
+        modes: {
+          ...s.modes,
+          volumeMax: {
+            ...s.modes.volumeMax,
+            status: "kill-switch",
+            killSwitchDetail: { positionsClosed: 2, lossAmount: 100 },
+          },
+        },
+      }));
+
+      // Receive MODE_STOPPED (from forceStop after kill-switch)
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STOPPED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax", finalStats: { pnl: -100, trades: 5, volume: 500, allocated: 1000, remaining: 0 } },
+      });
+
+      const mode = useStore.getState().modes.volumeMax;
+      expect(mode.status).toBe("kill-switch"); // NOT "stopped"
+      expect(mode.killSwitchDetail).toEqual({ positionsClosed: 2, lossAmount: 100 });
+    });
+
+    it("kill-switch state clears when allocation is updated via setModeConfig", () => {
+      // Set mode to kill-switch
+      useStore.setState((s) => ({
+        modes: {
+          ...s.modes,
+          volumeMax: {
+            ...s.modes.volumeMax,
+            status: "kill-switch",
+            killSwitchDetail: { positionsClosed: 3, lossAmount: 150 },
+          },
+        },
+      }));
+
+      // Update allocation
+      useStore.getState().setModeConfig("volumeMax", { allocation: 500 });
+
+      const mode = useStore.getState().modes.volumeMax;
+      expect(mode.status).toBe("stopped");
+      expect(mode.killSwitchDetail).toBeNull();
+      expect(mode.allocation).toBe(500);
+    });
+
+    it("setModeConfig does NOT clear kill-switch when non-allocation config changes", () => {
+      useStore.setState((s) => ({
+        modes: {
+          ...s.modes,
+          volumeMax: {
+            ...s.modes.volumeMax,
+            status: "kill-switch",
+            killSwitchDetail: { positionsClosed: 2, lossAmount: 100 },
+          },
+        },
+      }));
+
+      // Update only pairs, not allocation
+      useStore.getState().setModeConfig("volumeMax", { pairs: ["ETH/USDC"] });
+
+      const mode = useStore.getState().modes.volumeMax;
+      expect(mode.status).toBe("kill-switch");
+      expect(mode.killSwitchDetail).toEqual({ positionsClosed: 2, lossAmount: 100 });
+    });
+
     it("ALERT_TRIGGERED with KILL_SWITCH_TRIGGERED sets mode to kill-switch", () => {
       useStore.getState().handleWsMessage({
         event: EVENTS.ALERT_TRIGGERED,
@@ -905,6 +972,87 @@ describe("ValBotStore", () => {
       const mode = useStore.getState().modes.volumeMax;
       expect(mode.status).toBe("kill-switch");
       expect(mode.killSwitchDetail).toEqual({ positionsClosed: 3, lossAmount: 150 });
+    });
+
+    it("full kill-switch WS event sequence: ALERT_TRIGGERED → MODE_STOPPED preserves kill-switch status", () => {
+      // Simulate the full event sequence that happens during a kill-switch
+      // 1. POSITION_CLOSED events (positions being closed by kill-switch)
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_OPENED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, entryPrice: 150, stopLoss: 140 },
+      });
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_CLOSED,
+        timestamp: 2000,
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, exitPrice: 130, pnl: -20 },
+      });
+
+      // 2. ALERT_TRIGGERED with KILL_SWITCH_TRIGGERED (sets status to kill-switch)
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: 3000,
+        data: {
+          severity: "critical",
+          code: "KILL_SWITCH_TRIGGERED",
+          message: "Kill switch triggered on volumeMax",
+          mode: "volumeMax",
+          details: "Closed 1 positions. Loss: $20.00.",
+          resolution: "Review positions and re-allocate funds.",
+          positionsClosed: 1,
+          lossAmount: 20,
+        },
+      });
+
+      expect(useStore.getState().modes.volumeMax.status).toBe("kill-switch");
+
+      // 3. MODE_STOPPED (from forceStop — should NOT overwrite kill-switch)
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STOPPED,
+        timestamp: 3001,
+        data: { mode: "volumeMax", finalStats: { pnl: -20, trades: 1, volume: 100, allocated: 1000, remaining: 0 } },
+      });
+
+      // Status should STILL be kill-switch, NOT stopped
+      const mode = useStore.getState().modes.volumeMax;
+      expect(mode.status).toBe("kill-switch");
+      expect(mode.killSwitchDetail).toEqual({ positionsClosed: 1, lossAmount: 20 });
+    });
+
+    it("multi-mode: kill-switch on one mode does not affect other modes", () => {
+      // Set up two modes as running
+      useStore.setState((s) => ({
+        modes: {
+          ...s.modes,
+          volumeMax: { ...s.modes.volumeMax, status: "running", stats: { pnl: 100, trades: 5, volume: 5000, allocated: 1000, remaining: 800 } },
+          profitHunter: { ...s.modes.profitHunter, status: "running", stats: { pnl: 50, trades: 3, volume: 2000, allocated: 500, remaining: 450 } },
+        },
+      }));
+
+      // Kill-switch on volumeMax
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: Date.now(),
+        data: {
+          severity: "critical",
+          code: "KILL_SWITCH_TRIGGERED",
+          message: "Kill switch triggered on volumeMax",
+          mode: "volumeMax",
+          details: null,
+          resolution: "Review positions.",
+          positionsClosed: 2,
+          lossAmount: 100,
+        },
+      });
+
+      // volumeMax should be kill-switched
+      expect(useStore.getState().modes.volumeMax.status).toBe("kill-switch");
+
+      // profitHunter should be completely unaffected
+      expect(useStore.getState().modes.profitHunter.status).toBe("running");
+      expect(useStore.getState().modes.profitHunter.stats.pnl).toBe(50);
+      expect(useStore.getState().modes.profitHunter.stats.trades).toBe(3);
     });
   });
 });

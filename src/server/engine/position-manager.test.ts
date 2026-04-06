@@ -482,6 +482,162 @@ describe("PositionManager", () => {
     });
   });
 
+  describe("openPosition kill-switch guard", () => {
+    it("throws MODE_KILL_SWITCHED when _killSwitchActive contains the mode", async () => {
+      allocator.setAllocation("volumeMax", 1_000_000_000);
+
+      // Open a position and trigger kill-switch to set _killSwitchActive
+      const pos = await pm.openPosition({
+        mode: "volumeMax",
+        pair: "SOL/USDC",
+        side: "Long",
+        size: 500_000_000,
+        slippage: 0.5,
+        stopLossPrice: 95_000_000,
+      });
+
+      // Close with big loss to trigger kill-switch
+      vi.mocked(contracts.closePosition).mockResolvedValueOnce({
+        txHash: "mock-tx-loss",
+        exitPrice: 70_000_000,
+        pnl: -150_000_000,
+        fees: 50_000,
+      });
+
+      await pm.closePosition(pos.id);
+      expect(pm.getModeStatus("volumeMax")).toBe("kill-switch");
+
+      // Try to open — should be rejected
+      await expect(
+        pm.openPosition({
+          mode: "volumeMax",
+          pair: "ETH/USDC",
+          side: "Long",
+          size: 10_000_000,
+          slippage: 0.5,
+          stopLossPrice: 90_000_000,
+        }),
+      ).rejects.toThrow("Cannot open position — kill switch active on volumeMax");
+    });
+  });
+
+  describe("onKillSwitch callback", () => {
+    it("invokes onKillSwitch callback when kill-switch triggers", async () => {
+      const onKillSwitch = vi.fn();
+      const pmWithCallback = new PositionManager(allocator, mockBroadcast, onKillSwitch);
+
+      allocator.setAllocation("volumeMax", 1_000_000_000);
+
+      const pos = await pmWithCallback.openPosition({
+        mode: "volumeMax",
+        pair: "SOL/USDC",
+        side: "Long",
+        size: 500_000_000,
+        slippage: 0.5,
+        stopLossPrice: 95_000_000,
+      });
+
+      vi.mocked(contracts.closePosition).mockResolvedValueOnce({
+        txHash: "mock-tx-loss",
+        exitPrice: 70_000_000,
+        pnl: -150_000_000,
+        fees: 50_000,
+      });
+
+      await pmWithCallback.closePosition(pos.id);
+
+      expect(onKillSwitch).toHaveBeenCalledWith("volumeMax");
+    });
+  });
+
+  describe("alert details", () => {
+    it("alert includes per-position breakdown", async () => {
+      allocator.setAllocation("volumeMax", 1_000_000_000);
+
+      const pos1 = await pm.openPosition({
+        mode: "volumeMax",
+        pair: "SOL/USDC",
+        side: "Long",
+        size: 500_000_000,
+        slippage: 0.5,
+        stopLossPrice: 95_000_000,
+      });
+      await pm.openPosition({
+        mode: "volumeMax",
+        pair: "ETH/USDC",
+        side: "Long",
+        size: 200_000_000,
+        slippage: 0.5,
+        stopLossPrice: 90_000_000,
+      });
+
+      vi.mocked(contracts.closePosition).mockResolvedValueOnce({
+        txHash: "mock-tx-loss",
+        exitPrice: 70_000_000,
+        pnl: -150_000_000,
+        fees: 50_000,
+      });
+      vi.mocked(contracts.closePosition).mockResolvedValueOnce({
+        txHash: "mock-tx-close-all",
+        exitPrice: 100_000_000,
+        pnl: 0,
+        fees: 20_000,
+      });
+
+      mockBroadcast.mockClear();
+      await pm.closePosition(pos1.id);
+
+      const alertCalls = mockBroadcast.mock.calls.filter(
+        (c: unknown[]) => c[0] === "alert.triggered",
+      );
+      expect(alertCalls.length).toBe(1);
+      const payload = (alertCalls[0] as unknown[])[1] as {
+        details: string;
+        positionsClosed: number;
+        lossAmount: number;
+      };
+      // Should include both the triggering position (SOL/USDC) and the swept position (ETH/USDC)
+      expect(payload.details).toContain("SOL/USDC");
+      expect(payload.details).toContain("ETH/USDC");
+      expect(payload.details).toContain("Long");
+      // Should show exit prices (entry → exit format)
+      expect(payload.details).toContain("→");
+      // Total closed = triggering position + swept positions
+      expect(payload.positionsClosed).toBe(2);
+      expect(payload.details).toContain("Closed 2 positions");
+      // lossAmount should be a number
+      expect(typeof payload.lossAmount).toBe("number");
+    });
+  });
+
+  describe("resetModeStatus", () => {
+    it("clears kill-switch state allowing mode to restart", async () => {
+      allocator.setAllocation("volumeMax", 1_000_000_000);
+
+      const pos = await pm.openPosition({
+        mode: "volumeMax",
+        pair: "SOL/USDC",
+        side: "Long",
+        size: 500_000_000,
+        slippage: 0.5,
+        stopLossPrice: 95_000_000,
+      });
+
+      vi.mocked(contracts.closePosition).mockResolvedValueOnce({
+        txHash: "mock-tx-loss",
+        exitPrice: 70_000_000,
+        pnl: -150_000_000,
+        fees: 50_000,
+      });
+
+      await pm.closePosition(pos.id);
+      expect(pm.getModeStatus("volumeMax")).toBe("kill-switch");
+
+      pm.resetModeStatus("volumeMax");
+      expect(pm.getModeStatus("volumeMax")).toBeUndefined();
+    });
+  });
+
   describe("getInternalPositions", () => {
     it("returns raw positions with smallest-unit sizes for reconciliation", async () => {
       allocator.setAllocation("volumeMax", 1_000_000_000);

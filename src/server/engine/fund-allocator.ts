@@ -92,6 +92,16 @@ export class FundAllocator {
     entry.pnl += pnl;
   }
 
+  resetModeStats(mode: ModeType): void {
+    const entry = this.state.get(mode);
+    if (entry) {
+      entry.trades = 0;
+      entry.volume = 0;
+      entry.pnl = 0;
+      entry.remaining = entry.allocation;
+    }
+  }
+
   checkKillSwitch(mode: ModeType): boolean {
     const entry = this.state.get(mode);
     if (!entry || entry.allocation === 0) return false;

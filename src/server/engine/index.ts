@@ -18,7 +18,16 @@ export async function initEngine(): Promise<void> {
   }
 
   fundAllocator = new FundAllocator();
-  positionManager = new PositionManager(fundAllocator, broadcast);
+  positionManager = new PositionManager(fundAllocator, broadcast, (mode) => {
+    const runner = modeRunners.get(mode);
+    if (!runner) return;
+    // Guard: if kill-switch was reset and a new runner started between closeAllForMode
+    // completing and this callback firing, the mode status would no longer be "kill-switch".
+    // Only stop the runner if the mode is still in kill-switch state.
+    if (positionManager!.getModeStatus(mode) !== "kill-switch") return;
+    runner.forceStop();
+    modeRunners.delete(mode);
+  });
 
   await fundAllocator.loadFromDb();
   await positionManager.loadFromDb();
@@ -88,11 +97,20 @@ export async function stopMode(mode: ModeType): Promise<void> {
 }
 
 export function getModeStatus(mode: ModeType): ModeStatus {
+  if (positionManager && positionManager.getModeStatus(mode) === "kill-switch") {
+    return "kill-switch";
+  }
   const runner = modeRunners.get(mode);
   if (runner && runner.isRunning()) {
     return "running";
   }
   return "stopped";
+}
+
+export function resetKillSwitch(mode: ModeType): void {
+  const engine = getEngine();
+  engine.positionManager.resetModeStatus(mode);
+  engine.fundAllocator.resetModeStats(mode);
 }
 
 export async function stopAllModes(): Promise<void> {

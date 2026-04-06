@@ -96,3 +96,9 @@
 - ~~D3: loadInitialStatus does not validate individual position objects~~ — resolved: added `isValidPosition()` filter in loadInitialStatus
 - ~~D4: POSITION_CLOSED setTimeout is never cancelled on unmount/reconnect~~ — resolved: added `pendingCloseTimers` Map tracking with cleanup on rehydration
 - ~~D5: TableRow base hover:bg-muted/50 may conflict with custom hover:bg-surface-elevated~~ — dismissed: `cn()` uses `twMerge` which correctly resolves the conflict
+
+## Deferred from: code review of story 3-1-per-mode-kill-switch (2026-04-06)
+
+- ~~D4: Stale `onKillSwitch` callback could kill newly started runner~~ — resolved: callback now checks `getModeStatus` before stopping runner
+- ~~D9: `closeAllForMode` partial failure leaves orphan positions~~ — resolved: failed positions tracked with `KILL_SWITCH_CLOSE_FAILED` critical alert
+- ~~D10: `closeAllForMode` PnL uses custom formula instead of `closeResult.pnl`~~ — resolved: now uses `result.pnl` directly from contract

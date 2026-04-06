@@ -141,4 +141,49 @@ describe("engine/index", () => {
     await stopAllModes();
     expect(getModeStatus("volumeMax")).toBe("stopped");
   });
+
+  it("getModeStatus returns 'kill-switch' when position-manager reports kill-switch", async () => {
+    const { initEngine, getEngine, getModeStatus } = await import("./index.js");
+    await initEngine();
+
+    const { positionManager } = getEngine();
+    // Simulate kill-switch state by directly setting mode status via internal method
+    // We'll trigger it by manipulating the fund allocator to trigger a kill-switch
+    // For simplicity, we check the pass-through works
+    // First, it should be stopped
+    expect(getModeStatus("volumeMax")).toBe("stopped");
+
+    // Use internal state: set mode as kill-switched via the position manager
+    // We need to trigger it naturally — set allocation, open, close with big loss
+    // But blockchain client is mocked to null, so we test the status pass-through
+    // by checking that when positionManager.getModeStatus returns "kill-switch",
+    // engine.getModeStatus also returns "kill-switch"
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (positionManager as any)._modeStatus.set("volumeMax", "kill-switch");
+    expect(getModeStatus("volumeMax")).toBe("kill-switch");
+  });
+
+  it("resetKillSwitch clears kill-switch state and zeros stats", async () => {
+    const { initEngine, getEngine, getModeStatus, resetKillSwitch } = await import("./index.js");
+    await initEngine();
+
+    const { positionManager, fundAllocator } = getEngine();
+    fundAllocator.setAllocation("volumeMax", 1_000_000_000);
+    fundAllocator.recordTrade("volumeMax", 100_000_000, -50_000_000);
+
+    // Set kill-switch state
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (positionManager as any)._modeStatus.set("volumeMax", "kill-switch");
+    expect(getModeStatus("volumeMax")).toBe("kill-switch");
+
+    resetKillSwitch("volumeMax");
+
+    expect(getModeStatus("volumeMax")).toBe("stopped");
+    expect(fundAllocator.getStats("volumeMax").trades).toBe(0);
+    expect(fundAllocator.getStats("volumeMax").pnl).toBe(0);
+    expect(fundAllocator.getStats("volumeMax").volume).toBe(0);
+    // allocation preserved, remaining reset to match allocation
+    expect(fundAllocator.getStats("volumeMax").allocated).toBe(1000);
+    expect(fundAllocator.getStats("volumeMax").remaining).toBe(1000);
+  });
 });

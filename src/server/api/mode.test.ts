@@ -14,6 +14,8 @@ vi.mock("../engine/index.js", () => {
     getEngine: vi.fn(() => ({ fundAllocator: mockFundAllocator })),
     startMode: (...args: any[]) => mockStartMode(...args),
     stopMode: (...args: any[]) => mockStopMode(...args),
+    getModeStatus: vi.fn().mockReturnValue("stopped"),
+    resetKillSwitch: vi.fn(),
     _getMockFundAllocator: () => mockFundAllocator,
   };
 });

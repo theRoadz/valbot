@@ -39,6 +39,8 @@ export interface AlertTriggeredPayload {
   mode?: ModeType;
   details: string | null;
   resolution: string | null;
+  positionsClosed?: number;
+  lossAmount?: number;
 }
 
 export interface TradeExecutedPayload {

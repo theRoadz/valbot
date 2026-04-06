@@ -37,10 +37,18 @@ interface InternalPosition {
   timestamp: number;
 }
 
+export interface ClosedPositionDetail {
+  pair: string;
+  side: TradeSide;
+  entryPrice: number; // display-unit
+  exitPrice: number; // display-unit
+}
+
 export interface CloseSummary {
   count: number;
   totalPnl: number; // display-unit
   positions: Position[];
+  closedDetails: ClosedPositionDetail[];
 }
 
 export class PositionManager {
@@ -49,10 +57,12 @@ export class PositionManager {
   private _modeStatus = new Map<ModeType, "active" | "kill-switch">();
   private fundAllocator: FundAllocator;
   private broadcast: BroadcastFn;
+  private readonly _onKillSwitch?: (mode: ModeType) => void;
 
-  constructor(fundAllocator: FundAllocator, broadcast: BroadcastFn) {
+  constructor(fundAllocator: FundAllocator, broadcast: BroadcastFn, onKillSwitch?: (mode: ModeType) => void) {
     this.fundAllocator = fundAllocator;
     this.broadcast = broadcast;
+    this._onKillSwitch = onKillSwitch;
   }
 
   async openPosition(params: {
@@ -64,6 +74,16 @@ export class PositionManager {
     stopLossPrice: number; // smallest-unit
   }): Promise<Position> {
     const { mode, pair, side, size, slippage, stopLossPrice } = params;
+
+    // SAFETY: Prevent opening positions on a kill-switched mode (race condition guard)
+    if (this._killSwitchActive.has(mode) || this._modeStatus.get(mode) === "kill-switch") {
+      throw new AppError({
+        severity: "warning",
+        code: "MODE_KILL_SWITCHED",
+        message: `Cannot open position — kill switch active on ${mode}`,
+        resolution: "Re-allocate funds to restart the mode.",
+      });
+    }
 
     const client = getBlockchainClient();
     if (!client) {
@@ -344,14 +364,30 @@ export class PositionManager {
         logger.warn({ mode: pos.mode }, "Kill switch triggered");
         this._modeStatus.set(pos.mode, "kill-switch");
         const summary = await this.closeAllForMode(pos.mode);
+        // Include the triggering position (already closed above) in the details
+        const triggeringDetail: ClosedPositionDetail = {
+          pair: pos.pair,
+          side: pos.side,
+          entryPrice: fromSmallestUnit(pos.entryPrice),
+          exitPrice: fromSmallestUnit(closeResult.exitPrice),
+        };
+        const allDetails = [triggeringDetail, ...summary.closedDetails];
+        const totalClosed = summary.count + 1;
+        const positionDetails = allDetails
+          .map((d) => `  ${d.pair} ${d.side} @ ${d.entryPrice} → ${d.exitPrice}`)
+          .join("\n");
+        const lossAmount = Math.abs(summary.totalPnl);
         this.broadcast(EVENTS.ALERT_TRIGGERED, {
           severity: "critical",
           code: "KILL_SWITCH_TRIGGERED",
           message: `Kill switch triggered on ${pos.mode}`,
           mode: pos.mode,
-          details: `Closed ${summary.count} positions. Loss: $${Math.abs(summary.totalPnl).toFixed(2)}.`,
+          details: `Closed ${totalClosed} positions. Loss: $${lossAmount.toFixed(2)}.\n${positionDetails}`,
           resolution: "Review positions and re-allocate funds to restart the mode.",
+          positionsClosed: totalClosed,
+          lossAmount,
         });
+        this._onKillSwitch?.(pos.mode);
       }
     }
 
@@ -368,7 +404,9 @@ export class PositionManager {
       (p) => p.mode === mode,
     );
     const closedPositions: Position[] = [];
+    const closedDetails: ClosedPositionDetail[] = [];
     let totalPnl = 0;
+    const failedPositionIds: number[] = [];
 
     for (const pos of modePositions) {
       try {
@@ -376,19 +414,35 @@ export class PositionManager {
           skipKillSwitchCheck: true,
         });
         closedPositions.push(result.position);
-        // Compute actual PnL from entry vs exit price (contracts returns pnl: 0)
-        // PnL = size * (exit - entry) / entry for Long, inverted for Short
-        const priceDelta = result.exitPrice - pos.entryPrice;
-        const rawPnl = pos.entryPrice !== 0
-          ? Math.round(pos.size * priceDelta / pos.entryPrice)
-          : 0;
-        totalPnl += pos.side === "Long" ? rawPnl : -rawPnl;
+        closedDetails.push({
+          pair: pos.pair,
+          side: pos.side,
+          entryPrice: fromSmallestUnit(pos.entryPrice),
+          exitPrice: fromSmallestUnit(result.exitPrice),
+        });
+        totalPnl += result.pnl;
       } catch (err) {
+        failedPositionIds.push(pos.id);
         logger.error(
           { err, positionId: pos.id, mode },
           "Failed to close position during closeAllForMode",
         );
       }
+    }
+
+    if (failedPositionIds.length > 0) {
+      logger.error(
+        { mode, failedPositionIds, failedCount: failedPositionIds.length },
+        "CRITICAL: Some positions failed to close during kill-switch — manual intervention required",
+      );
+      this.broadcast(EVENTS.ALERT_TRIGGERED, {
+        severity: "critical",
+        code: "KILL_SWITCH_CLOSE_FAILED",
+        message: `${failedPositionIds.length} position(s) failed to close during kill-switch on ${mode}`,
+        mode,
+        details: `Position IDs: ${failedPositionIds.join(", ")}. These positions remain open on-chain and require manual closure.`,
+        resolution: "Manually close the listed positions via the exchange interface.",
+      });
     }
 
     this._killSwitchActive.delete(mode);
@@ -397,11 +451,24 @@ export class PositionManager {
       count: closedPositions.length,
       totalPnl: fromSmallestUnit(totalPnl),
       positions: closedPositions,
+      closedDetails,
     };
   }
 
   getModeStatus(mode: ModeType): "active" | "kill-switch" | undefined {
     return this._modeStatus.get(mode);
+  }
+
+  resetModeStatus(mode: ModeType): void {
+    if (this._killSwitchActive.has(mode)) {
+      throw new AppError({
+        severity: "warning",
+        code: "KILL_SWITCH_IN_PROGRESS",
+        message: `Cannot reset kill-switch on ${mode} — close sweep still in progress`,
+        resolution: "Wait for all positions to close before re-allocating.",
+      });
+    }
+    this._modeStatus.delete(mode);
   }
 
   getPositions(mode?: ModeType): Position[] {

@@ -86,6 +86,22 @@ export abstract class ModeRunner {
     logger.info({ mode: this.mode }, "Mode stopped");
   }
 
+  /** Stop the mode without closing positions (used by kill-switch — positions already closed) */
+  forceStop(): void {
+    if (!this._running) return;
+
+    this._running = false;
+
+    if (this._loopTimer !== null) {
+      clearTimeout(this._loopTimer);
+      this._loopTimer = null;
+    }
+
+    const finalStats = this.fundAllocator.getStats(this.mode);
+    this.broadcast(EVENTS.MODE_STOPPED, { mode: this.mode, finalStats });
+    logger.info({ mode: this.mode }, "Mode force-stopped (kill-switch)");
+  }
+
   isRunning(): boolean {
     return this._running;
   }

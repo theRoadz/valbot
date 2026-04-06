@@ -152,9 +152,15 @@ const useStore = create<ValBotStore>()((set) => ({
     }),
   setModeConfig: (mode, config) =>
     set((state) => {
+      const current = state.modes[mode];
+      const isKillSwitchReset = current.status === "kill-switch" && config.allocation !== undefined;
       const modes = {
         ...state.modes,
-        [mode]: { ...state.modes[mode], ...config },
+        [mode]: {
+          ...current,
+          ...config,
+          ...(isKillSwitchReset ? { status: "stopped" as ModeStatus, killSwitchDetail: null } : {}),
+        },
       };
       return {
         modes,
@@ -296,6 +302,8 @@ const useStore = create<ValBotStore>()((set) => ({
       if (mode) {
         set((state) => {
           if (!state.modes[mode]) return state;
+          // Preserve kill-switch status — MODE_STOPPED from forceStop() must not overwrite it
+          if (state.modes[mode].status === "kill-switch") return state;
           const finalStats = data.finalStats as ModeStats | undefined;
           const modes = {
             ...state.modes,

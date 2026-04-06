@@ -174,4 +174,43 @@ describe("ModeRunner", () => {
     await vi.advanceTimersByTimeAsync(5000);
     expect(runner.iterationFn).toHaveBeenCalledTimes(1);
   });
+
+  it("forceStop sets running to false and emits MODE_STOPPED without closing positions", async () => {
+    await runner.start();
+    // Let one iteration complete
+    await vi.advanceTimersByTimeAsync(0);
+
+    runner.forceStop();
+
+    expect(runner.isRunning()).toBe(false);
+    // Should NOT call closeAllForMode (positions already closed by kill-switch)
+    expect(mocks.positionManager.closeAllForMode).not.toHaveBeenCalled();
+    // Should broadcast MODE_STOPPED with finalStats
+    expect(mocks.broadcast).toHaveBeenCalledWith(EVENTS.MODE_STOPPED, {
+      mode: "volumeMax",
+      finalStats: mocks.fundAllocator.getStats(),
+    });
+  });
+
+  it("forceStop is idempotent — calling when not running does nothing", async () => {
+    runner.forceStop();
+
+    expect(runner.isRunning()).toBe(false);
+    expect(mocks.broadcast).not.toHaveBeenCalledWith(
+      EVENTS.MODE_STOPPED,
+      expect.anything(),
+    );
+  });
+
+  it("forceStop prevents further loop iterations", async () => {
+    await runner.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runner.iterationFn).toHaveBeenCalledTimes(1);
+
+    runner.forceStop();
+
+    // Advance time — no more iterations should happen
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(runner.iterationFn).toHaveBeenCalledTimes(1);
+  });
 });

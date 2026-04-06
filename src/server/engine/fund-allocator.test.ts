@@ -295,6 +295,33 @@ describe("FundAllocator", () => {
     });
   });
 
+  describe("resetModeStats", () => {
+    it("zeros pnl, trades, volume and resets remaining to allocation", () => {
+      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.reserve("volumeMax", 500_000_000); // deplete remaining
+      allocator.recordTrade("volumeMax", 100_000_000, -50_000_000);
+      allocator.recordTrade("volumeMax", 200_000_000, 30_000_000);
+
+      const statsBefore = allocator.getStats("volumeMax");
+      expect(statsBefore.trades).toBe(2);
+      expect(statsBefore.volume).toBeGreaterThan(0);
+      expect(statsBefore.remaining).toBeLessThan(statsBefore.allocated);
+
+      allocator.resetModeStats("volumeMax");
+
+      const statsAfter = allocator.getStats("volumeMax");
+      expect(statsAfter.trades).toBe(0);
+      expect(statsAfter.volume).toBe(0);
+      expect(statsAfter.pnl).toBe(0);
+      expect(statsAfter.allocated).toBe(1000); // display units: 1B / 1e6
+      expect(statsAfter.remaining).toBe(1000); // remaining reset to match allocation
+    });
+
+    it("is safe to call on non-existent mode", () => {
+      expect(() => allocator.resetModeStats("arbitrage")).not.toThrow();
+    });
+  });
+
   describe("assertSafeInteger guard", () => {
     it("throws RangeError for unsafe integer", () => {
       expect(() => {
