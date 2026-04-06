@@ -27,6 +27,7 @@ export const positions = sqliteTable('positions', {
   entryPrice: integer().notNull(),
   stopLoss: integer().notNull(),
   timestamp: integer().notNull(), // Unix ms
+  chainPositionId: text(), // nullable — null for pre-migration rows
 }, (t) => [
   check('positions_side_check', sql`${t.side} IN ('Long', 'Short')`),
 ]);

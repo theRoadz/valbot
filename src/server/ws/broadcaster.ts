@@ -47,6 +47,8 @@ export function setupWebSocket(server: FastifyInstance): void {
   });
 }
 
+const WS_CLOSE_TIMEOUT_MS = 3_000;
+
 export function closeWebSocket(): Promise<void> {
   return new Promise((resolve) => {
     for (const client of clients) {
@@ -54,7 +56,14 @@ export function closeWebSocket(): Promise<void> {
     }
     clients.clear();
     if (wss) {
-      wss.close(() => resolve());
+      const timer = setTimeout(() => {
+        // wss.close callback may never fire if underlying server is already destroyed
+        resolve();
+      }, WS_CLOSE_TIMEOUT_MS);
+      wss.close(() => {
+        clearTimeout(timer);
+        resolve();
+      });
       wss = null;
     } else {
       resolve();

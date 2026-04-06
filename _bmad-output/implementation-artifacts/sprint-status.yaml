@@ -5,7 +5,7 @@
 # tracking_system: file-system
 # story_location: {project-root}/_bmad-output/implementation-artifacts
 # last dev: 2026-04-06 story 3-1 implementation started
-# last story created: 2026-04-06 story 3-1
+# last story created: 2026-04-06 story 3-2
 
 # STATUS DEFINITIONS:
 # ==================
@@ -38,6 +38,9 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-06
+# last review: 2026-04-06 code review of story 3-2, all patches applied
+# last dev: 2026-04-06 story 3-2 implementation started
+# last story created: 2026-04-06 story 3-2
 # last review: 2026-04-06 code review of story 3-1, all patches applied
 # last review: 2026-04-05 code review of story 2-7, all patches applied
 # last dev: 2026-04-05 story 2-7 implementation complete
@@ -103,7 +106,7 @@ development_status:
   # Epic 3: Safety Systems — Kill Switch & Graceful Shutdown
   epic-3: in-progress
   3-1-per-mode-kill-switch: done
-  3-2-graceful-shutdown-and-crash-recovery: backlog
+  3-2-graceful-shutdown-and-crash-recovery: done
   3-3-rpc-connection-resilience: backlog
   3-4-alertbanner-and-toast-notification-system: backlog
   3-5-error-handling-framework-and-transaction-safety: backlog

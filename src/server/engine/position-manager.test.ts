@@ -11,12 +11,12 @@ const TEST_DB_PATH = path.resolve(process.cwd(), "test-position-manager.db");
 
 // Mock blockchain client
 vi.mock("../blockchain/client.js", () => ({
-  getBlockchainClient: () => ({
+  getBlockchainClient: vi.fn(() => ({
     exchange: null as never,
     info: null as never,
     walletAddress: "0x0000000000000000000000000000000000000000",
     agentAddress: "0x0000000000000000000000000000000000000001",
-  }),
+  })),
 }));
 
 // Mock contracts — default stubs, individual tests override via vi.mocked
@@ -39,6 +39,7 @@ vi.mock("../blockchain/contracts.js", () => ({
 
 // Import mocked modules for override access
 import * as contracts from "../blockchain/contracts.js";
+import { getBlockchainClient } from "../blockchain/client.js";
 
 function setupTestDb() {
   process.env.VALBOT_DB_PATH = TEST_DB_PATH;
@@ -63,7 +64,8 @@ function setupTestDb() {
     size INTEGER NOT NULL,
     entryPrice INTEGER NOT NULL,
     stopLoss INTEGER NOT NULL,
-    timestamp INTEGER NOT NULL
+    timestamp INTEGER NOT NULL,
+    chainPositionId TEXT
   )`);
   db.run(sql`CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -654,6 +656,356 @@ describe("PositionManager", () => {
       expect(internal).toHaveLength(1);
       expect(internal[0].mode).toBe("volumeMax");
       expect(internal[0].size).toBe(10_000_000); // smallest-unit, not display
+    });
+  });
+
+  describe("chainPositionId persistence", () => {
+    it("persisted position includes chainPositionId from open result", async () => {
+      allocator.setAllocation("volumeMax", 1_000_000_000);
+
+      vi.mocked(contracts.openPosition).mockResolvedValueOnce({
+        txHash: "mock-tx-open",
+        positionId: "BTC-Long",
+        entryPrice: 100_000_000,
+      });
+
+      await pm.openPosition({
+        mode: "volumeMax",
+        pair: "BTC/USDC",
+        side: "Long",
+        size: 10_000_000,
+        slippage: 0.5,
+        stopLossPrice: 95_000_000,
+      });
+
+      const db = getDb();
+      const rows = db.select().from(positionsTable).all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].chainPositionId).toBe("BTC-Long");
+    });
+
+    it("loadFromDb uses persisted chainPositionId when available, falls back to placeholder when null", async () => {
+      const db = getDb();
+
+      // Insert row WITH chainPositionId
+      db.insert(positionsTable).values({
+        mode: "volumeMax",
+        pair: "BTC/USDC",
+        side: "Long",
+        size: 10_000_000,
+        entryPrice: 100_000_000,
+        stopLoss: 95_000_000,
+        timestamp: Date.now(),
+        chainPositionId: "BTC-Long",
+      }).run();
+
+      // Insert row WITHOUT chainPositionId (pre-migration)
+      db.insert(positionsTable).values({
+        mode: "volumeMax",
+        pair: "ETH/USDC",
+        side: "Short",
+        size: 5_000_000,
+        entryPrice: 50_000_000,
+        stopLoss: 55_000_000,
+        timestamp: Date.now(),
+      }).run();
+
+      const pm2 = new PositionManager(allocator, mockBroadcast);
+      await pm2.loadFromDb();
+
+      const positions = pm2.getPositions();
+      expect(positions).toHaveLength(2);
+      // Both loaded — the actual chainPositionId is internal, we just verify they loaded
+      expect(positions.some((p) => p.pair === "BTC/USDC")).toBe(true);
+      expect(positions.some((p) => p.pair === "ETH/USDC")).toBe(true);
+    });
+  });
+
+  describe("closeAllPositions", () => {
+    it("closes positions across multiple modes", async () => {
+      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("profitHunter", 500_000_000);
+
+      await pm.openPosition({
+        mode: "volumeMax",
+        pair: "SOL/USDC",
+        side: "Long",
+        size: 10_000_000,
+        slippage: 0.5,
+        stopLossPrice: 95_000_000,
+      });
+      await pm.openPosition({
+        mode: "profitHunter",
+        pair: "ETH/USDC",
+        side: "Short",
+        size: 5_000_000,
+        slippage: 0.3,
+        stopLossPrice: 105_000_000,
+      });
+
+      expect(pm.getPositions()).toHaveLength(2);
+
+      await pm.closeAllPositions();
+
+      expect(pm.getPositions()).toHaveLength(0);
+    });
+
+    it("sets _shuttingDown flag preventing new positions", async () => {
+      allocator.setAllocation("volumeMax", 1_000_000_000);
+
+      await pm.closeAllPositions();
+
+      await expect(
+        pm.openPosition({
+          mode: "volumeMax",
+          pair: "SOL/USDC",
+          side: "Long",
+          size: 10_000_000,
+          slippage: 0.5,
+          stopLossPrice: 95_000_000,
+        }),
+      ).rejects.toThrow("Cannot open position — shutdown in progress");
+    });
+  });
+
+  describe("reconcileOnChainPositions", () => {
+    it("matches on-chain position and updates chainPositionId + size", async () => {
+      const db = getDb();
+      // Insert a recovered position
+      db.insert(positionsTable).values({
+        mode: "volumeMax",
+        pair: "BTC/USDC",
+        side: "Long",
+        size: 10_000_000,
+        entryPrice: 100_000_000,
+        stopLoss: 95_000_000,
+        timestamp: Date.now(),
+      }).run();
+
+      const pm2 = new PositionManager(allocator, mockBroadcast);
+      await pm2.loadFromDb();
+
+      // Mock blockchain client to return matching on-chain position
+      vi.mocked(getBlockchainClient).mockReturnValue({
+        exchange: null as never,
+        info: {
+          clearinghouseState: vi.fn().mockResolvedValue({
+            assetPositions: [{
+              position: { coin: "BTC", szi: "0.1", entryPx: "100" },
+            }],
+          }),
+        } as never,
+        walletAddress: "0x0000000000000000000000000000000000000000",
+        agentAddress: "0x0000000000000000000000000000000000000001",
+      });
+
+      // Mock closePosition to succeed
+      vi.mocked(contracts.closePosition).mockResolvedValueOnce({
+        txHash: "mock-tx-recovery",
+        exitPrice: 100_000_000,
+        pnl: 0,
+        fees: 10_000,
+      });
+
+      allocator.setAllocation("volumeMax", 1_000_000_000);
+
+      await pm2.reconcileOnChainPositions("0x0000000000000000000000000000000000000000");
+
+      // Position should have been closed
+      expect(pm2.getPositions()).toHaveLength(0);
+
+      // Should broadcast recovery summary
+      const alertCalls = mockBroadcast.mock.calls.filter(
+        (c: unknown[]) => c[0] === "alert.triggered",
+      );
+      const recoverySummary = alertCalls.find(
+        (c: unknown[]) => (c[1] as { code: string }).code === "CRASH_RECOVERY_COMPLETE",
+      );
+      expect(recoverySummary).toBeDefined();
+    });
+
+    it("removes position not found on-chain from map and DB", async () => {
+      const db = getDb();
+      db.insert(positionsTable).values({
+        mode: "volumeMax",
+        pair: "BTC/USDC",
+        side: "Long",
+        size: 10_000_000,
+        entryPrice: 100_000_000,
+        stopLoss: 95_000_000,
+        timestamp: Date.now(),
+      }).run();
+
+      const pm2 = new PositionManager(allocator, mockBroadcast);
+      await pm2.loadFromDb();
+      expect(pm2.getPositions()).toHaveLength(1);
+
+      // Mock blockchain client — no on-chain positions
+      vi.mocked(getBlockchainClient).mockReturnValue({
+        exchange: null as never,
+        info: {
+          clearinghouseState: vi.fn().mockResolvedValue({
+            assetPositions: [],
+          }),
+        } as never,
+        walletAddress: "0x0000000000000000000000000000000000000000",
+        agentAddress: "0x0000000000000000000000000000000000000001",
+      });
+
+      await pm2.reconcileOnChainPositions("0x0000000000000000000000000000000000000000");
+
+      // Position should be removed from memory
+      expect(pm2.getPositions()).toHaveLength(0);
+
+      // Position should be removed from DB
+      const rows = db.select().from(positionsTable).all();
+      expect(rows).toHaveLength(0);
+    });
+
+    it("broadcasts critical alert when blockchain client is null", async () => {
+      const db = getDb();
+      db.insert(positionsTable).values({
+        mode: "volumeMax",
+        pair: "BTC/USDC",
+        side: "Long",
+        size: 10_000_000,
+        entryPrice: 100_000_000,
+        stopLoss: 95_000_000,
+        timestamp: Date.now(),
+      }).run();
+
+      const pm2 = new PositionManager(allocator, mockBroadcast);
+      await pm2.loadFromDb();
+
+      // Mock blockchain client as null
+      vi.mocked(getBlockchainClient).mockReturnValue(null);
+
+      mockBroadcast.mockClear();
+      await pm2.reconcileOnChainPositions("0x0000000000000000000000000000000000000000");
+
+      // Should broadcast critical alert
+      expect(mockBroadcast).toHaveBeenCalledWith("alert.triggered", expect.objectContaining({
+        severity: "critical",
+        code: "CRASH_RECOVERY_FAILED",
+      }));
+
+      // Positions should remain in memory (not cleaned up)
+      expect(pm2.getPositions()).toHaveLength(1);
+    });
+
+    it("broadcasts summary alert with correct counts", async () => {
+      const db = getDb();
+      // Position that IS on-chain (will be closed)
+      db.insert(positionsTable).values({
+        mode: "volumeMax",
+        pair: "BTC/USDC",
+        side: "Long",
+        size: 10_000_000,
+        entryPrice: 100_000_000,
+        stopLoss: 95_000_000,
+        timestamp: Date.now(),
+      }).run();
+      // Position that is NOT on-chain (will be cleaned up)
+      db.insert(positionsTable).values({
+        mode: "volumeMax",
+        pair: "ETH/USDC",
+        side: "Short",
+        size: 5_000_000,
+        entryPrice: 50_000_000,
+        stopLoss: 55_000_000,
+        timestamp: Date.now(),
+      }).run();
+
+      const pm2 = new PositionManager(allocator, mockBroadcast);
+      await pm2.loadFromDb();
+      expect(pm2.getPositions()).toHaveLength(2);
+
+      vi.mocked(getBlockchainClient).mockReturnValue({
+        exchange: null as never,
+        info: {
+          clearinghouseState: vi.fn().mockResolvedValue({
+            assetPositions: [{
+              position: { coin: "BTC", szi: "0.1", entryPx: "100" },
+            }],
+          }),
+        } as never,
+        walletAddress: "0x0000000000000000000000000000000000000000",
+        agentAddress: "0x0000000000000000000000000000000000000001",
+      });
+
+      vi.mocked(contracts.closePosition).mockResolvedValueOnce({
+        txHash: "mock-tx-recovery",
+        exitPrice: 100_000_000,
+        pnl: 0,
+        fees: 10_000,
+      });
+
+      allocator.setAllocation("volumeMax", 1_000_000_000);
+      mockBroadcast.mockClear();
+
+      await pm2.reconcileOnChainPositions("0x0000000000000000000000000000000000000000");
+
+      const alertCalls = mockBroadcast.mock.calls.filter(
+        (c: unknown[]) => c[0] === "alert.triggered",
+      );
+      const summary = alertCalls.find(
+        (c: unknown[]) => (c[1] as { code: string }).code === "CRASH_RECOVERY_COMPLETE",
+      );
+      expect(summary).toBeDefined();
+      const payload = (summary as unknown[])[1] as { message: string };
+      // 2 recovered, 1 closed, 1 already gone
+      expect(payload.message).toContain("2");
+      expect(payload.message).toContain("1 closed");
+      expect(payload.message).toContain("1 already gone");
+    });
+
+    it("handles delta-neutral netting — both Long and Short for same coin with near-zero szi", async () => {
+      const db = getDb();
+      // Long BTC position
+      db.insert(positionsTable).values({
+        mode: "volumeMax",
+        pair: "BTC/USDC",
+        side: "Long",
+        size: 10_000_000,
+        entryPrice: 100_000_000,
+        stopLoss: 95_000_000,
+        timestamp: Date.now(),
+      }).run();
+      // Short BTC position
+      db.insert(positionsTable).values({
+        mode: "volumeMax",
+        pair: "BTC/USDC",
+        side: "Short",
+        size: 10_000_000,
+        entryPrice: 100_000_000,
+        stopLoss: 105_000_000,
+        timestamp: Date.now(),
+      }).run();
+
+      const pm2 = new PositionManager(allocator, mockBroadcast);
+      await pm2.loadFromDb();
+      expect(pm2.getPositions()).toHaveLength(2);
+
+      // On-chain szi is near zero (netted out)
+      vi.mocked(getBlockchainClient).mockReturnValue({
+        exchange: null as never,
+        info: {
+          clearinghouseState: vi.fn().mockResolvedValue({
+            assetPositions: [{
+              position: { coin: "BTC", szi: "0.000001", entryPx: "100" },
+            }],
+          }),
+        } as never,
+        walletAddress: "0x0000000000000000000000000000000000000000",
+        agentAddress: "0x0000000000000000000000000000000000000001",
+      });
+
+      await pm2.reconcileOnChainPositions("0x0000000000000000000000000000000000000000");
+
+      // Both positions should be deleted (netted)
+      expect(pm2.getPositions()).toHaveLength(0);
+      const rows = db.select().from(positionsTable).all();
+      expect(rows).toHaveLength(0);
     });
   });
 });

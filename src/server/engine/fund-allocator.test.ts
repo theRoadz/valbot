@@ -32,7 +32,8 @@ function setupTestDb() {
     size INTEGER NOT NULL,
     entryPrice INTEGER NOT NULL,
     stopLoss INTEGER NOT NULL,
-    timestamp INTEGER NOT NULL
+    timestamp INTEGER NOT NULL,
+    chainPositionId TEXT
   )`);
   db.run(sql`CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

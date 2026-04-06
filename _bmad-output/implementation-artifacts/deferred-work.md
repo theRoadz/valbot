@@ -76,7 +76,7 @@
 
 - ~~W1: `status.ts` always returns hardcoded `disconnected`~~ — resolved: wired `getConnectionStatus()` into `/api/status` with fallback
 - ~~W2: Asset cache never refreshes after init~~ — resolved: added 1h TTL with background refresh on cache miss
-- W3: `loadFromDb` recovered positions use fabricated `chainPositionId: "recovered-${id}"` — close order may use stale base size if on-chain position changed during downtime [position-manager.ts:406]. Requires DB migration — Story 3.2 reconciliation.
+- ~~W3: `loadFromDb` recovered positions use fabricated `chainPositionId: "recovered-${id}"`~~ — resolved in Story 3-2: added `chainPositionId` DB column, `reconcileOnChainPositions()`, and computed PnL from entry/exit prices
 - ~~W4: `getConnectionStatus` has no stale-while-revalidate~~ — resolved: returns stale cached data on API failure instead of throwing
 - ~~W5: Hardcoded 0.025% taker fee~~ — resolved: fee rate now configurable via `TAKER_FEE_RATE` env var (defaults to 0.025%)
 
@@ -102,3 +102,9 @@
 - ~~D4: Stale `onKillSwitch` callback could kill newly started runner~~ — resolved: callback now checks `getModeStatus` before stopping runner
 - ~~D9: `closeAllForMode` partial failure leaves orphan positions~~ — resolved: failed positions tracked with `KILL_SWITCH_CLOSE_FAILED` critical alert
 - ~~D10: `closeAllForMode` PnL uses custom formula instead of `closeResult.pnl`~~ — resolved: now uses `result.pnl` directly from contract
+
+## Deferred from: code review of story 3-2-graceful-shutdown-and-crash-recovery (2026-04-06)
+
+- ~~D1: `closeWebSocket` may hang if `fastify.close()` already destroyed the underlying HTTP server~~ — resolved: added 3s timeout to `wss.close()` callback in broadcaster.ts
+- ~~D2: PnL always 0 from contracts — `returnedAmount` ignores actual profit/loss~~ — resolved: position-manager now computes PnL from (exitPrice - entryPrice) / entryPrice * size, with side awareness
+- ~~D3: SIGINT during `reconcileOnChainPositions` at startup creates concurrent close attempts~~ — resolved: moved `registerShutdownHandlers()` after crash recovery in index.ts

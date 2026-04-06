@@ -4,13 +4,14 @@ import fastifyStatic from '@fastify/static';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { setupWebSocket, broadcast, cacheAlert } from './ws/broadcaster.js';
-import { initBlockchainClient, getConnectionStatus } from './blockchain/client.js';
+import { initBlockchainClient, getConnectionStatus, getBlockchainClient } from './blockchain/client.js';
 import { initAssetIndices } from './blockchain/contracts.js';
 import { AppError } from './lib/errors.js';
 import { logger } from './lib/logger.js';
 import { errorHandler } from './lib/error-handler.js';
 import { EVENTS } from '../shared/events.js';
-import { initEngine } from './engine/index.js';
+import { initEngine, getEngine } from './engine/index.js';
+import { registerShutdownHandlers } from './lib/shutdown.js';
 import modeRoutes from './api/mode.js';
 import statusRoutes from './api/status.js';
 import tradesRoutes from './api/trades.js';
@@ -100,6 +101,24 @@ try {
   } catch (engineErr) {
     logger.error({ err: engineErr }, "Engine initialization failed");
   }
+
+  // Crash recovery: reconcile on-chain positions if blockchain is available and positions exist
+  // Runs BEFORE registering shutdown handlers to avoid concurrent close attempts
+  const bcClient = getBlockchainClient();
+  if (bcClient) {
+    try {
+      const engine = getEngine();
+      const pm = engine.positionManager;
+      if (pm.getPositions().length > 0) {
+        await pm.reconcileOnChainPositions(bcClient.walletAddress);
+      }
+    } catch (recoveryErr) {
+      logger.error({ err: recoveryErr }, "Crash recovery reconciliation failed");
+    }
+  }
+
+  // Register shutdown handlers (SIGINT/SIGTERM) after engine init and crash recovery
+  registerShutdownHandlers(fastify);
 } catch (err) {
   fastify.log.error(err);
   process.exit(1);

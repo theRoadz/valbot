@@ -1,13 +1,21 @@
-import { stopAllModes } from "../engine/index.js";
+import type { FastifyInstance } from "fastify";
+import { stopAllModes, getEngine } from "../engine/index.js";
+import { broadcast } from "../ws/broadcaster.js";
 import { closeWebSocket } from "../ws/broadcaster.js";
 import { closeDb } from "../db/index.js";
+import { EVENTS } from "../../shared/events.js";
 import { logger } from "./logger.js";
 
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 
 let shuttingDown = false;
 
-export function registerShutdownHandlers(): void {
+/** Reset module state — for testing only. */
+export function _resetShutdownState(): void {
+  shuttingDown = false;
+}
+
+export function registerShutdownHandlers(fastify: FastifyInstance): void {
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
@@ -21,7 +29,28 @@ export function registerShutdownHandlers(): void {
     }, SHUTDOWN_TIMEOUT_MS);
     forceTimer.unref();
 
-    // Step 1: Stop all running modes (closes their positions via closeAllForMode)
+    // Step 1: Block new positions immediately
+    try {
+      const engine = getEngine();
+      engine.positionManager.enterShutdown();
+    } catch {
+      // Engine may not be initialized — that's OK, no positions to guard
+    }
+
+    // Step 2: Broadcast shutdown alert to connected clients
+    try {
+      broadcast(EVENTS.ALERT_TRIGGERED, {
+        severity: "warning",
+        code: "SHUTDOWN_INITIATED",
+        message: "Bot is shutting down — closing all positions.",
+        details: null,
+        resolution: "Wait for shutdown to complete. Positions are being closed.",
+      });
+    } catch (err) {
+      logger.error({ err }, "Error broadcasting shutdown alert");
+    }
+
+    // Step 3: Stop all running modes (closes their positions via closeAllForMode)
     try {
       await stopAllModes();
       logger.info("All modes stopped");
@@ -29,13 +58,25 @@ export function registerShutdownHandlers(): void {
       logger.error({ err }, "Error stopping modes during shutdown");
     }
 
-    // Step 2: Close any remaining positions not owned by a mode runner
-    // Currently handled by stopAllModes → runner.stop() → closeAllForMode
+    // Step 4: Close any remaining positions not owned by a mode runner
+    try {
+      const engine = getEngine();
+      await engine.positionManager.closeAllPositions();
+      logger.info("Remaining positions closed");
+    } catch (err) {
+      // Engine may not be initialized if server failed early — that's OK
+      logger.error({ err }, "Error closing remaining positions during shutdown");
+    }
 
-    // Step 3: Flush trade buffer (not yet implemented — trades are written synchronously in closePosition)
-    // TODO: Add trade buffer flush when batch writing is introduced
+    // Step 5: Close Fastify HTTP server
+    try {
+      await fastify.close();
+      logger.info("Fastify server closed");
+    } catch (err) {
+      logger.error({ err }, "Error closing Fastify server during shutdown");
+    }
 
-    // Step 4: Close WebSocket connections
+    // Step 6: Close WebSocket connections
     try {
       await closeWebSocket();
       logger.info("WebSocket connections closed");
@@ -43,7 +84,7 @@ export function registerShutdownHandlers(): void {
       logger.error({ err }, "Error closing WebSocket during shutdown");
     }
 
-    // Step 5: Close database
+    // Step 7: Close database
     try {
       closeDb();
       logger.info("Database closed");

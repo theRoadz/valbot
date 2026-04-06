@@ -55,6 +55,7 @@ export class PositionManager {
   private positions = new Map<number, InternalPosition>();
   private _killSwitchActive = new Set<ModeType>();
   private _modeStatus = new Map<ModeType, "active" | "kill-switch">();
+  private _shuttingDown = false;
   private fundAllocator: FundAllocator;
   private broadcast: BroadcastFn;
   private readonly _onKillSwitch?: (mode: ModeType) => void;
@@ -63,6 +64,11 @@ export class PositionManager {
     this.fundAllocator = fundAllocator;
     this.broadcast = broadcast;
     this._onKillSwitch = onKillSwitch;
+  }
+
+  /** Signal that shutdown is in progress — blocks new openPosition calls. */
+  enterShutdown(): void {
+    this._shuttingDown = true;
   }
 
   async openPosition(params: {
@@ -74,6 +80,16 @@ export class PositionManager {
     stopLossPrice: number; // smallest-unit
   }): Promise<Position> {
     const { mode, pair, side, size, slippage, stopLossPrice } = params;
+
+    // SAFETY: Prevent opening positions during shutdown
+    if (this._shuttingDown) {
+      throw new AppError({
+        severity: "warning",
+        code: "SHUTDOWN_IN_PROGRESS",
+        message: "Cannot open position — shutdown in progress.",
+        resolution: "Wait for shutdown to complete.",
+      });
+    }
 
     // SAFETY: Prevent opening positions on a kill-switched mode (race condition guard)
     if (this._killSwitchActive.has(mode) || this._modeStatus.get(mode) === "kill-switch") {
@@ -175,6 +191,7 @@ export class PositionManager {
           entryPrice: openResult.entryPrice,
           stopLoss: stopLossPrice,
           timestamp: now,
+          chainPositionId: openResult.positionId,
         })
         .run();
       positionId = Number(insertResult.lastInsertRowid);
@@ -282,13 +299,24 @@ export class PositionManager {
       });
     }
 
-    // Step 3: Write trade record + delete position from DB
+    // Step 3: Compute actual PnL from entry vs exit prices
+    // Contract returns pnl: 0 — caller must compute from stored entryPrice
+    // PnL = (exitPrice - entryPrice) / entryPrice * size for Long
+    // PnL = (entryPrice - exitPrice) / entryPrice * size for Short
+    const priceDiff = pos.side === "Long"
+      ? closeResult.exitPrice - pos.entryPrice
+      : pos.entryPrice - closeResult.exitPrice;
+    const computedPnl = pos.entryPrice > 0
+      ? Math.round(priceDiff / pos.entryPrice * pos.size)
+      : 0;
+
+    // Step 4: Write trade record + delete position from DB
     // Wrapped in try/catch — on-chain close already succeeded, so DB failure
     // must not leave funds locked or position stuck in memory
     const now = Date.now();
     assertSafeInteger(pos.size, "trade.size");
     assertSafeInteger(closeResult.exitPrice, "trade.price");
-    assertSafeInteger(closeResult.pnl, "trade.pnl");
+    assertSafeInteger(computedPnl, "trade.pnl");
     assertSafeInteger(closeResult.fees, "trade.fees");
     assertSafeInteger(now, "trade.timestamp");
 
@@ -301,13 +329,13 @@ export class PositionManager {
           side: pos.side,
           size: pos.size,
           price: closeResult.exitPrice,
-          pnl: closeResult.pnl,
+          pnl: computedPnl,
           fees: closeResult.fees,
           timestamp: now,
         })
         .run();
 
-      // Step 4: Delete position from DB
+      // Step 5: Delete position from DB
       db.delete(positionsTable).where(eq(positionsTable.id, positionId)).run();
     } catch (dbErr) {
       // On-chain position is already closed — log critically but continue
@@ -318,24 +346,24 @@ export class PositionManager {
       );
     }
 
-    // Step 5: Remove from in-memory map
+    // Step 6: Remove from in-memory map
     this.positions.delete(positionId);
 
-    // Step 6: Release funds — returnedAmount = size + pnl - fees (clamped to 0)
-    const returnedAmount = Math.max(0, pos.size + closeResult.pnl - closeResult.fees);
+    // Step 7: Release funds — returnedAmount = size + pnl - fees (clamped to 0)
+    const returnedAmount = Math.max(0, pos.size + computedPnl - closeResult.fees);
     this.fundAllocator.release(pos.mode, returnedAmount);
 
-    // Step 7: Record trade stats
-    this.fundAllocator.recordTrade(pos.mode, pos.size, closeResult.pnl);
+    // Step 8: Record trade stats
+    this.fundAllocator.recordTrade(pos.mode, pos.size, computedPnl);
 
-    // Step 8: Broadcast events
+    // Step 9: Broadcast events
     this.broadcast(EVENTS.POSITION_CLOSED, {
       mode: pos.mode,
       pair: pos.pair,
       side: pos.side,
       size: fromSmallestUnit(pos.size),
       exitPrice: fromSmallestUnit(closeResult.exitPrice),
-      pnl: fromSmallestUnit(closeResult.pnl),
+      pnl: fromSmallestUnit(computedPnl),
     });
 
     this.broadcast(EVENTS.TRADE_EXECUTED, {
@@ -344,7 +372,7 @@ export class PositionManager {
       side: pos.side,
       size: fromSmallestUnit(pos.size),
       price: fromSmallestUnit(closeResult.exitPrice),
-      pnl: fromSmallestUnit(closeResult.pnl),
+      pnl: fromSmallestUnit(computedPnl),
       fees: fromSmallestUnit(closeResult.fees),
     });
 
@@ -354,11 +382,11 @@ export class PositionManager {
     });
 
     logger.info(
-      { positionId, mode: pos.mode, pnl: closeResult.pnl, txHash: closeResult.txHash },
+      { positionId, mode: pos.mode, pnl: computedPnl, txHash: closeResult.txHash },
       "Position closed",
     );
 
-    // Step 9: Kill-switch check
+    // Step 10: Kill-switch check
     if (!opts?.skipKillSwitchCheck && !this._killSwitchActive.has(pos.mode)) {
       if (this.fundAllocator.checkKillSwitch(pos.mode)) {
         logger.warn({ mode: pos.mode }, "Kill switch triggered");
@@ -391,7 +419,7 @@ export class PositionManager {
       }
     }
 
-    // Step 10: Return
+    // Step 11: Return
     return {
       ...closeResult,
       position: toDisplayPosition(pos),
@@ -440,8 +468,8 @@ export class PositionManager {
         code: "KILL_SWITCH_CLOSE_FAILED",
         message: `${failedPositionIds.length} position(s) failed to close during kill-switch on ${mode}`,
         mode,
-        details: `Position IDs: ${failedPositionIds.join(", ")}. These positions remain open on-chain and require manual closure.`,
-        resolution: "Manually close the listed positions via the exchange interface.",
+        details: `Position IDs: ${failedPositionIds.join(", ")}. These positions remain open on-chain. On-chain stop-losses serve as safety net.`,
+        resolution: "Verify on-chain stop-losses are active. If not, manually close the listed positions via the exchange interface.",
       });
     }
 
@@ -453,6 +481,191 @@ export class PositionManager {
       positions: closedPositions,
       closedDetails,
     };
+  }
+
+  async reconcileOnChainPositions(walletAddress: string): Promise<void> {
+    const client = getBlockchainClient();
+    const recoveredCount = this.positions.size;
+
+    if (recoveredCount === 0) return;
+
+    if (!client) {
+      this.broadcast(EVENTS.ALERT_TRIGGERED, {
+        severity: "critical",
+        code: "CRASH_RECOVERY_FAILED",
+        message: `Cannot verify orphaned positions — blockchain not connected. ${recoveredCount} positions from previous session found in DB. Manual verification required.`,
+        details: null,
+        resolution: "Connect to Hyperliquid and restart the bot to reconcile positions.",
+      });
+      return;
+    }
+
+    // Query on-chain clearing house state
+    let assetPositions: Array<{ position: { coin: string; szi: string; entryPx: string } }>;
+    try {
+      const state = await client.info.clearinghouseState({ user: walletAddress });
+      assetPositions = (state as { assetPositions: Array<{ position: { coin: string; szi: string; entryPx: string } }> }).assetPositions ?? [];
+    } catch (err) {
+      logger.error({ err }, "Failed to fetch clearing house state for crash recovery");
+      this.broadcast(EVENTS.ALERT_TRIGGERED, {
+        severity: "critical",
+        code: "CRASH_RECOVERY_FAILED",
+        message: `Failed to query on-chain positions for reconciliation. ${recoveredCount} positions remain unverified.`,
+        details: err instanceof Error ? err.message : String(err),
+        resolution: "Check Hyperliquid API connection and restart the bot.",
+      });
+      return;
+    }
+
+    // Build map of on-chain positions: coin → { szi, entryPx }
+    const onChainMap = new Map<string, { szi: number; entryPx: number }>();
+    for (const ap of assetPositions) {
+      const szi = parseFloat(ap.position.szi);
+      const entryPx = parseFloat(ap.position.entryPx);
+      if (!Number.isFinite(szi) || !Number.isFinite(entryPx)) {
+        logger.error({ coin: ap.position.coin, szi: ap.position.szi, entryPx: ap.position.entryPx }, "Invalid on-chain position data — skipping");
+        continue;
+      }
+      if (szi !== 0) {
+        onChainMap.set(ap.position.coin, { szi, entryPx });
+      }
+    }
+
+    const db = getDb();
+    let closedCount = 0;
+    let cleanedCount = 0;
+    const positionsToClose: number[] = [];
+
+    // Group recovered positions by coin to handle delta-neutral netting
+    const byCoin = new Map<string, InternalPosition[]>();
+    for (const pos of this.positions.values()) {
+      const coin = pos.pair.split("/")[0];
+      const existing = byCoin.get(coin) ?? [];
+      existing.push(pos);
+      byCoin.set(coin, existing);
+    }
+
+    for (const [coin, dbPositions] of byCoin) {
+      const onChain = onChainMap.get(coin);
+
+      if (!onChain || Math.abs(onChain.szi) < 1e-10) {
+        // Delta-neutral netting or position fully closed on-chain
+        // Check for near-zero: if DB has both Long and Short for same coin
+        // and on-chain szi is near zero, treat as netted
+        const hasLong = dbPositions.some((p) => p.side === "Long");
+        const hasShort = dbPositions.some((p) => p.side === "Short");
+
+        if (hasLong && hasShort && onChain) {
+          // Delta-neutral: both sides exist in DB, near-zero on-chain
+          const minSize = Math.min(...dbPositions.map((p) => p.size));
+          const sziBaseUnits = Math.abs(onChain.szi);
+          const dbMinBaseUnits = minSize / 1e6 / (onChain.entryPx || 1);
+          if (sziBaseUnits < dbMinBaseUnits * 0.01) {
+            logger.info({ coin, positionCount: dbPositions.length }, "Delta-neutral netting detected — both sides netted on-chain");
+          }
+        }
+
+        // All positions for this coin are gone on-chain — clean up
+        for (const pos of dbPositions) {
+          this.positions.delete(pos.id);
+          try {
+            db.delete(positionsTable).where(eq(positionsTable.id, pos.id)).run();
+          } catch (dbErr) {
+            logger.error({ dbErr, positionId: pos.id }, "Failed to delete reconciled position from DB");
+          }
+          cleanedCount++;
+        }
+        continue;
+      }
+
+      // On-chain position exists — match by side
+      const onChainSide: TradeSide = onChain.szi > 0 ? "Long" : "Short";
+      const onChainSizeSmallest = Math.round(Math.abs(onChain.szi) * onChain.entryPx * 1e6);
+      const onChainEntrySmallest = Math.round(onChain.entryPx * 1e6);
+
+      // Only match the first same-side position — Hyperliquid reports net position per coin
+      let matchedOne = false;
+      for (const pos of dbPositions) {
+        if (pos.side === onChainSide && !matchedOne) {
+          matchedOne = true;
+          // Matched — update with on-chain values and persist to DB
+          pos.chainPositionId = `${coin}-${pos.side}`;
+          pos.size = onChainSizeSmallest;
+          pos.entryPrice = onChainEntrySmallest;
+          try {
+            db.update(positionsTable)
+              .set({ chainPositionId: pos.chainPositionId, size: pos.size, entryPrice: pos.entryPrice })
+              .where(eq(positionsTable.id, pos.id))
+              .run();
+          } catch (dbErr) {
+            logger.error({ dbErr, positionId: pos.id }, "Failed to persist reconciled position updates to DB");
+          }
+          positionsToClose.push(pos.id);
+        } else if (pos.side !== onChainSide || matchedOne) {
+          // Wrong side — position closed or netted on-chain
+          this.positions.delete(pos.id);
+          try {
+            db.delete(positionsTable).where(eq(positionsTable.id, pos.id)).run();
+          } catch (dbErr) {
+            logger.error({ dbErr, positionId: pos.id }, "Failed to delete reconciled position from DB");
+          }
+          cleanedCount++;
+        }
+      }
+    }
+
+    // Close matched positions via normal close flow
+    for (const posId of positionsToClose) {
+      try {
+        await this.closePosition(posId, { skipKillSwitchCheck: true });
+        closedCount++;
+      } catch (err) {
+        logger.error({ err, positionId: posId }, "Failed to close reconciled position");
+      }
+    }
+
+    // Broadcast recovery summary
+    this.broadcast(EVENTS.ALERT_TRIGGERED, {
+      severity: "warning",
+      code: "CRASH_RECOVERY_COMPLETE",
+      message: `Recovered ${recoveredCount} positions: ${closedCount} closed, ${cleanedCount} already gone.`,
+      details: null,
+      resolution: null,
+    });
+
+    logger.info(
+      { recoveredCount, closedCount, cleanedCount },
+      "Crash recovery reconciliation complete",
+    );
+  }
+
+  async closeAllPositions(): Promise<void> {
+    this._shuttingDown = true;
+
+    // Collect distinct modes that still have positions
+    const modesWithPositions = new Set<ModeType>();
+    for (const pos of this.positions.values()) {
+      modesWithPositions.add(pos.mode);
+    }
+
+    const failedModes: string[] = [];
+    for (const mode of modesWithPositions) {
+      try {
+        await this.closeAllForMode(mode);
+      } catch (err) {
+        failedModes.push(mode);
+        logger.error({ err, mode }, "Error closing positions for mode during closeAllPositions");
+      }
+    }
+
+    // Surface remaining open positions so caller/logs are aware
+    const remaining = this.positions.size;
+    if (remaining > 0 || failedModes.length > 0) {
+      logger.error(
+        { remainingPositions: remaining, failedModes },
+        "CRITICAL: closeAllPositions completed with positions still open — on-chain stop-losses serve as safety net",
+      );
+    }
   }
 
   getModeStatus(mode: ModeType): "active" | "kill-switch" | undefined {
@@ -488,7 +701,7 @@ export class PositionManager {
     for (const row of rows) {
       this.positions.set(row.id, {
         id: row.id,
-        chainPositionId: `recovered-${row.id}`, // on-chain ID not persisted; Story 3.2 will reconcile
+        chainPositionId: row.chainPositionId ?? `recovered-${row.id}`,
         mode: row.mode as ModeType,
         pair: row.pair,
         side: row.side as TradeSide,
