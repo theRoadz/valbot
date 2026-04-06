@@ -108,3 +108,8 @@
 - ~~D1: `closeWebSocket` may hang if `fastify.close()` already destroyed the underlying HTTP server~~ — resolved: added 3s timeout to `wss.close()` callback in broadcaster.ts
 - ~~D2: PnL always 0 from contracts — `returnedAmount` ignores actual profit/loss~~ — resolved: position-manager now computes PnL from (exitPrice - entryPrice) / entryPrice * size, with side awareness
 - ~~D3: SIGINT during `reconcileOnChainPositions` at startup creates concurrent close attempts~~ — resolved: moved `registerShutdownHandlers()` after crash recovery in index.ts
+
+## Deferred from: code review of story 3-3-rpc-connection-resilience (2026-04-06)
+
+- ~~No auto-dismiss metadata on "Reconnected" info alert (AC3: 5s auto-dismiss)~~ — resolved: added `autoDismissMs` field to AlertTriggeredPayload/Alert, store auto-removes after delay
+- ~~Mode runner resumes via polling with full interval delay, not event-driven (AC7)~~ — resolved: changed unhealthy poll to 2s for faster recovery

@@ -2,6 +2,7 @@ import type { ExchangeClient, InfoClient } from "@nktkas/hyperliquid";
 import type { TradeSide } from "../../shared/types.js";
 import { logger } from "../lib/logger.js";
 import { AppError } from "../lib/errors.js";
+import { withRetry } from "./client.js";
 
 // Estimated taker fee rate — Hyperliquid doesn't return fees in order responses,
 // so we approximate. Actual fees vary by volume tier (0.01%-0.035%).
@@ -29,7 +30,7 @@ export async function initAssetIndices(
 }
 
 async function refreshAssetCache(info: InfoClient): Promise<void> {
-  const meta = await info.meta();
+  const meta = await withRetry(() => info.meta(), "refreshAssetCache");
   assetCache.clear();
   for (let i = 0; i < meta.universe.length; i++) {
     const asset = meta.universe[i];
@@ -132,7 +133,7 @@ async function getMidPrice(
   info: InfoClient,
   coin: string,
 ): Promise<number> {
-  const mids = await info.allMids();
+  const mids = await withRetry(() => info.allMids(), "getMidPrice");
   const midStr = (mids as Record<string, string>)[coin];
   if (!midStr) {
     throw new AppError({
@@ -173,19 +174,23 @@ export async function openPosition(
   // Convert to base currency units: sizeDisplay (USDC) / midPrice = base units
   const baseSize = sizeDisplay / midPrice;
 
-  const result = await exchange.order({
-    orders: [
-      {
-        a: asset.index,
-        b: isBuy,
-        p: roundPrice(limitPrice),
-        s: roundToSzDecimals(baseSize, asset.szDecimals),
-        r: false,
-        t: { limit: { tif: "Ioc" } },
-      },
-    ],
-    grouping: "na",
-  });
+  const result = await withRetry(
+    () => exchange.order({
+      orders: [
+        {
+          a: asset.index,
+          b: isBuy,
+          p: roundPrice(limitPrice),
+          s: roundToSzDecimals(baseSize, asset.szDecimals),
+          r: false,
+          t: { limit: { tif: "Ioc" } },
+        },
+      ],
+      grouping: "na",
+    }),
+    "openPosition",
+    { writeCall: true },
+  );
 
   // Parse response
   const status = result.response.data.statuses[0];
@@ -251,19 +256,23 @@ export async function closePosition(
   const sizeDisplay = size / 1e6;
   const baseSize = sizeDisplay / midPrice;
 
-  const result = await exchange.order({
-    orders: [
-      {
-        a: asset.index,
-        b: isBuy,
-        p: roundPrice(limitPrice),
-        s: roundToSzDecimals(baseSize, asset.szDecimals),
-        r: true, // reduce-only
-        t: { limit: { tif: "Ioc" } },
-      },
-    ],
-    grouping: "na",
-  });
+  const result = await withRetry(
+    () => exchange.order({
+      orders: [
+        {
+          a: asset.index,
+          b: isBuy,
+          p: roundPrice(limitPrice),
+          s: roundToSzDecimals(baseSize, asset.szDecimals),
+          r: true, // reduce-only
+          t: { limit: { tif: "Ioc" } },
+        },
+      ],
+      grouping: "na",
+    }),
+    "closePosition",
+    { writeCall: true },
+  );
 
   const status = result.response.data.statuses[0];
   if (!status || typeof status === "string" || "error" in status) {
@@ -320,25 +329,29 @@ export async function setStopLoss(
   // We need base size — approximate from trigger price
   const baseSize = sizeDisplay / triggerPx;
 
-  const result = await exchange.order({
-    orders: [
-      {
-        a: asset.index,
-        b: isBuy,
-        p: roundPrice(triggerPx), // limit price = trigger price for SL
-        s: roundToSzDecimals(baseSize, asset.szDecimals),
-        r: true, // reduce-only
-        t: {
-          trigger: {
-            isMarket: true,
-            triggerPx: roundPrice(triggerPx),
-            tpsl: "sl",
+  const result = await withRetry(
+    () => exchange.order({
+      orders: [
+        {
+          a: asset.index,
+          b: isBuy,
+          p: roundPrice(triggerPx), // limit price = trigger price for SL
+          s: roundToSzDecimals(baseSize, asset.szDecimals),
+          r: true, // reduce-only
+          t: {
+            trigger: {
+              isMarket: true,
+              triggerPx: roundPrice(triggerPx),
+              tpsl: "sl",
+            },
           },
         },
-      },
-    ],
-    grouping: "positionTpsl",
-  });
+      ],
+      grouping: "positionTpsl",
+    }),
+    "setStopLoss",
+    { writeCall: true },
+  );
 
   const status = result.response.data.statuses[0];
   if (!status || (typeof status !== "string" && "error" in status)) {

@@ -234,6 +234,9 @@ const useStore = create<ValBotStore>()((set) => ({
         typeof data?.code === "string" &&
         typeof data?.message === "string"
       ) {
+        const autoDismissMs = typeof data.autoDismissMs === "number" && data.autoDismissMs > 0
+          ? data.autoDismissMs
+          : undefined;
         const alert: Alert = {
           id: ++alertIdCounter,
           severity: data.severity as Alert["severity"],
@@ -242,6 +245,7 @@ const useStore = create<ValBotStore>()((set) => ({
           details: typeof data.details === "string" ? data.details : null,
           resolution: typeof data.resolution === "string" ? data.resolution : null,
           timestamp: message.timestamp,
+          autoDismissMs,
         };
         // Deduplicate by code — replace existing alert with same code
         set((state) => ({
@@ -250,6 +254,33 @@ const useStore = create<ValBotStore>()((set) => ({
             alert,
           ],
         }));
+
+        // Auto-dismiss after specified delay
+        if (autoDismissMs) {
+          const alertId = alert.id;
+          setTimeout(() => {
+            set((state) => ({
+              alerts: state.alerts.filter((a) => a.id !== alertId),
+            }));
+          }, autoDismissMs);
+        }
+
+        // Handle API connection failure — update connection status for top-bar indicator
+        if (data.code === "API_CONNECTION_FAILED") {
+          if (data.severity === "warning") {
+            set((state) => ({
+              connection: { ...state.connection, status: "reconnecting" },
+            }));
+          } else if (data.severity === "critical") {
+            set((state) => ({
+              connection: { ...state.connection, status: "disconnected" },
+            }));
+          } else if (data.severity === "info") {
+            set((state) => ({
+              connection: { ...state.connection, status: "connected" },
+            }));
+          }
+        }
 
         // Handle kill switch alert for modes
         if (data.code === "KILL_SWITCH_TRIGGERED") {

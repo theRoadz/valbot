@@ -9,6 +9,14 @@ vi.mock("../lib/logger.js", () => ({
   },
 }));
 
+// Mock withRetry — pass through by default (executes fn immediately)
+const mockWithRetry = vi.fn().mockImplementation(
+  (fn: () => Promise<unknown>) => fn(),
+);
+vi.mock("./client.js", () => ({
+  withRetry: (...args: unknown[]) => mockWithRetry(...args),
+}));
+
 // Build mock exchange and info clients
 const mockOrder = vi.fn();
 const mockAllMids = vi.fn();
@@ -330,5 +338,154 @@ describe("setStopLoss", () => {
         stopLossPrice: 90_000_000_000,
       }),
     ).rejects.toThrow("Invalid trigger price");
+  });
+});
+
+describe("retry wrapping", () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    mockWithRetry.mockReset();
+    mockWithRetry.mockImplementation((fn: () => Promise<unknown>) => fn());
+    mockOrder.mockReset();
+    mockAllMids.mockReset();
+    mockMeta.mockReset();
+
+    mockMeta.mockResolvedValue({
+      universe: [
+        { name: "BTC", szDecimals: 5, maxLeverage: 50 },
+      ],
+    });
+
+    const { initAssetIndices } = await import("./contracts.js");
+    await initAssetIndices(mockInfo);
+  });
+
+  it("getMidPrice calls withRetry for read-only operation", async () => {
+    mockAllMids.mockResolvedValue({ BTC: "95000.0" });
+    mockOrder.mockResolvedValue({
+      status: "ok",
+      response: {
+        type: "order",
+        data: {
+          statuses: [
+            { filled: { totalSz: "0.01", avgPx: "95000.0", oid: 1 } },
+          ],
+        },
+      },
+    });
+
+    const { openPosition } = await import("./contracts.js");
+    await openPosition({
+      exchange: mockExchange,
+      info: mockInfo,
+      pair: "BTC/USDC",
+      side: "Long",
+      size: 10_000_000,
+      slippage: 0.5,
+    });
+
+    // withRetry called for getMidPrice (read) and openPosition order (write)
+    const calls = mockWithRetry.mock.calls;
+    // Find the getMidPrice call (no writeCall option)
+    const readCalls = calls.filter((c: unknown[]) => c.length === 2 || (c[2] === undefined));
+    expect(readCalls.length).toBeGreaterThan(0);
+  });
+
+  it("openPosition calls withRetry with writeCall: true for order", async () => {
+    mockAllMids.mockResolvedValue({ BTC: "95000.0" });
+    mockOrder.mockResolvedValue({
+      status: "ok",
+      response: {
+        type: "order",
+        data: {
+          statuses: [
+            { filled: { totalSz: "0.01", avgPx: "95000.0", oid: 1 } },
+          ],
+        },
+      },
+    });
+
+    const { openPosition } = await import("./contracts.js");
+    await openPosition({
+      exchange: mockExchange,
+      info: mockInfo,
+      pair: "BTC/USDC",
+      side: "Long",
+      size: 10_000_000,
+      slippage: 0.5,
+    });
+
+    const writeCalls = mockWithRetry.mock.calls.filter(
+      (c: unknown[]) => c[2] && (c[2] as Record<string, boolean>).writeCall === true,
+    );
+    expect(writeCalls.length).toBe(1);
+    expect(writeCalls[0][1]).toBe("openPosition");
+  });
+
+  it("closePosition calls withRetry with writeCall: true", async () => {
+    mockAllMids.mockResolvedValue({ BTC: "95000.0" });
+    mockOrder.mockResolvedValue({
+      status: "ok",
+      response: {
+        type: "order",
+        data: {
+          statuses: [
+            { filled: { totalSz: "0.01", avgPx: "95000.0", oid: 1 } },
+          ],
+        },
+      },
+    });
+
+    const { closePosition } = await import("./contracts.js");
+    await closePosition({
+      exchange: mockExchange,
+      info: mockInfo,
+      positionId: "BTC-Long",
+      pair: "BTC/USDC",
+      side: "Long",
+      size: 10_000_000,
+    });
+
+    const writeCalls = mockWithRetry.mock.calls.filter(
+      (c: unknown[]) => c[2] && (c[2] as Record<string, boolean>).writeCall === true,
+    );
+    expect(writeCalls.length).toBe(1);
+    expect(writeCalls[0][1]).toBe("closePosition");
+  });
+
+  it("setStopLoss calls withRetry with writeCall: true", async () => {
+    mockOrder.mockResolvedValue({
+      status: "ok",
+      response: {
+        type: "order",
+        data: { statuses: ["waitingForTrigger"] },
+      },
+    });
+
+    const { setStopLoss } = await import("./contracts.js");
+    await setStopLoss({
+      exchange: mockExchange,
+      pair: "BTC/USDC",
+      side: "Long",
+      size: 10_000_000,
+      stopLossPrice: 90_000_000_000,
+    });
+
+    const writeCalls = mockWithRetry.mock.calls.filter(
+      (c: unknown[]) => c[2] && (c[2] as Record<string, boolean>).writeCall === true,
+    );
+    expect(writeCalls.length).toBe(1);
+    expect(writeCalls[0][1]).toBe("setStopLoss");
+  });
+
+  it("refreshAssetCache calls withRetry for read-only meta call", async () => {
+    // initAssetIndices was already called in beforeEach, which uses refreshAssetCache
+    // Check that withRetry was called with "refreshAssetCache" label
+    const metaCalls = mockWithRetry.mock.calls.filter(
+      (c: unknown[]) => c[1] === "refreshAssetCache",
+    );
+    expect(metaCalls.length).toBe(1);
+    // No writeCall option for read-only
+    expect(metaCalls[0][2]).toBeUndefined();
   });
 });

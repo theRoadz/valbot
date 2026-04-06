@@ -1,6 +1,6 @@
 import { privateKeyToAccount } from "viem/accounts";
 import type { PrivateKeyAccount } from "viem";
-import { HttpTransport, ExchangeClient, InfoClient } from "@nktkas/hyperliquid";
+import { HttpTransport, ExchangeClient, InfoClient, HttpRequestError } from "@nktkas/hyperliquid";
 import { logger } from "../lib/logger.js";
 import {
   AppError,
@@ -8,9 +8,179 @@ import {
   apiConnectionFailedError,
   walletAddressMissingError,
 } from "../lib/errors.js";
+import { broadcast, cacheAlert } from "../ws/broadcaster.js";
+import { EVENTS } from "../../shared/events.js";
 
 const MAX_API_RETRIES = 3;
 const BACKOFF_BASE_MS = 1000;
+
+// --- API health state ---
+let apiHealthy = true;
+let _retrying = false;
+
+export function isApiHealthy(): boolean {
+  return apiHealthy;
+}
+
+// --- Retry utilities ---
+
+const WRITE_UNSAFE_PATTERNS = [
+  "ETIMEDOUT",
+  "AbortError",
+  "socket hang up",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "ECONNRESET",
+];
+
+export function isRetriableError(err: unknown, writeCall: boolean): boolean {
+  if (err instanceof AppError) return false;
+  if (err instanceof HttpRequestError) {
+    if (writeCall) {
+      const msg = err.message || "";
+      if (WRITE_UNSAFE_PATTERNS.some((p) => msg.includes(p))) return false;
+    }
+    return true;
+  }
+  // Unknown error — check message for network patterns
+  if (err instanceof Error) {
+    const msg = err.message || "";
+    if (writeCall && WRITE_UNSAFE_PATTERNS.some((p) => msg.includes(p))) return false;
+    const networkPatterns = ["ECONNREFUSED", "ENOTFOUND", "fetch failed", "ECONNRESET", "network"];
+    if (networkPatterns.some((p) => msg.toLowerCase().includes(p.toLowerCase()))) return true;
+  }
+  // Default: retriable for read calls, not for write calls
+  return !writeCall;
+}
+
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  opts?: { writeCall?: boolean },
+): Promise<T> {
+  const writeCall = opts?.writeCall ?? false;
+
+  // Fast path: if API is healthy, just call fn. On success, restore health
+  // in case a previous exhaustion left apiHealthy = false (recovery on next success).
+  try {
+    const result = await fn();
+    if (!apiHealthy) {
+      apiHealthy = true;
+      broadcast(EVENTS.ALERT_TRIGGERED, {
+        severity: "info",
+        code: "API_CONNECTION_FAILED",
+        message: "API reconnected — trading resumed",
+        details: null,
+        resolution: null,
+        autoDismissMs: 5000,
+      });
+      broadcast(EVENTS.CONNECTION_STATUS, {
+        rpc: true,
+        wallet: client?.walletAddress ?? "",
+        equity: cachedStatus?.data.equity ?? 0,
+        available: cachedStatus?.data.available ?? 0,
+      });
+    }
+    return result;
+  } catch (firstErr) {
+    if (!isRetriableError(firstErr, writeCall)) throw firstErr;
+
+    // Concurrency guard: if another retry sequence is active, fail fast
+    // Exception: closePosition is a critical safety path — always allow its initial attempt
+    if (_retrying) {
+      throw apiConnectionFailedError(MAX_API_RETRIES);
+    }
+
+    _retrying = true;
+    apiHealthy = false;
+
+    try {
+      for (let attempt = 1; attempt <= MAX_API_RETRIES; attempt++) {
+        // Broadcast retry progress (warning first, then connection status)
+        broadcast(EVENTS.ALERT_TRIGGERED, {
+          severity: "warning",
+          code: "API_CONNECTION_FAILED",
+          message: `API connection lost — retrying (${attempt}/${MAX_API_RETRIES})...`,
+          details: `${label}: ${firstErr instanceof Error ? firstErr.message : String(firstErr)}`,
+          resolution: null,
+        });
+
+        broadcast(EVENTS.CONNECTION_STATUS, {
+          rpc: false,
+          wallet: client?.walletAddress ?? "",
+          equity: cachedStatus?.data.equity ?? 0,
+          available: cachedStatus?.data.available ?? 0,
+        });
+
+        const delay = Math.min(BACKOFF_BASE_MS * 2 ** (attempt - 1), 4000);
+        logger.warn({ attempt, maxRetries: MAX_API_RETRIES, label }, "API retry attempt");
+        await new Promise((r) => setTimeout(r, delay));
+
+        try {
+          const result = await fn();
+          // Success — restore health
+          apiHealthy = true;
+          _retrying = false;
+
+          broadcast(EVENTS.ALERT_TRIGGERED, {
+            severity: "info",
+            code: "API_CONNECTION_FAILED",
+            message: "API reconnected — trading resumed",
+            details: null,
+            resolution: null,
+          });
+
+          broadcast(EVENTS.CONNECTION_STATUS, {
+            rpc: true,
+            wallet: client?.walletAddress ?? "",
+            equity: cachedStatus?.data.equity ?? 0,
+            available: cachedStatus?.data.available ?? 0,
+          });
+
+          return result;
+        } catch (retryErr) {
+          if (!isRetriableError(retryErr, writeCall)) {
+            // Non-retriable error during retry — restore connection status
+            _retrying = false;
+            broadcast(EVENTS.CONNECTION_STATUS, {
+              rpc: false,
+              wallet: client?.walletAddress ?? "",
+              equity: cachedStatus?.data.equity ?? 0,
+              available: cachedStatus?.data.available ?? 0,
+            });
+            throw retryErr;
+          }
+          // Continue to next retry
+        }
+      }
+
+      // All retries exhausted
+      _retrying = false;
+      // apiHealthy stays false — will recover on next successful call
+
+      const criticalAlert = {
+        severity: "critical" as const,
+        code: "API_CONNECTION_FAILED",
+        message: `API connection failed after ${MAX_API_RETRIES} retries — check network`,
+        details: `${label}: ${firstErr instanceof Error ? firstErr.message : String(firstErr)}`,
+        resolution: "1. Check your internet connection\n2. Verify WALLET address in .env is correct\n3. Check Hyperliquid API status\n4. Restart the bot",
+      };
+      broadcast(EVENTS.ALERT_TRIGGERED, criticalAlert);
+      cacheAlert(criticalAlert);
+
+      broadcast(EVENTS.CONNECTION_STATUS, {
+        rpc: false,
+        wallet: client?.walletAddress ?? "",
+        equity: cachedStatus?.data.equity ?? 0,
+        available: cachedStatus?.data.available ?? 0,
+      });
+
+      throw apiConnectionFailedError(MAX_API_RETRIES);
+    } catch (err) {
+      _retrying = false;
+      throw err;
+    }
+  }
+}
 
 export function loadAgentWallet(): PrivateKeyAccount {
   const sessionKeyStr = process.env.SESSION_KEY;
@@ -122,7 +292,10 @@ export async function getWalletBalances(
   walletAddress: string,
 ): Promise<WalletBalances> {
   try {
-    const spotState = await info.spotClearinghouseState({ user: walletAddress });
+    const spotState = await withRetry(
+      () => info.spotClearinghouseState({ user: walletAddress }),
+      "getWalletBalances",
+    );
     const usdcBalance = spotState.balances.find(
       (b: { coin: string }) => b.coin === "USDC",
     );
@@ -133,6 +306,8 @@ export async function getWalletBalances(
       available: Math.round((total - hold) * 1e6),
     };
   } catch (err) {
+    // Re-throw connection failures so callers see the real error
+    if (err instanceof AppError && err.code === "API_CONNECTION_FAILED") throw err;
     throw new AppError({
       severity: "warning",
       code: "BALANCE_FETCH_FAILED",

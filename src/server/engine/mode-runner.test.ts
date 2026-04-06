@@ -3,6 +3,11 @@ import type { ModeType } from "../../shared/types.js";
 import { EVENTS } from "../../shared/events.js";
 import { ModeRunner, type BroadcastFn } from "./mode-runner.js";
 
+const mockIsApiHealthy = vi.fn(() => true);
+vi.mock("../blockchain/client.js", () => ({
+  isApiHealthy: (...args: unknown[]) => mockIsApiHealthy(...args),
+}));
+
 // Concrete test subclass
 class TestModeRunner extends ModeRunner {
   iterationFn = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
@@ -212,5 +217,47 @@ describe("ModeRunner", () => {
     // Advance time — no more iterations should happen
     await vi.advanceTimersByTimeAsync(5000);
     expect(runner.iterationFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips iteration when isApiHealthy returns false", async () => {
+    mockIsApiHealthy.mockReturnValue(false);
+
+    await runner.start();
+    // Let the loop tick — should skip iteration
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(runner.iterationFn).not.toHaveBeenCalled();
+    expect(runner.isRunning()).toBe(true);
+
+    await runner.stop();
+  });
+
+  it("proceeds with iteration when isApiHealthy returns true", async () => {
+    mockIsApiHealthy.mockReturnValue(true);
+
+    await runner.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(runner.iterationFn).toHaveBeenCalledTimes(1);
+
+    await runner.stop();
+  });
+
+  it("resumes iteration after API recovers", async () => {
+    mockIsApiHealthy.mockReturnValue(false);
+
+    await runner.start();
+    // First tick — skipped
+    await vi.advanceTimersByTimeAsync(0);
+    expect(runner.iterationFn).not.toHaveBeenCalled();
+
+    // API recovers
+    mockIsApiHealthy.mockReturnValue(true);
+
+    // Next tick after 2s health-check poll — should proceed
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(runner.iterationFn).toHaveBeenCalledTimes(1);
+
+    await runner.stop();
   });
 });

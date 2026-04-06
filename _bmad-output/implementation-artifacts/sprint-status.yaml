@@ -38,6 +38,9 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-06
+# last review: 2026-04-06 code review of story 3-3, all patches applied
+# last dev: 2026-04-06 story 3-3 implementation started
+# last story created: 2026-04-06 story 3-3
 # last review: 2026-04-06 code review of story 3-2, all patches applied
 # last dev: 2026-04-06 story 3-2 implementation started
 # last story created: 2026-04-06 story 3-2
@@ -107,7 +110,7 @@ development_status:
   epic-3: in-progress
   3-1-per-mode-kill-switch: done
   3-2-graceful-shutdown-and-crash-recovery: done
-  3-3-rpc-connection-resilience: backlog
+  3-3-rpc-connection-resilience: done
   3-4-alertbanner-and-toast-notification-system: backlog
   3-5-error-handling-framework-and-transaction-safety: backlog
   epic-3-retrospective: optional

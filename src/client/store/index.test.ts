@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import useStore from "./index";
 import { EVENTS } from "@shared/events";
 
@@ -1053,6 +1053,105 @@ describe("ValBotStore", () => {
       expect(useStore.getState().modes.profitHunter.status).toBe("running");
       expect(useStore.getState().modes.profitHunter.stats.pnl).toBe(50);
       expect(useStore.getState().modes.profitHunter.stats.trades).toBe(3);
+    });
+  });
+
+  describe("API_CONNECTION_FAILED alert → connection status", () => {
+    it("warning alert sets connection status to reconnecting", () => {
+      useStore.getState().setConnectionStatus("connected");
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: Date.now(),
+        data: {
+          severity: "warning",
+          code: "API_CONNECTION_FAILED",
+          message: "API connection lost — retrying (1/3)...",
+          details: null,
+          resolution: null,
+        },
+      });
+
+      expect(useStore.getState().connection.status).toBe("reconnecting");
+    });
+
+    it("critical alert sets connection status to disconnected", () => {
+      useStore.getState().setConnectionStatus("reconnecting");
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: Date.now(),
+        data: {
+          severity: "critical",
+          code: "API_CONNECTION_FAILED",
+          message: "API connection failed after 3 retries — check network",
+          details: null,
+          resolution: null,
+        },
+      });
+
+      expect(useStore.getState().connection.status).toBe("disconnected");
+    });
+
+    it("info alert sets connection status to connected and replaces previous alert", () => {
+      // First add a warning alert
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: Date.now(),
+        data: {
+          severity: "warning",
+          code: "API_CONNECTION_FAILED",
+          message: "API connection lost — retrying (1/3)...",
+          details: null,
+          resolution: null,
+        },
+      });
+
+      expect(useStore.getState().connection.status).toBe("reconnecting");
+      expect(useStore.getState().alerts).toHaveLength(1);
+
+      // Now send info alert (recovery)
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: Date.now(),
+        data: {
+          severity: "info",
+          code: "API_CONNECTION_FAILED",
+          message: "API reconnected — trading resumed",
+          details: null,
+          resolution: null,
+        },
+      });
+
+      expect(useStore.getState().connection.status).toBe("connected");
+      // Alert replaced via code deduplication
+      expect(useStore.getState().alerts).toHaveLength(1);
+      expect(useStore.getState().alerts[0].severity).toBe("info");
+    });
+
+    it("info alert with autoDismissMs auto-removes after delay", () => {
+      vi.useFakeTimers();
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: Date.now(),
+        data: {
+          severity: "info",
+          code: "API_CONNECTION_FAILED",
+          message: "API reconnected — trading resumed",
+          details: null,
+          resolution: null,
+          autoDismissMs: 5000,
+        },
+      });
+
+      expect(useStore.getState().alerts).toHaveLength(1);
+
+      vi.advanceTimersByTime(5000);
+
+      expect(useStore.getState().alerts).toHaveLength(0);
+
+      vi.useRealTimers();
     });
   });
 });

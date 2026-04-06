@@ -10,6 +10,7 @@ import {
   modeKillSwitchedError,
 } from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
+import { isApiHealthy } from "../blockchain/client.js";
 
 export type BroadcastFn = <E extends EventName>(
   event: E,
@@ -108,6 +109,17 @@ export abstract class ModeRunner {
 
   private async _runLoop(): Promise<void> {
     while (this._running) {
+      if (!isApiHealthy()) {
+        logger.debug({ mode: this.mode }, "Skipping iteration — API unhealthy");
+        if (this._running) {
+          // Poll at 2s instead of full strategy interval for faster recovery
+          await new Promise<void>((resolve) => {
+            this._loopTimer = setTimeout(resolve, 2000);
+          });
+        }
+        continue;
+      }
+
       try {
         await this.executeIteration();
       } catch (err) {

@@ -41,6 +41,7 @@ export interface AlertTriggeredPayload {
   resolution: string | null;
   positionsClosed?: number;
   lossAmount?: number;
+  autoDismissMs?: number;
 }
 
 export interface TradeExecutedPayload {

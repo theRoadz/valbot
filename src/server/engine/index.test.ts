@@ -15,6 +15,7 @@ vi.mock("../ws/broadcaster.js", () => ({
 vi.mock("../blockchain/client.js", () => ({
   getBlockchainClient: vi.fn(() => null),
   getConnectionStatus: vi.fn().mockResolvedValue(null),
+  isApiHealthy: vi.fn(() => true),
 }));
 
 // Mock contracts (needed by position manager)

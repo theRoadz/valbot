@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { VolumeMaxStrategy } from "./volume-max.js";
 import type { BroadcastFn } from "../mode-runner.js";
 
+vi.mock("../../blockchain/client.js", () => ({
+  isApiHealthy: vi.fn(() => true),
+}));
+
 function createMocks(allocationAmount = 1_000_000_000) {
   const fundAllocator = {
     getAllocation: vi.fn().mockReturnValue({ allocation: allocationAmount, remaining: allocationAmount }),
