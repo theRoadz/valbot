@@ -113,3 +113,8 @@
 
 - ~~No auto-dismiss metadata on "Reconnected" info alert (AC3: 5s auto-dismiss)~~ — resolved: added `autoDismissMs` field to AlertTriggeredPayload/Alert, store auto-removes after delay
 - ~~Mode runner resumes via polling with full interval delay, not event-driven (AC7)~~ — resolved: changed unhealthy poll to 2s for faster recovery
+
+## Deferred from: code review of story 3-4-alertbanner-and-toast-notification-system (2026-04-06)
+
+- ~~Warning toasts with `duration: Infinity` have no explicit dismiss button~~ — resolved: added `cancel` button to warning toasts
+- ~~Kill switch mode extraction regex fragility~~ — resolved: reuse validated `alertMode`, validate regex-extracted mode against VALID_MODES

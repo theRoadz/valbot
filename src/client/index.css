@@ -92,3 +92,12 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Sonner toast animation overrides (AC #6: 200ms slide-in, 150ms fade-out) */
+[data-sonner-toaster] [data-sonner-toast] {
+  --toast-enter-duration: 200ms;
+  transition-timing-function: ease-out;
+}
+[data-sonner-toaster] [data-sonner-toast][data-removed="true"] {
+  --toast-exit-duration: 150ms;
+}

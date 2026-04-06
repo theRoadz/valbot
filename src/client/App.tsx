@@ -4,6 +4,8 @@ import { ModeCard } from "./components/mode-card";
 import { PositionsTable } from "./components/positions-table";
 import { TradeLog } from "./components/trade-log";
 import { AlertBanner } from "./components/alert-banner";
+import { Toaster } from "./components/ui/sonner";
+import { useAlertToast } from "./hooks/use-alert-toast";
 import { useWebSocket } from "./hooks/use-websocket";
 import useStore from "./store";
 import { fetchStatus } from "./lib/api";
@@ -17,6 +19,7 @@ const MODES = [
 
 function App() {
   useWebSocket();
+  useAlertToast();
   const alerts = useStore((s) => s.alerts);
   const dismissAlert = useStore((s) => s.dismissAlert);
   const loadInitialStatus = useStore((s) => s.loadInitialStatus);
@@ -29,11 +32,12 @@ function App() {
       });
   }, [loadInitialStatus]);
   const bannerAlerts = alerts.filter(
-    (a) => a.severity === "critical" || a.severity === "warning",
+    (a) => a.severity === "critical",
   );
 
   return (
     <div className="flex flex-col h-screen min-w-[1280px] bg-background overflow-hidden">
+      <Toaster />
       <AlertBanner alerts={bannerAlerts} onDismiss={dismissAlert} />
 
       <div className="grid grid-rows-[auto_auto_1fr] flex-1 min-h-0 gap-4 p-4">

@@ -83,6 +83,8 @@ interface ValBotStore {
   setModeConfig: (mode: ModeType, config: Partial<ModeConfig>) => void;
   loadInitialStatus: (data: StatusResponse) => void;
   handleWsMessage: (message: WsMessage) => void;
+  toastQueue: Alert[];
+  clearToastQueue: () => void;
 }
 
 const useStore = create<ValBotStore>()((set) => ({
@@ -102,6 +104,7 @@ const useStore = create<ValBotStore>()((set) => ({
   alerts: [],
   trades: [],
   positions: [],
+  toastQueue: [],
   closingPositions: [],
   modes: {
     volumeMax: createDefaultMode("volumeMax"),
@@ -123,6 +126,7 @@ const useStore = create<ValBotStore>()((set) => ({
     })),
   addAlert: (alert) =>
     set((state) => ({ alerts: [...state.alerts, alert] })),
+  clearToastQueue: () => set({ toastQueue: [] }),
   dismissAlert: (id) =>
     set((state) => ({
       alerts: state.alerts.filter((a) => a.id !== id),
@@ -237,6 +241,9 @@ const useStore = create<ValBotStore>()((set) => ({
         const autoDismissMs = typeof data.autoDismissMs === "number" && data.autoDismissMs > 0
           ? data.autoDismissMs
           : undefined;
+        const alertMode = typeof data.mode === "string" && VALID_MODES.has(data.mode)
+          ? data.mode as ModeType
+          : undefined;
         const alert: Alert = {
           id: ++alertIdCounter,
           severity: data.severity as Alert["severity"],
@@ -246,26 +253,11 @@ const useStore = create<ValBotStore>()((set) => ({
           resolution: typeof data.resolution === "string" ? data.resolution : null,
           timestamp: message.timestamp,
           autoDismissMs,
+          mode: alertMode,
         };
-        // Deduplicate by code — replace existing alert with same code
-        set((state) => ({
-          alerts: [
-            ...state.alerts.filter((a) => a.code !== alert.code),
-            alert,
-          ],
-        }));
-
-        // Auto-dismiss after specified delay
-        if (autoDismissMs) {
-          const alertId = alert.id;
-          setTimeout(() => {
-            set((state) => ({
-              alerts: state.alerts.filter((a) => a.id !== alertId),
-            }));
-          }, autoDismissMs);
-        }
 
         // Handle API connection failure — update connection status for top-bar indicator
+        // (runs BEFORE severity routing — must not break)
         if (data.code === "API_CONNECTION_FAILED") {
           if (data.severity === "warning") {
             set((state) => ({
@@ -283,11 +275,14 @@ const useStore = create<ValBotStore>()((set) => ({
         }
 
         // Handle kill switch alert for modes
+        // (runs BEFORE severity routing — must not break)
         if (data.code === "KILL_SWITCH_TRIGGERED") {
+          // Use validated alertMode first, fall back to regex extraction with validation
           const details = data.details as string | undefined;
           const modeMatch = details?.match(/mode[:\s]+(\w+)/i);
-          const mode = (data as Record<string, unknown>).mode as ModeType | undefined;
-          const targetMode = mode || (modeMatch ? modeMatch[1] as ModeType : undefined);
+          const regexMode = modeMatch?.[1];
+          const targetMode = alertMode
+            || (regexMode && VALID_MODES.has(regexMode) ? regexMode as ModeType : undefined);
           if (targetMode) {
             set((state) => {
               if (!state.modes[targetMode]) return state;
@@ -310,6 +305,21 @@ const useStore = create<ValBotStore>()((set) => ({
               };
             });
           }
+        }
+
+        // Route by severity: critical → banner (alerts[]), warning/info → toast queue
+        if (alert.severity === "critical") {
+          // Deduplicate by code — replace existing alert with same code
+          // Critical alerts are never auto-dismissed (AC #1) — they persist until resolved
+          set((state) => ({
+            alerts: [
+              ...state.alerts.filter((a) => a.code !== alert.code),
+              alert,
+            ],
+          }));
+        } else {
+          // warning/info → toast queue (batches survive rapid consecutive alerts)
+          set((state) => ({ toastQueue: [...state.toastQueue, alert] }));
         }
       }
     } else if (message.event === EVENTS.MODE_STARTED) {

@@ -28,6 +28,7 @@ export interface Alert {
   resolution: string | null;
   timestamp: number;
   autoDismissMs?: number;
+  mode?: ModeType;
 }
 
 export type TradeSide = "Long" | "Short";

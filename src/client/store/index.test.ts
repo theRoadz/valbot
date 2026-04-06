@@ -16,6 +16,7 @@ describe("ValBotStore", () => {
         totalVolume: 0,
       },
       alerts: [],
+      toastQueue: [],
       trades: [],
       positions: [],
       closingPositions: [],
@@ -1093,7 +1094,7 @@ describe("ValBotStore", () => {
       expect(useStore.getState().connection.status).toBe("disconnected");
     });
 
-    it("info alert sets connection status to connected and replaces previous alert", () => {
+    it("info alert sets connection status to connected and routes to toastQueue", () => {
       // First add a warning alert
       useStore.getState().handleWsMessage({
         event: EVENTS.ALERT_TRIGGERED,
@@ -1108,7 +1109,10 @@ describe("ValBotStore", () => {
       });
 
       expect(useStore.getState().connection.status).toBe("reconnecting");
-      expect(useStore.getState().alerts).toHaveLength(1);
+      // Warning goes to toastQueue, not alerts[]
+      expect(useStore.getState().alerts).toHaveLength(0);
+      expect(useStore.getState().toastQueue).toHaveLength(1);
+      expect(useStore.getState().toastQueue[0].severity).toBe("warning");
 
       // Now send info alert (recovery)
       useStore.getState().handleWsMessage({
@@ -1124,14 +1128,13 @@ describe("ValBotStore", () => {
       });
 
       expect(useStore.getState().connection.status).toBe("connected");
-      // Alert replaced via code deduplication
-      expect(useStore.getState().alerts).toHaveLength(1);
-      expect(useStore.getState().alerts[0].severity).toBe("info");
+      // Info also goes to toastQueue
+      expect(useStore.getState().alerts).toHaveLength(0);
+      expect(useStore.getState().toastQueue).toHaveLength(2);
+      expect(useStore.getState().toastQueue[1].severity).toBe("info");
     });
 
-    it("info alert with autoDismissMs auto-removes after delay", () => {
-      vi.useFakeTimers();
-
+    it("info alert with autoDismissMs routes to toastQueue with autoDismissMs preserved", () => {
       useStore.getState().handleWsMessage({
         event: EVENTS.ALERT_TRIGGERED,
         timestamp: Date.now(),
@@ -1145,13 +1148,207 @@ describe("ValBotStore", () => {
         },
       });
 
-      expect(useStore.getState().alerts).toHaveLength(1);
+      // Info alerts go to toastQueue, not alerts[]
+      expect(useStore.getState().alerts).toHaveLength(0);
+      expect(useStore.getState().toastQueue).toHaveLength(1);
+      expect(useStore.getState().toastQueue[0].autoDismissMs).toBe(5000);
+    });
+  });
 
-      vi.advanceTimersByTime(5000);
+  describe("severity routing (alert.triggered)", () => {
+    it("critical alerts go to alerts[] (banner)", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: 1000,
+        data: {
+          severity: "critical",
+          code: "CRITICAL_ERR",
+          message: "Critical error",
+          details: null,
+          resolution: null,
+        },
+      });
+
+      expect(useStore.getState().alerts).toHaveLength(1);
+      expect(useStore.getState().alerts[0].severity).toBe("critical");
+      expect(useStore.getState().toastQueue).toHaveLength(0);
+    });
+
+    it("warning alerts go to toastQueue (toast)", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: 1000,
+        data: {
+          severity: "warning",
+          code: "WARN_TEST",
+          message: "Warning message",
+          details: "Some details",
+          resolution: null,
+        },
+      });
 
       expect(useStore.getState().alerts).toHaveLength(0);
+      expect(useStore.getState().toastQueue).toHaveLength(1);
+      expect(useStore.getState().toastQueue[0].severity).toBe("warning");
+      expect(useStore.getState().toastQueue[0].code).toBe("WARN_TEST");
+      expect(useStore.getState().toastQueue[0].details).toBe("Some details");
+    });
+
+    it("info alerts go to toastQueue (toast)", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: 1000,
+        data: {
+          severity: "info",
+          code: "INFO_TEST",
+          message: "Info message",
+          details: null,
+          resolution: null,
+        },
+      });
+
+      expect(useStore.getState().alerts).toHaveLength(0);
+      expect(useStore.getState().toastQueue).toHaveLength(1);
+      expect(useStore.getState().toastQueue[0].severity).toBe("info");
+    });
+
+    it("autoDismissMs is passed through on toastQueue", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: 1000,
+        data: {
+          severity: "info",
+          code: "INFO_DISMISS",
+          message: "Auto-dismiss test",
+          details: null,
+          resolution: null,
+          autoDismissMs: 3000,
+        },
+      });
+
+      expect(useStore.getState().toastQueue[0].autoDismissMs).toBe(3000);
+    });
+
+    it("rapid consecutive alerts all queued (no drops)", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: 1000,
+        data: { severity: "warning", code: "W1", message: "First", details: null, resolution: null },
+      });
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: 1001,
+        data: { severity: "info", code: "I1", message: "Second", details: null, resolution: null },
+      });
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: 1002,
+        data: { severity: "warning", code: "W2", message: "Third", details: null, resolution: null },
+      });
+
+      expect(useStore.getState().toastQueue).toHaveLength(3);
+      expect(useStore.getState().toastQueue[0].code).toBe("W1");
+      expect(useStore.getState().toastQueue[1].code).toBe("I1");
+      expect(useStore.getState().toastQueue[2].code).toBe("W2");
+    });
+
+    it("critical alerts are never auto-dismissed", () => {
+      vi.useFakeTimers();
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: 1000,
+        data: {
+          severity: "critical",
+          code: "CRIT_DISMISS",
+          message: "Critical with autoDismiss",
+          details: null,
+          resolution: null,
+          autoDismissMs: 5000,
+        },
+      });
+
+      expect(useStore.getState().alerts).toHaveLength(1);
+      vi.advanceTimersByTime(10000);
+      // Critical alert still present — never auto-dismissed
+      expect(useStore.getState().alerts).toHaveLength(1);
 
       vi.useRealTimers();
+    });
+
+    it("special handlers still run for warning alerts (API_CONNECTION_FAILED)", () => {
+      useStore.getState().setConnectionStatus("connected");
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: 1000,
+        data: {
+          severity: "warning",
+          code: "API_CONNECTION_FAILED",
+          message: "Retrying...",
+          details: null,
+          resolution: null,
+        },
+      });
+
+      // Connection status updated AND routed to toast
+      expect(useStore.getState().connection.status).toBe("reconnecting");
+      expect(useStore.getState().toastQueue).toHaveLength(1);
+      expect(useStore.getState().alerts).toHaveLength(0);
+    });
+
+    it("special handlers still run for info alerts (API_CONNECTION_FAILED)", () => {
+      useStore.getState().setConnectionStatus("reconnecting");
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: 1000,
+        data: {
+          severity: "info",
+          code: "API_CONNECTION_FAILED",
+          message: "Reconnected",
+          details: null,
+          resolution: null,
+        },
+      });
+
+      expect(useStore.getState().connection.status).toBe("connected");
+      expect(useStore.getState().toastQueue).toHaveLength(1);
+    });
+
+    it("clearToastQueue resets toastQueue to empty", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: 1000,
+        data: {
+          severity: "info",
+          code: "TEST",
+          message: "Test",
+          details: null,
+          resolution: null,
+        },
+      });
+
+      expect(useStore.getState().toastQueue).toHaveLength(1);
+      useStore.getState().clearToastQueue();
+      expect(useStore.getState().toastQueue).toHaveLength(0);
+    });
+
+    it("alert includes mode field from payload", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: 1000,
+        data: {
+          severity: "critical",
+          code: "KILL_SWITCH_TRIGGERED",
+          message: "Kill switch",
+          details: null,
+          resolution: null,
+          mode: "volumeMax",
+        },
+      });
+
+      expect(useStore.getState().alerts[0].mode).toBe("volumeMax");
     });
   });
 });
