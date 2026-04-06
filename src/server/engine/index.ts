@@ -85,6 +85,7 @@ export async function startMode(
     }
 
     let runner: ModeRunner;
+    const storedPositionSize = engine.fundAllocator.getPositionSize(mode) ?? undefined;
 
     switch (mode) {
       case "volumeMax":
@@ -92,13 +93,13 @@ export async function startMode(
           engine.fundAllocator,
           engine.positionManager,
           broadcast,
-          { pairs: config.pairs, slippage: config.slippage },
+          { pairs: config.pairs, slippage: config.slippage, positionSize: storedPositionSize },
         );
         break;
       case "profitHunter":
         runner = new ProfitHunterStrategy(
           engine.fundAllocator, engine.positionManager, broadcast,
-          oracleClient!, { pairs: config.pairs, slippage: config.slippage },
+          oracleClient!, { pairs: config.pairs, slippage: config.slippage, positionSize: storedPositionSize },
         );
         break;
       default:

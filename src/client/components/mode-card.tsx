@@ -119,8 +119,9 @@ export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
   const [allocationFocused, setAllocationFocused] = useState(false);
   const [slippageInput, setSlippageInput] = useState("");
   const [slippageFocused, setSlippageFocused] = useState(false);
-
-  const { status, stats, allocation, pairs, slippage, errorDetail, killSwitchDetail } = modeState;
+  const [positionSizeInput, setPositionSizeInput] = useState("");
+  const [positionSizeFocused, setPositionSizeFocused] = useState(false);
+  const { status, stats, allocation, positionSize, pairs, slippage, errorDetail, killSwitchDetail } = modeState;
 
   const isRunning = status === "running" || status === "starting";
   const isDisabledToggle = allocation === 0 || status === "error" || status === "kill-switch" || status === "stopping";
@@ -249,6 +250,51 @@ export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
     if (e.key === "Enter") {
       (e.target as HTMLInputElement).blur();
     }
+  };
+
+  // Position size input handlers
+  const autoPositionSize = allocation > 0 ? Math.floor(allocation / 20) : 0;
+  const displayedPositionSize = positionSizeFocused
+    ? positionSizeInput
+    : positionSize !== undefined ? String(positionSize) : "";
+
+  const handlePositionSizeFocus = () => {
+    setPositionSizeInput(positionSize !== undefined ? String(positionSize) : "");
+    setPositionSizeFocused(true);
+  };
+
+  const handlePositionSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value.replace(/[^0-9.]/g, "");
+    setPositionSizeInput(val);
+  };
+
+  const handlePositionSizeCommit = () => {
+    setPositionSizeFocused(false);
+    const trimmed = positionSizeInput.trim();
+    if (trimmed === "" || trimmed.toLowerCase() === "auto") {
+      // Clear — revert to auto
+      if (positionSize !== undefined) {
+        const prevPositionSize = positionSize;
+        setModeConfig(mode, { positionSize: undefined });
+        api.updateModeConfig(mode, { positionSize: null }).catch(() => {
+          setModeConfig(mode, { positionSize: prevPositionSize });
+        });
+      }
+      return;
+    }
+    const numVal = parseFloat(trimmed);
+    if (!isNaN(numVal) && isFinite(numVal) && numVal >= 10 && numVal !== positionSize) {
+      const prevPositionSize = positionSize;
+      setModeConfig(mode, { positionSize: numVal });
+      api.updateModeConfig(mode, { positionSize: numVal }).catch((err) => {
+        setModeConfig(mode, { positionSize: prevPositionSize });
+        if (import.meta.env.DEV) console.error("[ModeCard] Position size update failed:", err);
+      });
+    }
+  };
+
+  const handlePositionSizeKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
   };
 
   // Pair selector handlers
@@ -426,6 +472,25 @@ export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
             disabled={isControlsDisabled}
           />
         </div>
+
+        {/* Position Size Input */}
+        <div className="mt-3 flex items-center gap-1">
+          <span className="text-xs font-medium text-text-secondary">Position Size:</span>
+          <span className="text-sm font-mono text-text-secondary">$</span>
+          <Input
+            type="text"
+            className="h-7 w-24 font-mono text-right text-sm"
+            placeholder={autoPositionSize > 0 ? `Auto (${autoPositionSize})` : "Auto"}
+            value={displayedPositionSize}
+            onFocus={handlePositionSizeFocus}
+            onChange={handlePositionSizeChange}
+            onBlur={handlePositionSizeCommit}
+            onKeyDown={handlePositionSizeKeyDown}
+            disabled={isControlsDisabled}
+            aria-label={`Position size for ${name}`}
+          />
+        </div>
+
       </CardContent>
     </Card>
   );

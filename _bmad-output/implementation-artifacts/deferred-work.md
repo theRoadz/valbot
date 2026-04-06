@@ -155,3 +155,7 @@
 - ~~`setStopLoss` derives baseSize from USDC/triggerPx, not from `filledSz`~~ — resolved: added `baseSz` to `SetStopLossParams`, piped from position-manager [contracts.ts:312]
 - ~~`filledSz` not persisted to DB~~ — resolved: added `filledSz TEXT` column via migration 0002, wired into DB inserts and `loadFromDb` [schema.ts:31, position-manager.ts]
 - ~~`roundToSzDecimals` with `szDecimals=0` and `floor` mode produces `"0"`~~ — resolved: added guard returning minimum unit (1/factor) when floor rounds to 0 [contracts.ts:132]
+
+## Deferred from: code review of story 8-6-configurable-position-size-and-max-allocation (2026-04-06)
+
+- `positionSize` updated while strategy is running not reflected until restart [engine/index.ts:88] — strategies snapshot config at construction; live config re-read is a broader architecture change

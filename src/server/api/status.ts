@@ -9,6 +9,7 @@ function defaultModeConfig(mode: ModeType): ModeConfig {
     mode,
     status: "stopped",
     allocation: 0,
+    maxAllocation: 500,
     pairs: ["SOL/USDC"],
     slippage: 0.5,
     stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
@@ -22,10 +23,13 @@ function getModeConfig(mode: ModeType): ModeConfig {
     const stats = fundAllocator.getStats(mode);
     const pmStatus = positionManager.getModeStatus(mode);
     const runnerStatus = getModeStatus(mode);
+    const posSize = fundAllocator.getPositionSize(mode);
     return {
       mode,
       status: pmStatus === "kill-switch" ? "kill-switch" : runnerStatus,
       allocation: fromSmallestUnit(alloc.allocation),
+      positionSize: posSize !== null ? fromSmallestUnit(posSize) : undefined,
+      maxAllocation: fromSmallestUnit(fundAllocator.getMaxAllocation()),
       pairs: ["SOL/USDC"],
       slippage: 0.5,
       stats,

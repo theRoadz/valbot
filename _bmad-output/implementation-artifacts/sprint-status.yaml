@@ -164,3 +164,4 @@ development_status:
   8-3-fund-allocation-sync-fix: done
   8-4-pair-selection-and-mode-start-fix: done
   8-5-minimum-order-value-enforcement: done
+  8-6-configurable-position-size-and-max-allocation: done

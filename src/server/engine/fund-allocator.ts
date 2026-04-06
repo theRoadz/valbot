@@ -21,6 +21,8 @@ function defaultAllocation(): ModeAllocation {
 
 export class FundAllocator {
   private state = new Map<ModeType, ModeAllocation>();
+  private maxAllocation = 500_000_000; // default 500 USDC in smallest-unit
+  private positionSizes = new Map<ModeType, number>(); // smallest-unit, per mode
 
   private getOrCreate(mode: ModeType): ModeAllocation {
     let entry = this.state.get(mode);
@@ -42,14 +44,12 @@ export class FundAllocator {
 
   setAllocation(mode: ModeType, amount: number): void {
     assertSafeInteger(amount, `allocation:${mode}`);
-    // Validate upper bound: single mode cannot exceed 500 USDC (500 * 1e6 smallest-unit)
-    const MAX_SINGLE_ALLOCATION = 500_000_000; // 500 USDC in smallest-unit
-    if (amount > MAX_SINGLE_ALLOCATION) {
+    if (amount > this.maxAllocation) {
       throw new AppError({
         severity: "warning",
         code: "ALLOCATION_TOO_LARGE",
-        message: `Allocation ${amount} exceeds maximum of ${MAX_SINGLE_ALLOCATION}`,
-        resolution: "Enter a smaller allocation amount",
+        message: `Allocation ${amount} exceeds maximum of ${this.maxAllocation}`,
+        resolution: `Enter a value up to $${fromSmallestUnit(this.maxAllocation)}`,
       });
     }
     const entry = this.getOrCreate(mode);
@@ -58,6 +58,12 @@ export class FundAllocator {
     const diff = amount - prevAllocation;
     entry.allocation = amount;
     entry.remaining = Math.max(0, entry.remaining + diff);
+
+    // Clear position size if it now exceeds the new allocation
+    const currentPS = this.positionSizes.get(mode);
+    if (currentPS !== undefined && amount > 0 && currentPS > amount) {
+      this.clearPositionSize(mode);
+    }
 
     // Persist to config DB — rollback in-memory on failure
     try {
@@ -135,9 +141,29 @@ export class FundAllocator {
       const rows = db.select().from(config).where(eq(config.key, key)).all();
       if (rows.length > 0) {
         const parsed = JSON.parse(rows[0].value) as { amount: number };
-        const entry = this.getOrCreate(mode);
-        entry.allocation = parsed.amount;
-        entry.remaining = parsed.amount;
+        if (typeof parsed.amount === "number" && Number.isFinite(parsed.amount) && Number.isSafeInteger(parsed.amount)) {
+          const entry = this.getOrCreate(mode);
+          entry.allocation = parsed.amount;
+          entry.remaining = parsed.amount;
+        }
+      }
+
+      const psKey = `positionSize:${mode}`;
+      const psRows = db.select().from(config).where(eq(config.key, psKey)).all();
+      if (psRows.length > 0) {
+        const parsed = JSON.parse(psRows[0].value) as { amount: number };
+        if (typeof parsed.amount === "number" && Number.isFinite(parsed.amount) && Number.isSafeInteger(parsed.amount)) {
+          this.positionSizes.set(mode, parsed.amount);
+        }
+      }
+    }
+
+    // Load global max allocation
+    const maRows = db.select().from(config).where(eq(config.key, "maxAllocation")).all();
+    if (maRows.length > 0) {
+      const parsed = JSON.parse(maRows[0].value) as { amount: number };
+      if (typeof parsed.amount === "number" && Number.isFinite(parsed.amount) && Number.isSafeInteger(parsed.amount)) {
+        this.maxAllocation = parsed.amount;
       }
     }
   }
@@ -149,6 +175,96 @@ export class FundAllocator {
       if (entry) {
         entry.remaining = Math.max(0, entry.remaining - pos.size);
       }
+    }
+  }
+
+  // --- Max allocation ---
+
+  getMaxAllocation(): number {
+    return this.maxAllocation;
+  }
+
+  setMaxAllocation(amount: number): void {
+    assertSafeInteger(amount, "maxAllocation");
+    const MIN = 10_000_000; // $10
+    const MAX = 10_000_000_000; // $10,000
+    if (amount < MIN || amount > MAX) {
+      throw new AppError({
+        severity: "warning",
+        code: "INVALID_MAX_ALLOCATION",
+        message: `Max allocation must be between $10 and $10,000`,
+        resolution: `Enter a value between $10 and $10,000`,
+      });
+    }
+    const prev = this.maxAllocation;
+    this.maxAllocation = amount;
+    try {
+      const db = getDb();
+      const key = "maxAllocation";
+      const value = JSON.stringify({ amount });
+      db.insert(config)
+        .values({ key, value })
+        .onConflictDoUpdate({ target: config.key, set: { value } })
+        .run();
+    } catch (err) {
+      this.maxAllocation = prev;
+      throw err;
+    }
+  }
+
+  // --- Position size ---
+
+  getPositionSize(mode: ModeType): number | null {
+    return this.positionSizes.get(mode) ?? null;
+  }
+
+  setPositionSize(mode: ModeType, amount: number): void {
+    assertSafeInteger(amount, `positionSize:${mode}`);
+    const MIN = 10_000_000; // $10
+    if (amount < MIN) {
+      throw new AppError({
+        severity: "warning",
+        code: "POSITION_SIZE_TOO_SMALL",
+        message: `Position size must be at least $10`,
+        resolution: `Enter a value of $10 or more`,
+      });
+    }
+    const alloc = this.getAllocation(mode);
+    if (amount > alloc.allocation) {
+      throw new AppError({
+        severity: "warning",
+        code: "POSITION_SIZE_TOO_LARGE",
+        message: `Position size cannot exceed allocation`,
+        resolution: `Enter a value up to $${fromSmallestUnit(alloc.allocation)}`,
+      });
+    }
+    const prev = this.positionSizes.get(mode);
+    this.positionSizes.set(mode, amount);
+    try {
+      const db = getDb();
+      const key = `positionSize:${mode}`;
+      const value = JSON.stringify({ amount });
+      db.insert(config)
+        .values({ key, value })
+        .onConflictDoUpdate({ target: config.key, set: { value } })
+        .run();
+    } catch (err) {
+      if (prev !== undefined) this.positionSizes.set(mode, prev);
+      else this.positionSizes.delete(mode);
+      throw err;
+    }
+  }
+
+  clearPositionSize(mode: ModeType): void {
+    const prev = this.positionSizes.get(mode);
+    this.positionSizes.delete(mode);
+    try {
+      const db = getDb();
+      const key = `positionSize:${mode}`;
+      db.delete(config).where(eq(config.key, key)).run();
+    } catch (err) {
+      if (prev !== undefined) this.positionSizes.set(mode, prev);
+      throw err;
     }
   }
 

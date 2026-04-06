@@ -70,6 +70,8 @@ export interface ModeConfig {
   mode: ModeType;
   status: ModeStatus;
   allocation: number;
+  positionSize?: number;
+  maxAllocation?: number;
   pairs: string[];
   slippage: number;
   stats: ModeStats;

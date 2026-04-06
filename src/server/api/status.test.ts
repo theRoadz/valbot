@@ -61,6 +61,7 @@ describe("status route", () => {
       mode: "volumeMax",
       status: "stopped",
       allocation: 0,
+      maxAllocation: 500,
       pairs: ["SOL/USDC"],
       slippage: 0.5,
       stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
@@ -81,6 +82,8 @@ describe("status route", () => {
         if (mode === "volumeMax") return { pnl: 50, trades: 3, volume: 500, allocated: 1000, remaining: 800 };
         return { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 };
       }),
+      getPositionSize: vi.fn(() => null),
+      getMaxAllocation: vi.fn(() => 500_000_000),
     };
     const mockPositionManager = {
       getPositions: vi.fn(() => [

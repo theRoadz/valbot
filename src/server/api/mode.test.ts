@@ -15,6 +15,11 @@ vi.mock("../engine/index.js", () => {
   const mockFundAllocator = {
     setAllocation: vi.fn(),
     getStats: vi.fn().mockReturnValue({ pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 }),
+    getMaxAllocation: vi.fn().mockReturnValue(500_000_000),
+    setMaxAllocation: vi.fn(),
+    getPositionSize: vi.fn().mockReturnValue(null),
+    setPositionSize: vi.fn(),
+    clearPositionSize: vi.fn(),
   };
   return {
     getEngine: vi.fn(() => ({ fundAllocator: mockFundAllocator })),
@@ -227,6 +232,57 @@ describe("mode routes", () => {
         method: "PUT",
         url: "/api/mode/volume-max/config",
         payload: { slippage: 101 },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("calls setPositionSize when positionSize is provided", async () => {
+      const mockAllocator = (_getMockFundAllocator as () => { setPositionSize: ReturnType<typeof vi.fn> })();
+      mockAllocator.setPositionSize.mockClear();
+
+      await app.inject({
+        method: "PUT",
+        url: "/api/mode/volume-max/config",
+        payload: { positionSize: 50 },
+      });
+
+      expect(mockAllocator.setPositionSize).toHaveBeenCalledWith(
+        "volumeMax",
+        50_000_000, // toSmallestUnit(50)
+      );
+    });
+
+    it("calls clearPositionSize when positionSize is null", async () => {
+      const mockAllocator = (_getMockFundAllocator as () => { clearPositionSize: ReturnType<typeof vi.fn> })();
+      mockAllocator.clearPositionSize.mockClear();
+
+      await app.inject({
+        method: "PUT",
+        url: "/api/mode/volume-max/config",
+        payload: { positionSize: null },
+      });
+
+      expect(mockAllocator.clearPositionSize).toHaveBeenCalledWith("volumeMax");
+    });
+
+    it("calls setMaxAllocation when maxAllocation is provided", async () => {
+      const mockAllocator = (_getMockFundAllocator as () => { setMaxAllocation: ReturnType<typeof vi.fn> })();
+      mockAllocator.setMaxAllocation.mockClear();
+
+      await app.inject({
+        method: "PUT",
+        url: "/api/mode/volume-max/config",
+        payload: { maxAllocation: 1000 },
+      });
+
+      expect(mockAllocator.setMaxAllocation).toHaveBeenCalledWith(1_000_000_000);
+    });
+
+    it("rejects positionSize below minimum", async () => {
+      const res = await app.inject({
+        method: "PUT",
+        url: "/api/mode/volume-max/config",
+        payload: { positionSize: 5 },
       });
       expect(res.statusCode).toBe(400);
     });

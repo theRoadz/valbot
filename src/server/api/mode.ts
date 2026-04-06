@@ -64,14 +64,16 @@ export default async function modeRoutes(fastify: FastifyInstance) {
     return { status: "stopped", mode: modeType };
   });
 
-  fastify.put<{ Params: { mode: string }; Body: { allocation?: number; pairs?: string[]; slippage?: number } }>("/api/mode/:mode/config", {
+  fastify.put<{ Params: { mode: string }; Body: { allocation?: number; positionSize?: number | null; maxAllocation?: number; pairs?: string[]; slippage?: number } }>("/api/mode/:mode/config", {
     schema: {
       params: modeParamSchema,
       body: {
         type: "object" as const,
         additionalProperties: false,
         properties: {
-          allocation: { type: "number" as const, minimum: 0, maximum: 500 },
+          allocation: { type: "number" as const, minimum: 0 },
+          positionSize: { type: ["number", "null"] as const, minimum: 10, maximum: 10000 },
+          maxAllocation: { type: "number" as const, minimum: 10, maximum: 10000 },
           pairs: { type: "array" as const, items: { type: "string" as const, enum: VALID_PAIRS }, maxItems: 50 },
           slippage: { type: "number" as const, minimum: 0, maximum: 100 },
         },
@@ -87,10 +89,16 @@ export default async function modeRoutes(fastify: FastifyInstance) {
         resolution: "Use one of: volume-max, profit-hunter, arbitrage",
       });
     }
-    // Persist allocation via fund allocator if provided
-    if (request.body.allocation !== undefined) {
-      try {
-        const { fundAllocator } = getEngine();
+    try {
+      const { fundAllocator } = getEngine();
+
+      // Process maxAllocation first (it affects allocation validation)
+      if (request.body.maxAllocation !== undefined) {
+        fundAllocator.setMaxAllocation(toSmallestUnit(request.body.maxAllocation));
+      }
+
+      // Persist allocation via fund allocator if provided
+      if (request.body.allocation !== undefined) {
         fundAllocator.setAllocation(modeType, toSmallestUnit(request.body.allocation));
         // Reset kill-switch state when re-allocating a kill-switched mode (only for meaningful allocations)
         if (request.body.allocation > 0 && getModeStatus(modeType) === "kill-switch") {
@@ -103,14 +111,26 @@ export default async function modeRoutes(fastify: FastifyInstance) {
         } catch {
           // Stats broadcast failure should not fail the allocation request
         }
-      } catch (err) {
-        // Only swallow engine-not-initialized; re-throw real errors
-        if (err instanceof Error && err.message.includes("Engine not initialized")) {
-          // Engine not ready — allocation will be set when engine starts
+      }
+
+      // Process positionSize (after allocation so validation uses updated value)
+      if (request.body.positionSize !== undefined) {
+        if (request.body.positionSize === null) {
+          fundAllocator.clearPositionSize(modeType);
         } else {
-          throw err;
+          fundAllocator.setPositionSize(modeType, toSmallestUnit(request.body.positionSize));
         }
       }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("Engine not initialized")) {
+        throw new AppError({
+          severity: "warning",
+          code: "ENGINE_NOT_READY",
+          message: "Engine is still initializing — config was not saved",
+          resolution: "Wait a moment and try again",
+        });
+      }
+      throw err;
     }
 
     return { status: "updated", mode: modeType };

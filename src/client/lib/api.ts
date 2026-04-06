@@ -97,7 +97,7 @@ export async function stopMode(mode: ModeType): Promise<void> {
 
 export async function updateModeConfig(
   mode: ModeType,
-  config: { allocation?: number; pairs?: string[]; slippage?: number },
+  config: { allocation?: number; positionSize?: number | null; maxAllocation?: number; pairs?: string[]; slippage?: number },
 ): Promise<void> {
   let res: Response;
   try {

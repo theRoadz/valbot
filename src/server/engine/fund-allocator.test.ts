@@ -323,6 +323,129 @@ describe("FundAllocator", () => {
     });
   });
 
+  describe("maxAllocation", () => {
+    it("defaults to 500 USDC", () => {
+      expect(allocator.getMaxAllocation()).toBe(500_000_000);
+    });
+
+    it("can be updated and persisted", async () => {
+      allocator.setMaxAllocation(1_000_000_000); // $1000
+      expect(allocator.getMaxAllocation()).toBe(1_000_000_000);
+
+      // Verify persistence
+      const allocator2 = new FundAllocator();
+      await allocator2.loadFromDb();
+      expect(allocator2.getMaxAllocation()).toBe(1_000_000_000);
+    });
+
+    it("allows allocation up to the new max", () => {
+      allocator.setMaxAllocation(1_000_000_000); // $1000
+      expect(() => allocator.setAllocation("volumeMax", 800_000_000)).not.toThrow();
+    });
+
+    it("rejects allocation exceeding max", () => {
+      // default max is 500 USDC
+      try {
+        allocator.setAllocation("volumeMax", 600_000_000);
+        expect.fail("should have thrown");
+      } catch (err: unknown) {
+        const e = err as { code: string };
+        expect(e.code).toBe("ALLOCATION_TOO_LARGE");
+      }
+    });
+
+    it("rejects max below $10", () => {
+      try {
+        allocator.setMaxAllocation(5_000_000);
+        expect.fail("should have thrown");
+      } catch (err: unknown) {
+        const e = err as { code: string };
+        expect(e.code).toBe("INVALID_MAX_ALLOCATION");
+      }
+    });
+
+    it("rejects max above $10,000", () => {
+      try {
+        allocator.setMaxAllocation(11_000_000_000);
+        expect.fail("should have thrown");
+      } catch (err: unknown) {
+        const e = err as { code: string };
+        expect(e.code).toBe("INVALID_MAX_ALLOCATION");
+      }
+    });
+  });
+
+  describe("positionSize", () => {
+    it("returns null when not set", () => {
+      expect(allocator.getPositionSize("volumeMax")).toBeNull();
+    });
+
+    it("can be set and retrieved", () => {
+      allocator.setAllocation("volumeMax", 500_000_000);
+      allocator.setPositionSize("volumeMax", 50_000_000); // $50
+      expect(allocator.getPositionSize("volumeMax")).toBe(50_000_000);
+    });
+
+    it("persists to DB and loads back", async () => {
+      allocator.setAllocation("volumeMax", 500_000_000);
+      allocator.setPositionSize("volumeMax", 50_000_000);
+
+      const allocator2 = new FundAllocator();
+      await allocator2.loadFromDb();
+      expect(allocator2.getPositionSize("volumeMax")).toBe(50_000_000);
+    });
+
+    it("can be cleared", () => {
+      allocator.setAllocation("volumeMax", 500_000_000);
+      allocator.setPositionSize("volumeMax", 50_000_000);
+      allocator.clearPositionSize("volumeMax");
+      expect(allocator.getPositionSize("volumeMax")).toBeNull();
+    });
+
+    it("clearPositionSize persists removal", async () => {
+      allocator.setAllocation("volumeMax", 500_000_000);
+      allocator.setPositionSize("volumeMax", 50_000_000);
+      allocator.clearPositionSize("volumeMax");
+
+      const allocator2 = new FundAllocator();
+      await allocator2.loadFromDb();
+      expect(allocator2.getPositionSize("volumeMax")).toBeNull();
+    });
+
+    it("rejects position size below $10", () => {
+      allocator.setAllocation("volumeMax", 500_000_000);
+      try {
+        allocator.setPositionSize("volumeMax", 5_000_000);
+        expect.fail("should have thrown");
+      } catch (err: unknown) {
+        const e = err as { code: string };
+        expect(e.code).toBe("POSITION_SIZE_TOO_SMALL");
+      }
+    });
+
+    it("rejects position size exceeding allocation", () => {
+      allocator.setAllocation("volumeMax", 100_000_000); // $100
+      try {
+        allocator.setPositionSize("volumeMax", 200_000_000); // $200
+        expect.fail("should have thrown");
+      } catch (err: unknown) {
+        const e = err as { code: string };
+        expect(e.code).toBe("POSITION_SIZE_TOO_LARGE");
+      }
+    });
+
+    it("is independent per mode", () => {
+      allocator.setAllocation("volumeMax", 500_000_000);
+      allocator.setAllocation("profitHunter", 300_000_000);
+      allocator.setPositionSize("volumeMax", 50_000_000);
+      allocator.setPositionSize("profitHunter", 30_000_000);
+
+      expect(allocator.getPositionSize("volumeMax")).toBe(50_000_000);
+      expect(allocator.getPositionSize("profitHunter")).toBe(30_000_000);
+      expect(allocator.getPositionSize("arbitrage")).toBeNull();
+    });
+  });
+
   describe("assertSafeInteger guard", () => {
     it("throws RangeError for unsafe integer", () => {
       expect(() => {

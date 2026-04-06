@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { TopBar } from "./components/top-bar";
 import { ModeCard } from "./components/mode-card";
+import { MaxAllocationControl } from "./components/max-allocation-control";
 import { PositionsTable } from "./components/positions-table";
 import { TradeLog } from "./components/trade-log";
 import { AlertBanner } from "./components/alert-banner";
@@ -44,11 +45,14 @@ function App() {
         {/* Top Bar */}
         <TopBar />
 
-        {/* Mode Cards Row */}
-        <div className="grid grid-cols-3 gap-4">
-          {MODES.map((m) => (
-            <ModeCard key={m.mode} mode={m.mode} name={m.name} color={m.color} barColor={m.barColor} />
-          ))}
+        {/* Max Allocation + Mode Cards */}
+        <div className="flex flex-col gap-2">
+          <MaxAllocationControl />
+          <div className="grid grid-cols-3 gap-4">
+            {MODES.map((m) => (
+              <ModeCard key={m.mode} mode={m.mode} name={m.name} color={m.color} barColor={m.barColor} />
+            ))}
+          </div>
         </div>
 
         {/* Bottom Split: Positions Table (3fr) + Trade Log (2fr) */}
