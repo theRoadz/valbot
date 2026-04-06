@@ -31,8 +31,27 @@ export class FundAllocator {
     return entry;
   }
 
+  /** Get the sum of all mode allocations (smallest-unit) */
+  getTotalAllocated(): number {
+    let total = 0;
+    for (const entry of this.state.values()) {
+      total += entry.allocation;
+    }
+    return total;
+  }
+
   setAllocation(mode: ModeType, amount: number): void {
     assertSafeInteger(amount, `allocation:${mode}`);
+    // Validate upper bound: single mode cannot exceed 500 USDC (500 * 1e6 smallest-unit)
+    const MAX_SINGLE_ALLOCATION = 500_000_000; // 500 USDC in smallest-unit
+    if (amount > MAX_SINGLE_ALLOCATION) {
+      throw new AppError({
+        severity: "warning",
+        code: "ALLOCATION_TOO_LARGE",
+        message: `Allocation ${amount} exceeds maximum of ${MAX_SINGLE_ALLOCATION}`,
+        resolution: "Enter a smaller allocation amount",
+      });
+    }
     const entry = this.getOrCreate(mode);
     const prevAllocation = entry.allocation;
     const prevRemaining = entry.remaining;

@@ -5,10 +5,16 @@ import modeRoutes from "./mode.js";
 const mockStartMode = vi.fn();
 const mockStopMode = vi.fn();
 
+// Mock broadcaster
+vi.mock("../ws/broadcaster.js", () => ({
+  broadcast: vi.fn(),
+}));
+
 // Mock engine
 vi.mock("../engine/index.js", () => {
   const mockFundAllocator = {
     setAllocation: vi.fn(),
+    getStats: vi.fn().mockReturnValue({ pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 }),
   };
   return {
     getEngine: vi.fn(() => ({ fundAllocator: mockFundAllocator })),
@@ -21,6 +27,7 @@ vi.mock("../engine/index.js", () => {
 });
 
 import { _getMockFundAllocator } from "../engine/index.js";
+import { broadcast } from "../ws/broadcaster.js";
 
 describe("mode routes", () => {
   let app: FastifyInstance;
@@ -112,7 +119,7 @@ describe("mode routes", () => {
       const res = await app.inject({
         method: "PUT",
         url: "/api/mode/volume-max/config",
-        payload: { allocation: 1000, pairs: ["SOL/USDC"], slippage: 0.3 },
+        payload: { allocation: 400, pairs: ["SOL/USDC"], slippage: 0.3 },
       });
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ status: "updated", mode: "volumeMax" });
@@ -132,6 +139,28 @@ describe("mode routes", () => {
         "volumeMax",
         500_000_000, // toSmallestUnit(500)
       );
+    });
+
+    it("broadcasts STATS_UPDATED after allocation is set", async () => {
+      const mockAllocator = (_getMockFundAllocator as () => { setAllocation: ReturnType<typeof vi.fn>; getStats: ReturnType<typeof vi.fn> })();
+      mockAllocator.setAllocation.mockClear();
+      (broadcast as ReturnType<typeof vi.fn>).mockClear();
+      mockAllocator.getStats.mockReturnValue({ pnl: 0, trades: 0, volume: 0, allocated: 500, remaining: 500 });
+
+      await app.inject({
+        method: "PUT",
+        url: "/api/mode/volume-max/config",
+        payload: { allocation: 500 },
+      });
+
+      expect(broadcast).toHaveBeenCalledWith("stats.updated", {
+        mode: "volumeMax",
+        pnl: 0,
+        trades: 0,
+        volume: 0,
+        allocated: 500,
+        remaining: 500,
+      });
     });
 
     it("does not call setAllocation when allocation is not provided", async () => {

@@ -397,6 +397,7 @@ const useStore = create<ValBotStore>()((set) => ({
             ...state.modes,
             [mode]: {
               ...state.modes[mode],
+              allocation: typeof data.allocated === "number" ? (data.allocated as number) : state.modes[mode].allocation,
               stats: {
                 pnl: data.pnl,
                 trades: data.trades,

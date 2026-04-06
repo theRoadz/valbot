@@ -71,10 +71,10 @@ describe("FundAllocator", () => {
 
   describe("setAllocation / getAllocation", () => {
     it("sets and retrieves allocation correctly", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
       const result = allocator.getAllocation("volumeMax");
-      expect(result.allocation).toBe(1_000_000_000);
-      expect(result.remaining).toBe(1_000_000_000);
+      expect(result.allocation).toBe(400_000_000);
+      expect(result.remaining).toBe(400_000_000);
     });
 
     it("returns 0/0 for unset mode", () => {
@@ -83,46 +83,46 @@ describe("FundAllocator", () => {
     });
 
     it("updating allocation adjusts remaining by diff", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
-      allocator.reserve("volumeMax", 200_000_000);
-      // remaining is now 800M. Increase allocation by 500M
-      allocator.setAllocation("volumeMax", 1_500_000_000);
-      expect(allocator.getAllocation("volumeMax").remaining).toBe(1_300_000_000);
+      allocator.setAllocation("volumeMax", 200_000_000);
+      allocator.reserve("volumeMax", 50_000_000);
+      // remaining is now 150M. Increase allocation by 100M
+      allocator.setAllocation("volumeMax", 300_000_000);
+      expect(allocator.getAllocation("volumeMax").remaining).toBe(250_000_000);
     });
   });
 
   describe("reserve / release", () => {
     it("decrements remaining on reserve", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
-      allocator.reserve("volumeMax", 300_000_000);
-      expect(allocator.getAllocation("volumeMax").remaining).toBe(700_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
+      allocator.reserve("volumeMax", 100_000_000);
+      expect(allocator.getAllocation("volumeMax").remaining).toBe(300_000_000);
     });
 
     it("increments remaining on release (capped at allocation)", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
-      allocator.reserve("volumeMax", 300_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
+      allocator.reserve("volumeMax", 100_000_000);
       allocator.release("volumeMax", 500_000_000);
       // Capped at allocation
-      expect(allocator.getAllocation("volumeMax").remaining).toBe(1_000_000_000);
+      expect(allocator.getAllocation("volumeMax").remaining).toBe(400_000_000);
     });
 
     it("release increments remaining correctly", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
-      allocator.reserve("volumeMax", 500_000_000);
-      allocator.release("volumeMax", 200_000_000);
-      expect(allocator.getAllocation("volumeMax").remaining).toBe(700_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
+      allocator.reserve("volumeMax", 200_000_000);
+      allocator.release("volumeMax", 100_000_000);
+      expect(allocator.getAllocation("volumeMax").remaining).toBe(300_000_000);
     });
   });
 
   describe("canAllocate", () => {
     it("returns true when sufficient funds", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
-      expect(allocator.canAllocate("volumeMax", 500_000_000)).toBe(true);
+      allocator.setAllocation("volumeMax", 400_000_000);
+      expect(allocator.canAllocate("volumeMax", 200_000_000)).toBe(true);
     });
 
     it("returns false when insufficient funds", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
-      expect(allocator.canAllocate("volumeMax", 1_500_000_000)).toBe(false);
+      allocator.setAllocation("volumeMax", 400_000_000);
+      expect(allocator.canAllocate("volumeMax", 500_000_000)).toBe(false);
     });
 
     it("returns false for unset mode", () => {
@@ -157,25 +157,25 @@ describe("FundAllocator", () => {
 
   describe("kill-switch detection", () => {
     it("returns true at exactly 10% loss", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
-      // Simulate: open 500M position, close with 100M loss (returned 400M)
-      allocator.reserve("volumeMax", 500_000_000); // remaining = 500M
-      allocator.release("volumeMax", 400_000_000); // remaining = 900M = allocation * 0.9
+      allocator.setAllocation("volumeMax", 400_000_000);
+      // Simulate: open 200M position, close with 40M loss (returned 160M)
+      allocator.reserve("volumeMax", 200_000_000); // remaining = 200M
+      allocator.release("volumeMax", 160_000_000); // remaining = 360M = allocation * 0.9
       expect(allocator.checkKillSwitch("volumeMax")).toBe(true);
     });
 
     it("returns true when loss exceeds 10%", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
-      allocator.reserve("volumeMax", 500_000_000);
-      allocator.release("volumeMax", 300_000_000); // remaining = 800M < 900M threshold
+      allocator.setAllocation("volumeMax", 400_000_000);
+      allocator.reserve("volumeMax", 200_000_000); // remaining = 200M
+      allocator.release("volumeMax", 100_000_000); // remaining = 300M < 360M threshold
       expect(allocator.checkKillSwitch("volumeMax")).toBe(true);
     });
 
     it("returns false when no losses (funds merely deployed)", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
-      // Deploy 500M into a position — remaining drops but no loss yet
-      allocator.reserve("volumeMax", 500_000_000);
-      // remaining = 500M, which is <= 900M... but this is deployment not loss
+      allocator.setAllocation("volumeMax", 400_000_000);
+      // Deploy 200M into a position — remaining drops but no loss yet
+      allocator.reserve("volumeMax", 200_000_000);
+      // remaining = 200M, which is <= 360M threshold
       // The kill-switch DOES trigger here because remaining <= allocation * 0.9
       // This is correct per AC7: remaining reflects actual balance
       // The key is that the position manager releases funds back when closing
@@ -183,10 +183,10 @@ describe("FundAllocator", () => {
     });
 
     it("returns false when losses are below threshold", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
       // Small trade with small loss
       allocator.reserve("volumeMax", 100_000_000);
-      allocator.release("volumeMax", 95_000_000); // 5M loss, remaining = 995M > 900M
+      allocator.release("volumeMax", 95_000_000); // 5M loss, remaining = 395M > 360M
       expect(allocator.checkKillSwitch("volumeMax")).toBe(false);
     });
 
@@ -197,19 +197,19 @@ describe("FundAllocator", () => {
 
   describe("cross-mode isolation", () => {
     it("allocating in one mode does not affect another", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
-      allocator.setAllocation("profitHunter", 500_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
+      allocator.setAllocation("profitHunter", 200_000_000);
 
-      allocator.reserve("volumeMax", 800_000_000);
+      allocator.reserve("volumeMax", 300_000_000);
 
-      expect(allocator.getAllocation("profitHunter").remaining).toBe(500_000_000);
-      expect(allocator.canAllocate("profitHunter", 500_000_000)).toBe(true);
+      expect(allocator.getAllocation("profitHunter").remaining).toBe(200_000_000);
+      expect(allocator.canAllocate("profitHunter", 200_000_000)).toBe(true);
     });
   });
 
   describe("recordTrade / getStats", () => {
     it("increments trades count and accumulates volume and pnl", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
       allocator.recordTrade("volumeMax", 100_000_000, 5_000_000);
       allocator.recordTrade("volumeMax", 200_000_000, -3_000_000);
 
@@ -220,7 +220,7 @@ describe("FundAllocator", () => {
     });
 
     it("getStats returns correct ModeStats shape in display units", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000); // 1000 USDC
+      allocator.setAllocation("volumeMax", 400_000_000); // 400 USDC
       allocator.recordTrade("volumeMax", 50_000_000, 10_000_000);
 
       const stats = allocator.getStats("volumeMax");
@@ -228,8 +228,8 @@ describe("FundAllocator", () => {
         pnl: 10, // 10M / 1e6
         trades: 1,
         volume: 50, // 50M / 1e6
-        allocated: 1000, // 1B / 1e6
-        remaining: 1000, // 1B / 1e6
+        allocated: 400, // 400M / 1e6
+        remaining: 400, // 400M / 1e6
       });
     });
 
@@ -271,12 +271,12 @@ describe("FundAllocator", () => {
 
   describe("reconcilePositions", () => {
     it("subtracts open position sizes from remaining", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
       allocator.reconcilePositions([
-        { mode: "volumeMax", size: 200_000_000 },
-        { mode: "volumeMax", size: 300_000_000 },
+        { mode: "volumeMax", size: 100_000_000 },
+        { mode: "volumeMax", size: 150_000_000 },
       ]);
-      expect(allocator.getAllocation("volumeMax").remaining).toBe(500_000_000);
+      expect(allocator.getAllocation("volumeMax").remaining).toBe(150_000_000);
     });
 
     it("clamps remaining to zero if positions exceed allocation", () => {
@@ -288,18 +288,18 @@ describe("FundAllocator", () => {
     });
 
     it("does not affect modes without allocations", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
       allocator.reconcilePositions([
         { mode: "profitHunter", size: 100_000_000 },
       ]);
-      expect(allocator.getAllocation("volumeMax").remaining).toBe(1_000_000_000);
+      expect(allocator.getAllocation("volumeMax").remaining).toBe(400_000_000);
     });
   });
 
   describe("resetModeStats", () => {
     it("zeros pnl, trades, volume and resets remaining to allocation", () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
-      allocator.reserve("volumeMax", 500_000_000); // deplete remaining
+      allocator.setAllocation("volumeMax", 400_000_000);
+      allocator.reserve("volumeMax", 200_000_000); // deplete remaining
       allocator.recordTrade("volumeMax", 100_000_000, -50_000_000);
       allocator.recordTrade("volumeMax", 200_000_000, 30_000_000);
 
@@ -314,8 +314,8 @@ describe("FundAllocator", () => {
       expect(statsAfter.trades).toBe(0);
       expect(statsAfter.volume).toBe(0);
       expect(statsAfter.pnl).toBe(0);
-      expect(statsAfter.allocated).toBe(1000); // display units: 1B / 1e6
-      expect(statsAfter.remaining).toBe(1000); // remaining reset to match allocation
+      expect(statsAfter.allocated).toBe(400); // display units: 400M / 1e6
+      expect(statsAfter.remaining).toBe(400); // remaining reset to match allocation
     });
 
     it("is safe to call on non-existent mode", () => {

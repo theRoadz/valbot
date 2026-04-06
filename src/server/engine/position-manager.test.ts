@@ -126,7 +126,7 @@ describe("PositionManager", () => {
 
   describe("openPosition", () => {
     it("reserves funds, calls contracts, sets stop-loss, inserts DB, broadcasts", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       const pos = await pm.openPosition({
         mode: "volumeMax",
@@ -138,7 +138,7 @@ describe("PositionManager", () => {
       });
 
       // Funds reserved
-      expect(allocator.getAllocation("volumeMax").remaining).toBe(990_000_000);
+      expect(allocator.getAllocation("volumeMax").remaining).toBe(390_000_000);
 
       // Contracts called
       expect(contracts.openPosition).toHaveBeenCalledOnce();
@@ -162,7 +162,7 @@ describe("PositionManager", () => {
     });
 
     it("rolls back if setStopLoss fails — closes position and releases funds", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       vi.mocked(contracts.setStopLoss).mockRejectedValueOnce(new Error("SL failed"));
 
@@ -178,7 +178,7 @@ describe("PositionManager", () => {
       ).rejects.toThrow();
 
       // Funds released
-      expect(allocator.getAllocation("volumeMax").remaining).toBe(1_000_000_000);
+      expect(allocator.getAllocation("volumeMax").remaining).toBe(400_000_000);
 
       // Position was closed for rollback
       expect(contracts.closePosition).toHaveBeenCalledOnce();
@@ -190,7 +190,7 @@ describe("PositionManager", () => {
     });
 
     it("rolls back if openPosition fails — releases funds, no DB row", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       vi.mocked(contracts.openPosition).mockRejectedValueOnce(new Error("TX failed"));
 
@@ -206,7 +206,7 @@ describe("PositionManager", () => {
       ).rejects.toThrow();
 
       // Funds released
-      expect(allocator.getAllocation("volumeMax").remaining).toBe(1_000_000_000);
+      expect(allocator.getAllocation("volumeMax").remaining).toBe(400_000_000);
 
       // No DB row
       const db = getDb();
@@ -216,7 +216,7 @@ describe("PositionManager", () => {
 
   describe("closePosition", () => {
     it("throws and preserves position state when on-chain close fails", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
       const pos = await pm.openPosition({
         mode: "volumeMax",
         pair: "SOL/USDC",
@@ -236,11 +236,11 @@ describe("PositionManager", () => {
       expect(db.select().from(positionsTable).all()).toHaveLength(1);
 
       // Funds still reserved
-      expect(allocator.getAllocation("volumeMax").remaining).toBe(990_000_000);
+      expect(allocator.getAllocation("volumeMax").remaining).toBe(390_000_000);
     });
 
     it("calls contracts, writes trade, deletes position, releases funds, records stats, broadcasts", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
       const pos = await pm.openPosition({
         mode: "volumeMax",
         pair: "SOL/USDC",
@@ -268,8 +268,8 @@ describe("PositionManager", () => {
       expect(posRows).toHaveLength(0);
 
       // Funds released (size + pnl - fees = 10M + 0 - 10K = 9.99M)
-      // Allocation was 1B, reserved 10M (remaining 990M), released 9.99M back
-      expect(allocator.getAllocation("volumeMax").remaining).toBe(999_990_000);
+      // Allocation was 400M, reserved 10M (remaining 390M), released 9.99M back
+      expect(allocator.getAllocation("volumeMax").remaining).toBe(399_990_000);
 
       // Trade stats recorded
       expect(allocator.getStats("volumeMax").trades).toBe(1);
@@ -287,14 +287,14 @@ describe("PositionManager", () => {
 
   describe("kill-switch", () => {
     it("triggers closeAllForMode when cumulative loss threshold breached", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       // Open two positions
       const pos1 = await pm.openPosition({
         mode: "volumeMax",
         pair: "SOL/USDC",
         side: "Long",
-        size: 500_000_000,
+        size: 200_000_000,
         slippage: 0.5,
         stopLossPrice: 95_000_000,
       });
@@ -302,15 +302,15 @@ describe("PositionManager", () => {
         mode: "volumeMax",
         pair: "ETH/USDC",
         side: "Long",
-        size: 200_000_000,
+        size: 100_000_000,
         slippage: 0.5,
         stopLossPrice: 90_000_000,
       });
 
       // Close pos1 with big loss: pnl = -150M, fees = 50K
-      // returnedAmount = 500M + (-150M) - 50K = 349.95M
-      // remaining after: 300M (from pos2 reserve) + 349.95M = 649.95M
-      // 649.95M <= 1B * 0.9 = 900M → kill-switch triggers
+      // returnedAmount = 200M + (-150M) - 50K = 49.95M
+      // remaining after: 100M (from pos2 reserve) + 49.95M = 149.95M
+      // 149.95M <= 400M * 0.9 = 360M → kill-switch triggers
       vi.mocked(contracts.closePosition).mockResolvedValueOnce({
         txHash: "mock-tx-loss",
         exitPrice: 70_000_000,
@@ -346,7 +346,7 @@ describe("PositionManager", () => {
     });
 
     it("closeAllForMode does not re-trigger kill-switch (no infinite recursion)", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       await pm.openPosition({
         mode: "volumeMax",
@@ -387,7 +387,7 @@ describe("PositionManager", () => {
 
   describe("getPositions", () => {
     it("returns display-unit values", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
       await pm.openPosition({
         mode: "volumeMax",
         pair: "SOL/USDC",
@@ -405,7 +405,7 @@ describe("PositionManager", () => {
     });
 
     it("filters by mode", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
       allocator.setAllocation("profitHunter", 500_000_000);
 
       await pm.openPosition({
@@ -433,7 +433,7 @@ describe("PositionManager", () => {
 
   describe("loadFromDb", () => {
     it("restores positions from DB", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
       await pm.openPosition({
         mode: "volumeMax",
         pair: "SOL/USDC",
@@ -460,13 +460,13 @@ describe("PositionManager", () => {
     });
 
     it("returns kill-switch after kill-switch triggers", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       const pos = await pm.openPosition({
         mode: "volumeMax",
         pair: "SOL/USDC",
         side: "Long",
-        size: 500_000_000,
+        size: 200_000_000,
         slippage: 0.5,
         stopLossPrice: 95_000_000,
       });
@@ -487,14 +487,14 @@ describe("PositionManager", () => {
 
   describe("openPosition kill-switch guard", () => {
     it("throws MODE_KILL_SWITCHED when _killSwitchActive contains the mode", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       // Open a position and trigger kill-switch to set _killSwitchActive
       const pos = await pm.openPosition({
         mode: "volumeMax",
         pair: "SOL/USDC",
         side: "Long",
-        size: 500_000_000,
+        size: 200_000_000,
         slippage: 0.5,
         stopLossPrice: 95_000_000,
       });
@@ -529,13 +529,13 @@ describe("PositionManager", () => {
       const onKillSwitch = vi.fn();
       const pmWithCallback = new PositionManager(allocator, mockBroadcast, onKillSwitch);
 
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       const pos = await pmWithCallback.openPosition({
         mode: "volumeMax",
         pair: "SOL/USDC",
         side: "Long",
-        size: 500_000_000,
+        size: 200_000_000,
         slippage: 0.5,
         stopLossPrice: 95_000_000,
       });
@@ -555,13 +555,13 @@ describe("PositionManager", () => {
 
   describe("alert details", () => {
     it("alert includes per-position breakdown", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       const pos1 = await pm.openPosition({
         mode: "volumeMax",
         pair: "SOL/USDC",
         side: "Long",
-        size: 500_000_000,
+        size: 200_000_000,
         slippage: 0.5,
         stopLossPrice: 95_000_000,
       });
@@ -569,7 +569,7 @@ describe("PositionManager", () => {
         mode: "volumeMax",
         pair: "ETH/USDC",
         side: "Long",
-        size: 200_000_000,
+        size: 100_000_000,
         slippage: 0.5,
         stopLossPrice: 90_000_000,
       });
@@ -615,13 +615,13 @@ describe("PositionManager", () => {
 
   describe("resetModeStatus", () => {
     it("clears kill-switch state allowing mode to restart", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       const pos = await pm.openPosition({
         mode: "volumeMax",
         pair: "SOL/USDC",
         side: "Long",
-        size: 500_000_000,
+        size: 200_000_000,
         slippage: 0.5,
         stopLossPrice: 95_000_000,
       });
@@ -643,7 +643,7 @@ describe("PositionManager", () => {
 
   describe("getInternalPositions", () => {
     it("returns raw positions with smallest-unit sizes for reconciliation", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
       await pm.openPosition({
         mode: "volumeMax",
         pair: "SOL/USDC",
@@ -662,7 +662,7 @@ describe("PositionManager", () => {
 
   describe("chainPositionId persistence", () => {
     it("persisted position includes chainPositionId from open result", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       vi.mocked(contracts.openPosition).mockResolvedValueOnce({
         txHash: "mock-tx-open",
@@ -724,7 +724,7 @@ describe("PositionManager", () => {
 
   describe("closeAllPositions", () => {
     it("closes positions across multiple modes", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
       allocator.setAllocation("profitHunter", 500_000_000);
 
       await pm.openPosition({
@@ -752,7 +752,7 @@ describe("PositionManager", () => {
     });
 
     it("sets _shuttingDown flag preventing new positions", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       await pm.closeAllPositions();
 
@@ -808,7 +808,7 @@ describe("PositionManager", () => {
         fees: 10_000,
       });
 
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       await pm2.reconcileOnChainPositions("0x0000000000000000000000000000000000000000");
 
@@ -941,7 +941,7 @@ describe("PositionManager", () => {
         fees: 10_000,
       });
 
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
       mockBroadcast.mockClear();
 
       await pm2.reconcileOnChainPositions("0x0000000000000000000000000000000000000000");
@@ -1012,7 +1012,7 @@ describe("PositionManager", () => {
 
   describe("stop-loss failure alert broadcasts (AC#2)", () => {
     it("broadcasts warning alert when stop-loss fails but rollback close succeeds", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       vi.mocked(contracts.setStopLoss).mockRejectedValueOnce(new Error("SL submission failed"));
 
@@ -1048,7 +1048,7 @@ describe("PositionManager", () => {
     });
 
     it("broadcasts critical alert when stop-loss fails AND rollback close fails", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       vi.mocked(contracts.setStopLoss).mockRejectedValueOnce(new Error("SL submission failed"));
       vi.mocked(contracts.closePosition).mockRejectedValueOnce(new Error("Close also failed"));
@@ -1085,7 +1085,7 @@ describe("PositionManager", () => {
     });
 
     it("keeps position in DB when stop-loss fails AND rollback close fails", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       vi.mocked(contracts.setStopLoss).mockRejectedValueOnce(new Error("SL failed"));
       vi.mocked(contracts.closePosition).mockRejectedValueOnce(new Error("Close failed"));
@@ -1114,7 +1114,7 @@ describe("PositionManager", () => {
 
   describe("close failure alert broadcasts (AC#3)", () => {
     it("broadcasts critical alert when position close fails", async () => {
-      allocator.setAllocation("volumeMax", 1_000_000_000);
+      allocator.setAllocation("volumeMax", 400_000_000);
 
       const pos = await pm.openPosition({
         mode: "volumeMax",

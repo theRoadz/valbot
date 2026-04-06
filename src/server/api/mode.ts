@@ -1,7 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { urlModeToModeType, toSmallestUnit } from "../../shared/types.js";
+import { EVENTS } from "../../shared/events.js";
 import { AppError } from "../lib/errors.js";
 import { getEngine, startMode, stopMode, resetKillSwitch, getModeStatus } from "../engine/index.js";
+import { broadcast } from "../ws/broadcaster.js";
 
 const modeEnum = ["volume-max", "profit-hunter", "arbitrage"] as const;
 
@@ -68,7 +70,7 @@ export default async function modeRoutes(fastify: FastifyInstance) {
         type: "object" as const,
         additionalProperties: false,
         properties: {
-          allocation: { type: "number" as const, minimum: 0 },
+          allocation: { type: "number" as const, minimum: 0, maximum: 500 },
           pairs: { type: "array" as const, items: { type: "string" as const }, maxItems: 50 },
           slippage: { type: "number" as const, minimum: 0, maximum: 100 },
         },
@@ -92,6 +94,13 @@ export default async function modeRoutes(fastify: FastifyInstance) {
         // Reset kill-switch state when re-allocating a kill-switched mode (only for meaningful allocations)
         if (request.body.allocation > 0 && getModeStatus(modeType) === "kill-switch") {
           resetKillSwitch(modeType);
+        }
+        // Broadcast updated stats after all state changes (including kill-switch reset)
+        try {
+          const stats = fundAllocator.getStats(modeType);
+          broadcast(EVENTS.STATS_UPDATED, { mode: modeType, ...stats });
+        } catch {
+          // Stats broadcast failure should not fail the allocation request
         }
       } catch (err) {
         // Only swallow engine-not-initialized; re-throw real errors

@@ -35,7 +35,7 @@ _Critical rules and patterns for implementing ValBot. Focus on unobvious details
 - `src/server/api/` — ONLY layer that handles HTTP request/response. Never access DB or blockchain directly from routes.
 - `src/server/blockchain/` — ONLY code that touches Hyperliquid API or Valiant Perps order management. Never emits WebSocket events or writes to DB.
 - `src/server/db/` — ONLY code that imports `better-sqlite3` or uses Drizzle queries. No other layer uses raw SQL. DB connection is lazy via `getDb()`, NOT module-level.
-- `src/server/ws/broadcaster.ts` — ONLY code that manages WebSocket connections. Only engine and error handler call `broadcast()`.
+- `src/server/ws/broadcaster.ts` — ONLY code that manages WebSocket connections. Any layer may call `broadcast()` to emit events.
 - `src/client/` — NEVER imports from `src/server/`. Communication only via REST API and WebSocket.
 - `src/shared/` — Shared types imported by BOTH sides via TypeScript path aliases. Define types here BEFORE using them.
 

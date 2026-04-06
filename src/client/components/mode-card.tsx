@@ -109,6 +109,7 @@ function FundAllocationBar({
 export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
   const modeState = useStore((s) => s.modes[mode]);
   const setModeStatus = useStore((s) => s.setModeStatus);
+  const setModeConfig = useStore((s) => s.setModeConfig);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const togglingRef = useRef(false);
@@ -199,7 +200,12 @@ export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
     setAllocationFocused(false);
     const numVal = parseFloat(allocationInput);
     if (!isNaN(numVal) && isFinite(numVal) && numVal >= 0 && numVal !== allocation) {
+      const prevAllocation = allocation;
+      const prevStatus = status;
+      setModeConfig(mode, { allocation: numVal });
       api.updateModeConfig(mode, { allocation: numVal }).catch((err) => {
+        setModeConfig(mode, { allocation: prevAllocation });
+        if (prevStatus === "kill-switch") setModeStatus(mode, "kill-switch");
         if (import.meta.env.DEV) console.error("[ModeCard] Allocation update failed:", err);
       });
     }

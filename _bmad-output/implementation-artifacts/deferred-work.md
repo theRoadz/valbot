@@ -139,3 +139,7 @@
 ## Deferred from: code review of story 4-2-profit-hunter-strategy (2026-04-06)
 
 - ~~Position size frozen at construction time~~ — resolved: added dynamic `getPositionSize()` that recalculates from current allocation each iteration when no explicit size configured
+
+## Deferred from: code review of story 8-3-fund-allocation-sync-fix (2026-04-06)
+
+- ~~No upper-bound validation on allocation~~ — resolved: added 10M USDC max in API schema (`maximum: 10_000_000`) and `ALLOCATION_TOO_LARGE` AppError guard in `FundAllocator.setAllocation()` [src/server/api/mode.ts, src/server/engine/fund-allocator.ts]

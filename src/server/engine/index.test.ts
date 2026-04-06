@@ -121,7 +121,7 @@ describe("engine/index", () => {
     await initEngine();
 
     // Set allocation so start doesn't throw
-    getEngine().fundAllocator.setAllocation("volumeMax", 1_000_000_000);
+    getEngine().fundAllocator.setAllocation("volumeMax", 400_000_000);
 
     await startMode("volumeMax", { pairs: ["SOL/USDC"] });
     expect(getModeStatus("volumeMax")).toBe("running");
@@ -131,7 +131,7 @@ describe("engine/index", () => {
     const { initEngine, getEngine, startMode, stopMode, getModeStatus } = await import("./index.js");
     await initEngine();
 
-    getEngine().fundAllocator.setAllocation("volumeMax", 1_000_000_000);
+    getEngine().fundAllocator.setAllocation("volumeMax", 400_000_000);
     await startMode("volumeMax", { pairs: ["SOL/USDC"] });
     await stopMode("volumeMax");
 
@@ -159,7 +159,7 @@ describe("engine/index", () => {
   it("startMode throws AppError when mode is transitioning", async () => {
     const { initEngine, getEngine, startMode } = await import("./index.js");
     await initEngine();
-    getEngine().fundAllocator.setAllocation("volumeMax", 1_000_000_000);
+    getEngine().fundAllocator.setAllocation("volumeMax", 400_000_000);
 
     // Start first — will lock the mode briefly
     const p1 = startMode("volumeMax", { pairs: ["SOL/USDC"] });
@@ -174,7 +174,7 @@ describe("engine/index", () => {
     const { initEngine, getEngine, startMode, stopAllModes, getModeStatus } = await import("./index.js");
     await initEngine();
 
-    getEngine().fundAllocator.setAllocation("volumeMax", 1_000_000_000);
+    getEngine().fundAllocator.setAllocation("volumeMax", 400_000_000);
     await startMode("volumeMax", { pairs: ["SOL/USDC"] });
 
     await stopAllModes();
@@ -207,7 +207,7 @@ describe("engine/index", () => {
     await initEngine();
 
     const { positionManager, fundAllocator } = getEngine();
-    fundAllocator.setAllocation("volumeMax", 1_000_000_000);
+    fundAllocator.setAllocation("volumeMax", 400_000_000);
     fundAllocator.recordTrade("volumeMax", 100_000_000, -50_000_000);
 
     // Set kill-switch state
@@ -222,8 +222,8 @@ describe("engine/index", () => {
     expect(fundAllocator.getStats("volumeMax").pnl).toBe(0);
     expect(fundAllocator.getStats("volumeMax").volume).toBe(0);
     // allocation preserved, remaining reset to match allocation
-    expect(fundAllocator.getStats("volumeMax").allocated).toBe(1000);
-    expect(fundAllocator.getStats("volumeMax").remaining).toBe(1000);
+    expect(fundAllocator.getStats("volumeMax").allocated).toBe(400);
+    expect(fundAllocator.getStats("volumeMax").remaining).toBe(400);
   });
 
   it("startMode throws oracleFeedUnavailableError when starting profitHunter with oracle unavailable", async () => {
@@ -240,7 +240,7 @@ describe("engine/index", () => {
     const { initEngine, getEngine, startMode, getOracleClient, getModeStatus, stopMode } = await import("./index.js");
     await initEngine();
 
-    getEngine().fundAllocator.setAllocation("profitHunter", 1_000_000_000);
+    getEngine().fundAllocator.setAllocation("profitHunter", 400_000_000);
 
     // Make oracle available for profitHunter start
     const oracle = getOracleClient()!;
