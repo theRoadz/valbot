@@ -7,6 +7,9 @@ import {
   sessionKeyInvalidError,
   apiConnectionFailedError,
   walletAddressMissingError,
+  sessionKeyMissingError,
+  walletAddressInvalidError,
+  balanceFetchFailedError,
 } from "../lib/errors.js";
 import { broadcast, cacheAlert } from "../ws/broadcaster.js";
 import { EVENTS } from "../../shared/events.js";
@@ -139,10 +142,12 @@ export async function withRetry<T>(
           return result;
         } catch (retryErr) {
           if (!isRetriableError(retryErr, writeCall)) {
-            // Non-retriable error during retry — restore connection status
+            // Non-retriable error during retry — API is reachable (domain error, not network)
+            // Restore healthy state so mode-runner iterations aren't blocked
+            apiHealthy = true;
             _retrying = false;
             broadcast(EVENTS.CONNECTION_STATUS, {
-              rpc: false,
+              rpc: true,
               wallet: client?.walletAddress ?? "",
               equity: cachedStatus?.data.equity ?? 0,
               available: cachedStatus?.data.available ?? 0,
@@ -185,13 +190,7 @@ export async function withRetry<T>(
 export function loadAgentWallet(): PrivateKeyAccount {
   const sessionKeyStr = process.env.SESSION_KEY;
   if (!sessionKeyStr) {
-    throw new AppError({
-      severity: "critical",
-      code: "SESSION_KEY_MISSING",
-      message: "SESSION_KEY not found in .env",
-      resolution:
-        "Add SESSION_KEY=0x<64-char-hex> to .env file. Must be a 0x-prefixed 32-byte hex key.",
-    });
+    throw sessionKeyMissingError();
   }
   try {
     const trimmed = sessionKeyStr.trim();
@@ -221,13 +220,7 @@ function loadWalletAddress(): `0x${string}` {
   }
   const trimmed = wallet.trim();
   if (!/^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
-    throw new AppError({
-      severity: "critical",
-      code: "WALLET_ADDRESS_INVALID",
-      message: "WALLET address is invalid — must be 0x-prefixed 40-char hex (20 bytes)",
-      resolution:
-        "Set WALLET=0x<your-master-wallet-address> in .env. This is the master wallet from Valiant, not the agent key.",
-    });
+    throw walletAddressInvalidError(`Got: ${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`);
   }
   return trimmed as `0x${string}`;
 }
@@ -308,13 +301,7 @@ export async function getWalletBalances(
   } catch (err) {
     // Re-throw connection failures so callers see the real error
     if (err instanceof AppError && err.code === "API_CONNECTION_FAILED") throw err;
-    throw new AppError({
-      severity: "warning",
-      code: "BALANCE_FETCH_FAILED",
-      message: "Failed to fetch wallet balances",
-      details: err instanceof Error ? err.message : String(err),
-      resolution: "Check Hyperliquid API connection. Balance will retry on next cycle.",
-    });
+    throw balanceFetchFailedError(err instanceof Error ? err.message : String(err));
   }
 }
 

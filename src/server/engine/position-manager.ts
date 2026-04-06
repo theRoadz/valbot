@@ -16,7 +16,18 @@ import {
   setStopLoss as contractSetStopLoss,
 } from "../blockchain/contracts.js";
 import type { ClosePositionResult } from "../blockchain/contracts.js";
-import { AppError } from "../lib/errors.js";
+import {
+  shutdownInProgressError,
+  modeKillSwitchedError,
+  noBlockchainClientError,
+  positionOpenFailedError,
+  stopLossFailedError,
+  stopLossOrphanedError,
+  positionDbFailedError,
+  positionNotFoundError,
+  positionCloseFailedError,
+  killSwitchInProgressError,
+} from "../lib/errors.js";
 import { logger } from "../lib/logger.js";
 import type { FundAllocator } from "./fund-allocator.js";
 
@@ -83,32 +94,17 @@ export class PositionManager {
 
     // SAFETY: Prevent opening positions during shutdown
     if (this._shuttingDown) {
-      throw new AppError({
-        severity: "warning",
-        code: "SHUTDOWN_IN_PROGRESS",
-        message: "Cannot open position — shutdown in progress.",
-        resolution: "Wait for shutdown to complete.",
-      });
+      throw shutdownInProgressError();
     }
 
     // SAFETY: Prevent opening positions on a kill-switched mode (race condition guard)
     if (this._killSwitchActive.has(mode) || this._modeStatus.get(mode) === "kill-switch") {
-      throw new AppError({
-        severity: "warning",
-        code: "MODE_KILL_SWITCHED",
-        message: `Cannot open position — kill switch active on ${mode}`,
-        resolution: "Re-allocate funds to restart the mode.",
-      });
+      throw modeKillSwitchedError(mode);
     }
 
     const client = getBlockchainClient();
     if (!client) {
-      throw new AppError({
-        severity: "critical",
-        code: "NO_BLOCKCHAIN_CLIENT",
-        message: "Blockchain client not initialized",
-        resolution: "Check Hyperliquid API connection and restart the bot.",
-      });
+      throw noBlockchainClientError();
     }
 
     // Step 1: Reserve funds
@@ -127,14 +123,30 @@ export class PositionManager {
       });
     } catch (err) {
       this.fundAllocator.release(mode, size);
-      logger.error({ err, mode, pair, side, size }, "Failed to open position on-chain");
-      throw new AppError({
-        severity: "warning",
-        code: "POSITION_OPEN_FAILED",
-        message: `Failed to open ${side} position on ${pair}`,
-        details: err instanceof Error ? err.message : String(err),
-        resolution: "Check blockchain connection and retry.",
-      });
+      logger.warn({ err, mode, pair, side, size, code: "POSITION_OPEN_FAILED" }, "Failed to open position on-chain");
+      throw positionOpenFailedError(`Failed to open ${side} position on ${pair}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // SAFETY: Re-check kill-switch after async open — may have fired mid-operation
+    if (this._killSwitchActive.has(mode) || this._modeStatus.get(mode) === "kill-switch") {
+      logger.warn({ mode, pair, positionId: openResult.positionId, code: "KILL_SWITCH_RACE" },
+        "Kill-switch activated during openPosition — immediately closing just-opened position");
+      try {
+        await contractClosePosition({
+          exchange: client.exchange,
+          info: client.info,
+          positionId: openResult.positionId,
+          pair,
+          side,
+          size,
+        });
+      } catch (closeErr) {
+        logger.error({ err: closeErr, positionId: openResult.positionId, code: "POSITION_CLOSE_FAILED" },
+          "Failed to close position after kill-switch race detection — position orphaned on-chain");
+        throw modeKillSwitchedError(mode);
+      }
+      this.fundAllocator.release(mode, size);
+      throw modeKillSwitchedError(mode);
     }
 
     // Step 3: Set stop-loss
@@ -148,7 +160,8 @@ export class PositionManager {
       });
     } catch (err) {
       // Rollback: close position and release funds
-      logger.error({ err, positionId: openResult.positionId }, "Failed to set stop-loss, closing position");
+      logger.warn({ err, positionId: openResult.positionId, code: "STOP_LOSS_FAILED" }, "Failed to set stop-loss, closing position");
+      let rollbackCloseSucceeded = false;
       try {
         await contractClosePosition({
           exchange: client.exchange,
@@ -158,17 +171,92 @@ export class PositionManager {
           side,
           size,
         });
+        rollbackCloseSucceeded = true;
       } catch (closeErr) {
-        logger.error({ closeErr, positionId: openResult.positionId }, "Failed to close position during rollback");
+        logger.error({ err: closeErr, positionId: openResult.positionId, code: "POSITION_CLOSE_FAILED" }, "Failed to close position during stop-loss rollback");
       }
+
+      if (rollbackCloseSucceeded) {
+        // AC#2: Stop-loss failed but rollback close succeeded — no capital at risk
+        // Record the zero-PnL trade so volume/trade count are tracked for kill-switch accounting
+        this.fundAllocator.recordTrade(mode, size, 0);
+        this.broadcast(EVENTS.ALERT_TRIGGERED, {
+          severity: "warning",
+          code: "STOP_LOSS_FAILED",
+          message: `Stop-loss setup failed for ${pair}. Position was automatically closed. No capital at risk.`,
+          details: err instanceof Error ? err.message : String(err),
+          resolution: "Retry the trade. The position was safely closed.",
+          mode,
+        });
+      } else {
+        // AC#2: Stop-loss failed AND rollback close failed — critical, on-chain stop-loss is safety net
+        // Task 4.4: Keep position in DB and in-memory for crash recovery reconciliation
+        const now = Date.now();
+        // Add to in-memory map first so the position is always tracked even if DB insert fails
+        const tempId = -(Date.now()); // negative temp ID until DB assigns real one
+        this.positions.set(tempId, {
+          id: tempId,
+          chainPositionId: openResult.positionId,
+          mode,
+          pair,
+          side,
+          size,
+          entryPrice: openResult.entryPrice,
+          stopLoss: stopLossPrice,
+          timestamp: now,
+        });
+        try {
+          assertSafeInteger(size, "position.size");
+          assertSafeInteger(openResult.entryPrice, "position.entryPrice");
+          assertSafeInteger(stopLossPrice, "position.stopLoss");
+          assertSafeInteger(now, "position.timestamp");
+          const db = getDb();
+          const insertResult = db
+            .insert(positionsTable)
+            .values({
+              mode,
+              pair,
+              side,
+              size,
+              entryPrice: openResult.entryPrice,
+              stopLoss: stopLossPrice,
+              timestamp: now,
+              chainPositionId: openResult.positionId,
+            })
+            .run();
+          const posId = Number(insertResult.lastInsertRowid);
+          // Replace temp entry with real DB ID
+          this.positions.delete(tempId);
+          this.positions.set(posId, {
+            id: posId,
+            chainPositionId: openResult.positionId,
+            mode,
+            pair,
+            side,
+            size,
+            entryPrice: openResult.entryPrice,
+            stopLoss: stopLossPrice,
+            timestamp: now,
+          });
+          logger.warn({ positionId: posId, mode, pair }, "Orphaned position persisted to DB for crash recovery");
+        } catch (dbErr) {
+          logger.error({ err: dbErr, mode, pair, chainPositionId: openResult.positionId }, "Failed to persist orphaned position to DB — position tracked in-memory only, manual intervention required");
+        }
+
+        this.broadcast(EVENTS.ALERT_TRIGGERED, {
+          severity: "critical",
+          code: "STOP_LOSS_FAILED",
+          message: `Stop-loss setup failed for ${pair} and rollback close also failed. On-chain stop-loss is active as safety net. Check position manually.`,
+          details: `Position ID: ${openResult.positionId}. ${err instanceof Error ? err.message : String(err)}`,
+          resolution: "Verify on-chain stop-loss is active. If not, manually close the position via the exchange interface.",
+          mode,
+        });
+        // Do NOT release funds — position is still open on-chain
+        throw stopLossOrphanedError(`Failed to set stop-loss for position ${openResult.positionId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
       this.fundAllocator.release(mode, size);
-      throw new AppError({
-        severity: "warning",
-        code: "STOP_LOSS_FAILED",
-        message: `Failed to set stop-loss for position ${openResult.positionId}`,
-        details: err instanceof Error ? err.message : String(err),
-        resolution: "Position was closed to prevent orphaned positions. Retry the trade.",
-      });
+      throw stopLossFailedError(`Failed to set stop-loss for position ${openResult.positionId}: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     // Step 4: Insert into positions DB — rollback on-chain if DB fails
@@ -196,7 +284,8 @@ export class PositionManager {
         .run();
       positionId = Number(insertResult.lastInsertRowid);
     } catch (dbErr) {
-      logger.error({ dbErr, positionId: openResult.positionId }, "DB insert failed after on-chain open, closing position");
+      logger.error({ err: dbErr, positionId: openResult.positionId, code: "POSITION_DB_FAILED" }, "DB insert failed after on-chain open, closing position");
+      let dbRollbackCloseSucceeded = false;
       try {
         await contractClosePosition({
           exchange: client.exchange,
@@ -206,17 +295,37 @@ export class PositionManager {
           side,
           size,
         });
+        dbRollbackCloseSucceeded = true;
       } catch (closeErr) {
-        logger.error({ closeErr, positionId: openResult.positionId }, "Failed to close position during DB rollback");
+        logger.error({ err: closeErr, positionId: openResult.positionId, code: "POSITION_CLOSE_FAILED" }, "Failed to close position during DB rollback");
       }
-      this.fundAllocator.release(mode, size);
-      throw new AppError({
+      if (dbRollbackCloseSucceeded) {
+        this.fundAllocator.release(mode, size);
+        throw positionDbFailedError(dbErr instanceof Error ? dbErr.message : String(dbErr));
+      }
+      // Rollback close also failed — position is still open on-chain, do NOT release funds
+      // Track in memory for crash recovery (DB insert already failed, so only in-memory)
+      const orphanTempId = -(Date.now());
+      this.positions.set(orphanTempId, {
+        id: orphanTempId,
+        chainPositionId: openResult.positionId,
+        mode,
+        pair,
+        side,
+        size,
+        entryPrice: openResult.entryPrice,
+        stopLoss: stopLossPrice,
+        timestamp: now,
+      });
+      this.broadcast(EVENTS.ALERT_TRIGGERED, {
         severity: "critical",
         code: "POSITION_DB_FAILED",
-        message: `Position opened on-chain but DB insert failed — position was closed`,
-        details: dbErr instanceof Error ? dbErr.message : String(dbErr),
-        resolution: "Check database health and retry the trade.",
+        message: `DB insert failed for ${pair} and rollback close also failed. On-chain stop-loss is active as safety net. Check position manually.`,
+        details: `Position ID: ${openResult.positionId}. ${dbErr instanceof Error ? dbErr.message : String(dbErr)}`,
+        resolution: "Verify on-chain stop-loss is active. If not, manually close the position via the exchange interface.",
+        mode,
       });
+      throw positionDbFailedError(dbErr instanceof Error ? dbErr.message : String(dbErr));
     }
 
     // Step 5: Add to in-memory map
@@ -259,22 +368,12 @@ export class PositionManager {
     // Step 1: Look up in memory
     const pos = this.positions.get(positionId);
     if (!pos) {
-      throw new AppError({
-        severity: "warning",
-        code: "POSITION_NOT_FOUND",
-        message: `Position ${positionId} not found`,
-        resolution: "Check position ID and try again.",
-      });
+      throw positionNotFoundError(positionId);
     }
 
     const client = getBlockchainClient();
     if (!client) {
-      throw new AppError({
-        severity: "critical",
-        code: "NO_BLOCKCHAIN_CLIENT",
-        message: "Blockchain client not initialized",
-        resolution: "Check Hyperliquid API connection and restart the bot.",
-      });
+      throw noBlockchainClientError();
     }
 
     // Step 2: Close on-chain
@@ -289,14 +388,18 @@ export class PositionManager {
         size: pos.size,
       });
     } catch (err) {
-      logger.error({ err, positionId, mode: pos.mode }, "Failed to close position on-chain");
-      throw new AppError({
+      logger.error({ err, positionId, mode: pos.mode, code: "POSITION_CLOSE_FAILED" }, "Failed to close position on-chain");
+      // AC#3: Broadcast critical alert — position remains tracked, on-chain stop-loss is safety net
+      const stopLossDisplay = fromSmallestUnit(pos.stopLoss);
+      this.broadcast(EVENTS.ALERT_TRIGGERED, {
         severity: "critical",
         code: "POSITION_CLOSE_FAILED",
-        message: `Failed to close position ${positionId} on-chain`,
-        details: err instanceof Error ? err.message : String(err),
-        resolution: "Position remains open. Check blockchain connection and retry, or use kill-switch.",
+        message: `Position close failed after retries. On-chain stop-loss at $${stopLossDisplay} is active. Monitor position on Hyperliquid dashboard.`,
+        details: `Position ${positionId}: ${pos.pair} ${pos.side}. ${err instanceof Error ? err.message : String(err)}`,
+        resolution: "Check blockchain connection and retry closing the position, or use kill-switch. On-chain stop-loss is your safety net.",
+        mode: pos.mode,
       });
+      throw positionCloseFailedError(`Failed to close position ${positionId} on-chain: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     // Step 3: Compute actual PnL from entry vs exit prices
@@ -404,7 +507,8 @@ export class PositionManager {
         const positionDetails = allDetails
           .map((d) => `  ${d.pair} ${d.side} @ ${d.entryPrice} → ${d.exitPrice}`)
           .join("\n");
-        const lossAmount = Math.abs(summary.totalPnl);
+        const triggeringPnlDisplay = fromSmallestUnit(computedPnl);
+        const lossAmount = Math.abs(summary.totalPnl + triggeringPnlDisplay);
         this.broadcast(EVENTS.ALERT_TRIGGERED, {
           severity: "critical",
           code: "KILL_SWITCH_TRIGGERED",
@@ -452,7 +556,7 @@ export class PositionManager {
       } catch (err) {
         failedPositionIds.push(pos.id);
         logger.error(
-          { err, positionId: pos.id, mode },
+          { err, positionId: pos.id, mode, code: "POSITION_CLOSE_FAILED" },
           "Failed to close position during closeAllForMode",
         );
       }
@@ -473,7 +577,11 @@ export class PositionManager {
       });
     }
 
-    this._killSwitchActive.delete(mode);
+    // Only clear kill-switch flag when ALL positions were successfully closed.
+    // If some failed, the flag stays active to prevent mode restart via resetModeStatus().
+    if (failedPositionIds.length === 0) {
+      this._killSwitchActive.delete(mode);
+    }
 
     return {
       count: closedPositions.length,
@@ -573,6 +681,8 @@ export class PositionManager {
           } catch (dbErr) {
             logger.error({ dbErr, positionId: pos.id }, "Failed to delete reconciled position from DB");
           }
+          // Release reserved funds — position is gone on-chain
+          this.fundAllocator.release(pos.mode, pos.size);
           cleanedCount++;
         }
         continue;
@@ -609,6 +719,8 @@ export class PositionManager {
           } catch (dbErr) {
             logger.error({ dbErr, positionId: pos.id }, "Failed to delete reconciled position from DB");
           }
+          // Release reserved funds — position is gone on-chain
+          this.fundAllocator.release(pos.mode, pos.size);
           cleanedCount++;
         }
       }
@@ -674,12 +786,7 @@ export class PositionManager {
 
   resetModeStatus(mode: ModeType): void {
     if (this._killSwitchActive.has(mode)) {
-      throw new AppError({
-        severity: "warning",
-        code: "KILL_SWITCH_IN_PROGRESS",
-        message: `Cannot reset kill-switch on ${mode} — close sweep still in progress`,
-        resolution: "Wait for all positions to close before re-allocating.",
-      });
+      throw killSwitchInProgressError(mode);
     }
     this._modeStatus.delete(mode);
   }

@@ -1,5 +1,6 @@
 # generated: 2026-04-03
 # last_updated: 2026-04-06
+# last story created: 2026-04-06 story 3-5
 # project: ValBot
 # project_key: NOKEY
 # tracking_system: file-system
@@ -38,6 +39,9 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-06
+# last review: 2026-04-06 code review of story 3-5, all patches applied
+# last dev: 2026-04-06 story 3-5 implementation started
+# last story created: 2026-04-06 story 3-5
 # last review: 2026-04-06 code review of story 3-4, all patches applied
 # last dev: 2026-04-06 story 3-4 implementation started
 # last story created: 2026-04-06 story 3-4
@@ -115,7 +119,7 @@ development_status:
   3-2-graceful-shutdown-and-crash-recovery: done
   3-3-rpc-connection-resilience: done
   3-4-alertbanner-and-toast-notification-system: done
-  3-5-error-handling-framework-and-transaction-safety: backlog
+  3-5-error-handling-framework-and-transaction-safety: done
   epic-3-retrospective: optional
 
   # Epic 4: Multi-Mode Operation — Profit Hunter & Arbitrage

@@ -6,6 +6,7 @@ import { positions as positionsTable, trades as tradesTable } from "../db/schema
 import { sql } from "drizzle-orm";
 import path from "path";
 import fs from "fs";
+import { AppError } from "../lib/errors.js";
 
 const TEST_DB_PATH = path.resolve(process.cwd(), "test-position-manager.db");
 
@@ -519,7 +520,7 @@ describe("PositionManager", () => {
           slippage: 0.5,
           stopLossPrice: 90_000_000,
         }),
-      ).rejects.toThrow("Cannot open position — kill switch active on volumeMax");
+      ).rejects.toThrow("kill-switch state");
     });
   });
 
@@ -1006,6 +1007,149 @@ describe("PositionManager", () => {
       expect(pm2.getPositions()).toHaveLength(0);
       const rows = db.select().from(positionsTable).all();
       expect(rows).toHaveLength(0);
+    });
+  });
+
+  describe("stop-loss failure alert broadcasts (AC#2)", () => {
+    it("broadcasts warning alert when stop-loss fails but rollback close succeeds", async () => {
+      allocator.setAllocation("volumeMax", 1_000_000_000);
+
+      vi.mocked(contracts.setStopLoss).mockRejectedValueOnce(new Error("SL submission failed"));
+
+      mockBroadcast.mockClear();
+
+      await expect(
+        pm.openPosition({
+          mode: "volumeMax",
+          pair: "SOL/USDC",
+          side: "Long",
+          size: 10_000_000,
+          slippage: 0.5,
+          stopLossPrice: 95_000_000,
+        }),
+      ).rejects.toThrow(AppError);
+
+      // Should broadcast warning alert (rollback close succeeded)
+      const alertCalls = mockBroadcast.mock.calls.filter(
+        (c: unknown[]) => c[0] === "alert.triggered",
+      );
+      expect(alertCalls.length).toBe(1);
+      const payload = (alertCalls[0] as unknown[])[1] as {
+        severity: string;
+        code: string;
+        message: string;
+        mode: string;
+      };
+      expect(payload.severity).toBe("warning");
+      expect(payload.code).toBe("STOP_LOSS_FAILED");
+      expect(payload.message).toContain("automatically closed");
+      expect(payload.message).toContain("No capital at risk");
+      expect(payload.mode).toBe("volumeMax");
+    });
+
+    it("broadcasts critical alert when stop-loss fails AND rollback close fails", async () => {
+      allocator.setAllocation("volumeMax", 1_000_000_000);
+
+      vi.mocked(contracts.setStopLoss).mockRejectedValueOnce(new Error("SL submission failed"));
+      vi.mocked(contracts.closePosition).mockRejectedValueOnce(new Error("Close also failed"));
+
+      mockBroadcast.mockClear();
+
+      await expect(
+        pm.openPosition({
+          mode: "volumeMax",
+          pair: "SOL/USDC",
+          side: "Long",
+          size: 10_000_000,
+          slippage: 0.5,
+          stopLossPrice: 95_000_000,
+        }),
+      ).rejects.toThrow(AppError);
+
+      // Should broadcast critical alert (both failed)
+      const alertCalls = mockBroadcast.mock.calls.filter(
+        (c: unknown[]) => c[0] === "alert.triggered",
+      );
+      expect(alertCalls.length).toBe(1);
+      const payload = (alertCalls[0] as unknown[])[1] as {
+        severity: string;
+        code: string;
+        message: string;
+        mode: string;
+      };
+      expect(payload.severity).toBe("critical");
+      expect(payload.code).toBe("STOP_LOSS_FAILED");
+      expect(payload.message).toContain("rollback close also failed");
+      expect(payload.message).toContain("safety net");
+      expect(payload.mode).toBe("volumeMax");
+    });
+
+    it("keeps position in DB when stop-loss fails AND rollback close fails", async () => {
+      allocator.setAllocation("volumeMax", 1_000_000_000);
+
+      vi.mocked(contracts.setStopLoss).mockRejectedValueOnce(new Error("SL failed"));
+      vi.mocked(contracts.closePosition).mockRejectedValueOnce(new Error("Close failed"));
+
+      await expect(
+        pm.openPosition({
+          mode: "volumeMax",
+          pair: "SOL/USDC",
+          side: "Long",
+          size: 10_000_000,
+          slippage: 0.5,
+          stopLossPrice: 95_000_000,
+        }),
+      ).rejects.toThrow();
+
+      // Position should be persisted to DB for crash recovery
+      const db = getDb();
+      const rows = db.select().from(positionsTable).all();
+      expect(rows).toHaveLength(1);
+      expect(rows[0].pair).toBe("SOL/USDC");
+
+      // Position should be in memory too
+      expect(pm.getPositions()).toHaveLength(1);
+    });
+  });
+
+  describe("close failure alert broadcasts (AC#3)", () => {
+    it("broadcasts critical alert when position close fails", async () => {
+      allocator.setAllocation("volumeMax", 1_000_000_000);
+
+      const pos = await pm.openPosition({
+        mode: "volumeMax",
+        pair: "SOL/USDC",
+        side: "Long",
+        size: 10_000_000,
+        slippage: 0.5,
+        stopLossPrice: 95_000_000,
+      });
+
+      vi.mocked(contracts.closePosition).mockRejectedValueOnce(new Error("Chain unavailable"));
+      mockBroadcast.mockClear();
+
+      await expect(pm.closePosition(pos.id)).rejects.toThrow(AppError);
+
+      // Should broadcast critical alert with stop-loss info
+      const alertCalls = mockBroadcast.mock.calls.filter(
+        (c: unknown[]) => c[0] === "alert.triggered",
+      );
+      expect(alertCalls.length).toBe(1);
+      const payload = (alertCalls[0] as unknown[])[1] as {
+        severity: string;
+        code: string;
+        message: string;
+        mode: string;
+      };
+      expect(payload.severity).toBe("critical");
+      expect(payload.code).toBe("POSITION_CLOSE_FAILED");
+      expect(payload.message).toContain("stop-loss");
+      expect(payload.mode).toBe("volumeMax");
+
+      // Position should still be tracked
+      expect(pm.getPositions()).toHaveLength(1);
+      const db = getDb();
+      expect(db.select().from(positionsTable).all()).toHaveLength(1);
     });
   });
 });

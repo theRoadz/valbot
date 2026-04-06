@@ -148,7 +148,7 @@ describe("openPosition", () => {
         size: 10_000_000,
         slippage: 0.5,
       }),
-    ).rejects.toThrow("Insufficient margin");
+    ).rejects.toThrow("Failed to open position");
   });
 
   it("throws MID_PRICE_UNAVAILABLE when no mid price", async () => {
@@ -318,7 +318,7 @@ describe("setStopLoss", () => {
     expect(orderArgs.orders[0].b).toBe(true); // Buy to close Short
   });
 
-  it("throws STOP_LOSS_FAILED on error response", async () => {
+  it("throws STOP_LOSS_SUBMISSION_FAILED on error response", async () => {
     mockOrder.mockResolvedValue({
       status: "ok",
       response: {
@@ -337,7 +337,7 @@ describe("setStopLoss", () => {
         size: 10_000_000,
         stopLossPrice: 90_000_000_000,
       }),
-    ).rejects.toThrow("Invalid trigger price");
+    ).rejects.toThrow("Failed to submit stop-loss order");
   });
 });
 

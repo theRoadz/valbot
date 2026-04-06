@@ -118,3 +118,12 @@
 
 - ~~Warning toasts with `duration: Infinity` have no explicit dismiss button~~ — resolved: added `cancel` button to warning toasts
 - ~~Kill switch mode extraction regex fragility~~ — resolved: reuse validated `alertMode`, validate regex-extracted mode against VALID_MODES
+
+## Deferred from: code review of story 3-5-error-handling-framework-and-transaction-safety (2026-04-06)
+
+- ~~Race: kill-switch activates after `openPosition` passes guard~~ — resolved: added kill-switch re-check after `await contractOpenPosition()`
+- ~~`_killSwitchActive` cleared after partial close failure~~ — resolved: only cleared when all positions successfully closed
+- ~~Crash-recovery "already gone" positions never release funds~~ — resolved: added `fundAllocator.release()` in both reconciliation cleanup paths
+- ~~Rollback-close success path never records trade~~ — resolved: added `fundAllocator.recordTrade(mode, size, 0)` after successful rollback close
+- ~~Kill-switch alert `lossAmount` excludes triggering position's loss~~ — resolved: triggering position's PnL now included
+- ~~`apiHealthy` stays false after non-retriable error during retry~~ — resolved: non-retriable errors restore `apiHealthy = true`

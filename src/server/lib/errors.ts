@@ -112,6 +112,297 @@ export function apiConnectionFailedError(
   });
 }
 
+// --- Database errors ---
+
+export function dbInitializationFailedError(details: string): AppError {
+  return new AppError({
+    severity: "critical",
+    code: "DB_INITIALIZATION_FAILED",
+    message: "Failed to initialize database",
+    details,
+    resolution: "Check database file permissions and run 'pnpm db:migrate' if tables are missing.",
+  });
+}
+
+export function dbClosedError(): AppError {
+  return new AppError({
+    severity: "critical",
+    code: "DB_CLOSED",
+    message: "Database has been permanently closed via closeDb(). Cannot re-open.",
+    resolution: "Restart the application. The database was closed during shutdown.",
+  });
+}
+
+// --- Engine errors ---
+
+export function engineNotInitializedError(): AppError {
+  return new AppError({
+    severity: "critical",
+    code: "ENGINE_NOT_INITIALIZED",
+    message: "Engine not initialized — call initEngine() first",
+    resolution: "Ensure the server startup sequence completes before making API calls.",
+  });
+}
+
+export function modeTransitioningError(mode: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "MODE_TRANSITIONING",
+    message: `Mode ${mode} is currently transitioning — try again shortly`,
+    resolution: `Wait a few seconds and retry. The ${mode} mode is starting or stopping.`,
+  });
+}
+
+export function unsupportedModeError(mode: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "UNSUPPORTED_MODE",
+    message: `Unsupported mode type: ${mode}`,
+    resolution: "Check mode name. Supported modes: volumeMax.",
+  });
+}
+
+export function invalidStrategyConfigError(mode: string, details: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "INVALID_STRATEGY_CONFIG",
+    message: `Invalid strategy configuration for ${mode}`,
+    details,
+    resolution: "Check strategy parameters and retry.",
+  });
+}
+
+// --- Blockchain errors ---
+
+export function sessionKeyMissingError(): AppError {
+  return new AppError({
+    severity: "critical",
+    code: "SESSION_KEY_MISSING",
+    message: "SESSION_KEY not found in .env",
+    resolution:
+      "Add SESSION_KEY=0x<64-char-hex> to .env file. Must be a 0x-prefixed 32-byte hex key.",
+  });
+}
+
+export function walletAddressInvalidError(details?: string): AppError {
+  return new AppError({
+    severity: "critical",
+    code: "WALLET_ADDRESS_INVALID",
+    message: "WALLET address is invalid — must be 0x-prefixed 40-char hex (20 bytes)",
+    details,
+    resolution:
+      "Set WALLET=0x<your-master-wallet-address> in .env. This is the master wallet from Valiant, not the agent key.",
+  });
+}
+
+export function noBlockchainClientError(): AppError {
+  return new AppError({
+    severity: "critical",
+    code: "NO_BLOCKCHAIN_CLIENT",
+    message: "Blockchain client not initialized",
+    resolution: "Check Hyperliquid API connection and restart the bot.",
+  });
+}
+
+export function balanceFetchFailedError(details?: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "BALANCE_FETCH_FAILED",
+    message: "Failed to fetch wallet balances",
+    details,
+    resolution: "Check Hyperliquid API connection. Balance will retry on next cycle.",
+  });
+}
+
+// --- Position errors ---
+
+export function positionOpenFailedError(details?: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "POSITION_OPEN_FAILED",
+    message: "Failed to open position on-chain",
+    details,
+    resolution: "Check blockchain connection and retry.",
+  });
+}
+
+export function positionCloseFailedError(details?: string): AppError {
+  return new AppError({
+    severity: "critical",
+    code: "POSITION_CLOSE_FAILED",
+    message: "Failed to close position on-chain",
+    details,
+    resolution: "Position remains open. Check blockchain connection and retry, or use kill-switch.",
+  });
+}
+
+export function positionDbFailedError(details?: string): AppError {
+  return new AppError({
+    severity: "critical",
+    code: "POSITION_DB_FAILED",
+    message: "Position opened on-chain but DB insert failed — position was closed",
+    details,
+    resolution: "Check database health and retry the trade.",
+  });
+}
+
+export function positionNotFoundError(positionId: number): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "POSITION_NOT_FOUND",
+    message: `Position ${positionId} not found`,
+    resolution: "Check position ID and try again.",
+  });
+}
+
+export function shutdownInProgressError(): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "SHUTDOWN_IN_PROGRESS",
+    message: "Cannot open position — shutdown in progress.",
+    resolution: "Wait for shutdown to complete.",
+  });
+}
+
+export function stopLossFailedError(details?: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "STOP_LOSS_FAILED",
+    message: "Failed to set stop-loss — position was closed to prevent orphan",
+    details,
+    resolution: "Position was closed to prevent orphaned positions. Retry the trade.",
+  });
+}
+
+export function stopLossOrphanedError(details?: string): AppError {
+  return new AppError({
+    severity: "critical",
+    code: "STOP_LOSS_FAILED",
+    message: "Failed to set stop-loss and rollback close also failed — position orphaned on-chain",
+    details,
+    resolution: "Verify on-chain stop-loss is active. If not, manually close the position via the exchange interface.",
+  });
+}
+
+export function killSwitchCloseFailedError(details?: string): AppError {
+  return new AppError({
+    severity: "critical",
+    code: "KILL_SWITCH_CLOSE_FAILED",
+    message: "Some positions failed to close during kill-switch",
+    details,
+    resolution: "Verify on-chain stop-losses are active. If not, manually close the listed positions via the exchange interface.",
+  });
+}
+
+export function killSwitchInProgressError(mode: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "KILL_SWITCH_IN_PROGRESS",
+    message: `Cannot reset kill-switch on ${mode} — close sweep still in progress`,
+    resolution: "Wait for all positions to close before re-allocating.",
+  });
+}
+
+export function crashRecoveryFailedError(details?: string): AppError {
+  return new AppError({
+    severity: "critical",
+    code: "CRASH_RECOVERY_FAILED",
+    message: "Failed to reconcile positions during crash recovery",
+    details,
+    resolution: "Check Hyperliquid API connection and restart the bot.",
+  });
+}
+
+export function allocationPersistenceFailedError(details?: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "ALLOCATION_PERSISTENCE_FAILED",
+    message: "Failed to persist fund allocation to database",
+    details,
+    resolution: "Check database health. Allocation is active in memory but may not survive a restart.",
+  });
+}
+
+// --- Contract errors ---
+
+export function assetNotFoundError(pair: string): AppError {
+  const coin = pair.split("/")[0];
+  return new AppError({
+    severity: "warning",
+    code: "ASSET_NOT_FOUND",
+    message: `Unknown asset: ${coin} (from pair ${pair})`,
+    resolution: `Check pair format (e.g., "BTC/USDC"). Asset may not be listed on Hyperliquid.`,
+  });
+}
+
+export function midPriceUnavailableError(coin: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "MID_PRICE_UNAVAILABLE",
+    message: `No mid price available for ${coin}`,
+    resolution: "Asset may be delisted or temporarily unavailable.",
+  });
+}
+
+export function midPriceInvalidError(coin: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "MID_PRICE_INVALID",
+    message: `Invalid mid price for ${coin}`,
+    resolution: "Market data may be stale. Try again shortly.",
+  });
+}
+
+export function orderFailedError(details: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "ORDER_FAILED",
+    message: "Failed to open position",
+    details,
+    resolution: "Check order parameters and try again.",
+  });
+}
+
+export function orderNotFilledError(details: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "ORDER_NOT_FILLED",
+    message: "IOC order was not filled",
+    details,
+    resolution: "Market may be illiquid. Try again or increase slippage.",
+  });
+}
+
+export function closeFailedError(details: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "CLOSE_FAILED",
+    message: "Failed to close position",
+    details,
+    resolution: "Check position and try again.",
+  });
+}
+
+export function closeNotFilledError(details: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "CLOSE_NOT_FILLED",
+    message: "IOC close order was not filled",
+    details,
+    resolution: "Market may be illiquid. Try again.",
+  });
+}
+
+export function stopLossSubmissionFailedError(details: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "STOP_LOSS_SUBMISSION_FAILED",
+    message: "Failed to submit stop-loss order on-chain",
+    details,
+    resolution: "Check stop-loss price and try again.",
+  });
+}
+
 export function walletAddressMissingError(): AppError {
   return new AppError({
     severity: "critical",

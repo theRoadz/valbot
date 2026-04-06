@@ -3,6 +3,7 @@ import type { FundAllocator } from "../fund-allocator.js";
 import type { PositionManager } from "../position-manager.js";
 import { ModeRunner, type BroadcastFn } from "../mode-runner.js";
 import { logger } from "../../lib/logger.js";
+import { invalidStrategyConfigError } from "../../lib/errors.js";
 
 export interface VolumeMaxConfig {
   pairs: string[];
@@ -32,7 +33,7 @@ export class VolumeMaxStrategy extends ModeRunner {
     super(mode, fundAllocator, positionManager, broadcast);
 
     if (!config.pairs.length) {
-      throw new Error("VolumeMaxStrategy requires at least one trading pair");
+      throw invalidStrategyConfigError(mode, "requires at least one trading pair");
     }
 
     const allocation = fundAllocator.getAllocation(mode).allocation;

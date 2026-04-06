@@ -5,6 +5,35 @@ import {
   sessionKeyInvalidError,
   apiConnectionFailedError,
   walletAddressMissingError,
+  dbInitializationFailedError,
+  dbClosedError,
+  engineNotInitializedError,
+  modeTransitioningError,
+  unsupportedModeError,
+  invalidStrategyConfigError,
+  sessionKeyMissingError,
+  walletAddressInvalidError,
+  noBlockchainClientError,
+  balanceFetchFailedError,
+  positionOpenFailedError,
+  positionCloseFailedError,
+  positionDbFailedError,
+  positionNotFoundError,
+  shutdownInProgressError,
+  stopLossFailedError,
+  stopLossOrphanedError,
+  killSwitchCloseFailedError,
+  killSwitchInProgressError,
+  crashRecoveryFailedError,
+  allocationPersistenceFailedError,
+  assetNotFoundError,
+  midPriceUnavailableError,
+  midPriceInvalidError,
+  orderFailedError,
+  orderNotFilledError,
+  closeFailedError,
+  closeNotFilledError,
+  stopLossSubmissionFailedError,
 } from "./errors.js";
 
 describe("AppError", () => {
@@ -88,6 +117,331 @@ describe("walletAddressMissingError", () => {
     expect(err.severity).toBe("critical");
     expect(err.code).toBe("WALLET_ADDRESS_MISSING");
     expect(err.message).toContain("WALLET");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+// --- Database error factories ---
+
+describe("dbInitializationFailedError", () => {
+  it("returns critical AppError with details", () => {
+    const err = dbInitializationFailedError("missing tables: trades");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("critical");
+    expect(err.code).toBe("DB_INITIALIZATION_FAILED");
+    expect(err.details).toBe("missing tables: trades");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("dbClosedError", () => {
+  it("returns critical AppError", () => {
+    const err = dbClosedError();
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("critical");
+    expect(err.code).toBe("DB_CLOSED");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+// --- Engine error factories ---
+
+describe("engineNotInitializedError", () => {
+  it("returns critical AppError", () => {
+    const err = engineNotInitializedError();
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("critical");
+    expect(err.code).toBe("ENGINE_NOT_INITIALIZED");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("modeTransitioningError", () => {
+  it("returns warning AppError with mode", () => {
+    const err = modeTransitioningError("volumeMax");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("MODE_TRANSITIONING");
+    expect(err.message).toContain("volumeMax");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("unsupportedModeError", () => {
+  it("returns warning AppError with mode", () => {
+    const err = unsupportedModeError("badMode");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("UNSUPPORTED_MODE");
+    expect(err.message).toContain("badMode");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("invalidStrategyConfigError", () => {
+  it("returns warning AppError with mode and details", () => {
+    const err = invalidStrategyConfigError("volumeMax", "requires at least one trading pair");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("INVALID_STRATEGY_CONFIG");
+    expect(err.message).toContain("volumeMax");
+    expect(err.details).toContain("trading pair");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+// --- Blockchain error factories ---
+
+describe("sessionKeyMissingError", () => {
+  it("returns critical AppError", () => {
+    const err = sessionKeyMissingError();
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("critical");
+    expect(err.code).toBe("SESSION_KEY_MISSING");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("walletAddressInvalidError", () => {
+  it("returns critical AppError with details", () => {
+    const err = walletAddressInvalidError("Got: 0xabc");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("critical");
+    expect(err.code).toBe("WALLET_ADDRESS_INVALID");
+    expect(err.details).toBe("Got: 0xabc");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("noBlockchainClientError", () => {
+  it("returns critical AppError", () => {
+    const err = noBlockchainClientError();
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("critical");
+    expect(err.code).toBe("NO_BLOCKCHAIN_CLIENT");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("balanceFetchFailedError", () => {
+  it("returns warning AppError with details", () => {
+    const err = balanceFetchFailedError("timeout");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("BALANCE_FETCH_FAILED");
+    expect(err.details).toBe("timeout");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+// --- Position error factories ---
+
+describe("positionOpenFailedError", () => {
+  it("returns warning AppError with details", () => {
+    const err = positionOpenFailedError("chain error");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("POSITION_OPEN_FAILED");
+    expect(err.details).toBe("chain error");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("positionCloseFailedError", () => {
+  it("returns critical AppError with details", () => {
+    const err = positionCloseFailedError("retry exhausted");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("critical");
+    expect(err.code).toBe("POSITION_CLOSE_FAILED");
+    expect(err.details).toBe("retry exhausted");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("positionDbFailedError", () => {
+  it("returns critical AppError with details", () => {
+    const err = positionDbFailedError("SQLITE_BUSY");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("critical");
+    expect(err.code).toBe("POSITION_DB_FAILED");
+    expect(err.details).toBe("SQLITE_BUSY");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("positionNotFoundError", () => {
+  it("returns warning AppError with position ID in message", () => {
+    const err = positionNotFoundError(42);
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("POSITION_NOT_FOUND");
+    expect(err.message).toContain("42");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("shutdownInProgressError", () => {
+  it("returns warning AppError", () => {
+    const err = shutdownInProgressError();
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("SHUTDOWN_IN_PROGRESS");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("stopLossFailedError", () => {
+  it("returns warning AppError with details", () => {
+    const err = stopLossFailedError("submission timeout");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("STOP_LOSS_FAILED");
+    expect(err.details).toBe("submission timeout");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("stopLossOrphanedError", () => {
+  it("returns critical AppError with details", () => {
+    const err = stopLossOrphanedError("rollback close failed");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("critical");
+    expect(err.code).toBe("STOP_LOSS_FAILED");
+    expect(err.details).toBe("rollback close failed");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("killSwitchCloseFailedError", () => {
+  it("returns critical AppError with details", () => {
+    const err = killSwitchCloseFailedError("Position IDs: 1, 2");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("critical");
+    expect(err.code).toBe("KILL_SWITCH_CLOSE_FAILED");
+    expect(err.details).toContain("1, 2");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("killSwitchInProgressError", () => {
+  it("returns warning AppError with mode", () => {
+    const err = killSwitchInProgressError("volumeMax");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("KILL_SWITCH_IN_PROGRESS");
+    expect(err.message).toContain("volumeMax");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("crashRecoveryFailedError", () => {
+  it("returns critical AppError with details", () => {
+    const err = crashRecoveryFailedError("API timeout");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("critical");
+    expect(err.code).toBe("CRASH_RECOVERY_FAILED");
+    expect(err.details).toBe("API timeout");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("allocationPersistenceFailedError", () => {
+  it("returns warning AppError with details", () => {
+    const err = allocationPersistenceFailedError("DB locked");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("ALLOCATION_PERSISTENCE_FAILED");
+    expect(err.details).toBe("DB locked");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+// --- Contract error factories ---
+
+describe("assetNotFoundError", () => {
+  it("returns warning AppError with pair info", () => {
+    const err = assetNotFoundError("BTC/USDC");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("ASSET_NOT_FOUND");
+    expect(err.message).toContain("BTC");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("midPriceUnavailableError", () => {
+  it("returns warning AppError with coin", () => {
+    const err = midPriceUnavailableError("ETH");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("MID_PRICE_UNAVAILABLE");
+    expect(err.message).toContain("ETH");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("midPriceInvalidError", () => {
+  it("returns warning AppError with coin", () => {
+    const err = midPriceInvalidError("SOL");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("MID_PRICE_INVALID");
+    expect(err.message).toContain("SOL");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("orderFailedError", () => {
+  it("returns warning AppError with details", () => {
+    const err = orderFailedError("Insufficient margin");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("ORDER_FAILED");
+    expect(err.details).toBe("Insufficient margin");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("orderNotFilledError", () => {
+  it("returns warning AppError with details", () => {
+    const err = orderNotFilledError("IOC order for BTC/USDC");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("ORDER_NOT_FILLED");
+    expect(err.details).toContain("BTC/USDC");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("closeFailedError", () => {
+  it("returns warning AppError with details", () => {
+    const err = closeFailedError("reduce-only failed");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("CLOSE_FAILED");
+    expect(err.details).toBe("reduce-only failed");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("closeNotFilledError", () => {
+  it("returns warning AppError with details", () => {
+    const err = closeNotFilledError("IOC close for ETH");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("CLOSE_NOT_FILLED");
+    expect(err.details).toContain("ETH");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("stopLossSubmissionFailedError", () => {
+  it("returns warning AppError with details", () => {
+    const err = stopLossSubmissionFailedError("Invalid trigger price");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("STOP_LOSS_SUBMISSION_FAILED");
+    expect(err.details).toBe("Invalid trigger price");
     expect(err.resolution).toBeDefined();
   });
 });

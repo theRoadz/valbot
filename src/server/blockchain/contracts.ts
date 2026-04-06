@@ -1,7 +1,16 @@
 import type { ExchangeClient, InfoClient } from "@nktkas/hyperliquid";
 import type { TradeSide } from "../../shared/types.js";
 import { logger } from "../lib/logger.js";
-import { AppError } from "../lib/errors.js";
+import {
+  assetNotFoundError,
+  midPriceUnavailableError,
+  midPriceInvalidError,
+  orderFailedError,
+  orderNotFilledError,
+  closeFailedError,
+  closeNotFilledError,
+  stopLossSubmissionFailedError,
+} from "../lib/errors.js";
 import { withRetry } from "./client.js";
 
 // Estimated taker fee rate — Hyperliquid doesn't return fees in order responses,
@@ -57,12 +66,7 @@ export function resolveAsset(
         logger.warn({ err }, "Background asset cache refresh failed"),
       );
     }
-    throw new AppError({
-      severity: "warning",
-      code: "ASSET_NOT_FOUND",
-      message: `Unknown asset: ${coin} (from pair ${pair})`,
-      resolution: `Check pair format (e.g., "BTC/USDC"). Asset may not be listed on Hyperliquid.`,
-    });
+    throw assetNotFoundError(pair);
   }
   return info;
 }
@@ -136,21 +140,11 @@ async function getMidPrice(
   const mids = await withRetry(() => info.allMids(), "getMidPrice");
   const midStr = (mids as Record<string, string>)[coin];
   if (!midStr) {
-    throw new AppError({
-      severity: "warning",
-      code: "MID_PRICE_UNAVAILABLE",
-      message: `No mid price available for ${coin}`,
-      resolution: "Asset may be delisted or temporarily unavailable.",
-    });
+    throw midPriceUnavailableError(coin);
   }
   const mid = parseFloat(midStr);
   if (!Number.isFinite(mid) || mid <= 0) {
-    throw new AppError({
-      severity: "warning",
-      code: "MID_PRICE_INVALID",
-      message: `Invalid mid price for ${coin}: "${midStr}"`,
-      resolution: "Market data may be stale. Try again shortly.",
-    });
+    throw midPriceInvalidError(coin);
   }
   return mid;
 }
@@ -201,12 +195,7 @@ export async function openPosition(
         : status && "error" in status
           ? status.error
           : "Unknown order error";
-    throw new AppError({
-      severity: "warning",
-      code: "ORDER_FAILED",
-      message: `Failed to open ${side} position on ${pair}: ${errorMsg}`,
-      resolution: "Check order parameters and try again.",
-    });
+    throw orderFailedError(`Failed to open ${side} position on ${pair}: ${errorMsg}`);
   }
 
   if ("filled" in status) {
@@ -232,12 +221,7 @@ export async function openPosition(
   }
 
   // "resting" means not filled (IOC should fill or cancel, so this is unexpected)
-  throw new AppError({
-    severity: "warning",
-    code: "ORDER_NOT_FILLED",
-    message: `IOC order for ${pair} was not filled`,
-    resolution: "Market may be illiquid. Try again or increase slippage.",
-  });
+  throw orderNotFilledError(`IOC order for ${pair} was not filled`);
 }
 
 export async function closePosition(
@@ -282,12 +266,7 @@ export async function closePosition(
         : status && "error" in status
           ? status.error
           : "Unknown order error";
-    throw new AppError({
-      severity: "warning",
-      code: "CLOSE_FAILED",
-      message: `Failed to close ${side} position on ${pair}: ${errorMsg}`,
-      resolution: "Check position and try again.",
-    });
+    throw closeFailedError(`Failed to close ${side} position on ${pair}: ${errorMsg}`);
   }
 
   if ("filled" in status) {
@@ -307,12 +286,7 @@ export async function closePosition(
     };
   }
 
-  throw new AppError({
-    severity: "warning",
-    code: "CLOSE_NOT_FILLED",
-    message: `IOC close order for ${pair} was not filled`,
-    resolution: "Market may be illiquid. Try again.",
-  });
+  throw closeNotFilledError(`IOC close order for ${pair} was not filled`);
 }
 
 export async function setStopLoss(
@@ -359,12 +333,7 @@ export async function setStopLoss(
       status && typeof status !== "string" && "error" in status
         ? status.error
         : "Unknown error";
-    throw new AppError({
-      severity: "warning",
-      code: "STOP_LOSS_FAILED",
-      message: `Failed to set stop-loss on ${pair}: ${errorMsg}`,
-      resolution: "Check stop-loss price and try again.",
-    });
+    throw stopLossSubmissionFailedError(`Failed to set stop-loss on ${pair}: ${errorMsg}`);
   }
 
   // Trigger orders return "waitingForTrigger" on success, or "resting" with an oid

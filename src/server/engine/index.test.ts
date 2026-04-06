@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import path from "path";
 import fs from "fs";
 import { getDb, closeDb, _resetDbState } from "../db/index.js";
+import { AppError } from "../lib/errors.js";
 
 const TEST_DB_PATH = path.resolve(process.cwd(), "test-engine-index.db");
 
@@ -76,6 +77,13 @@ describe("engine/index", () => {
     try { fs.unlinkSync(TEST_DB_PATH + "-shm"); } catch { /* ignore */ }
   });
 
+  it("getEngine throws AppError when engine not initialized", async () => {
+    // Must be the first test — engine module state is fresh
+    const { getEngine } = await import("./index.js");
+    expect(() => getEngine()).toThrow(AppError);
+    expect(() => getEngine()).toThrow("Engine not initialized");
+  });
+
   it("initEngine creates instances and getEngine returns them", async () => {
     const { initEngine, getEngine } = await import("./index.js");
     await initEngine();
@@ -124,12 +132,28 @@ describe("engine/index", () => {
     await stopMode("volumeMax");
   });
 
-  it("startMode throws for unsupported mode type", async () => {
+  it("startMode throws AppError for unsupported mode type", async () => {
     const { initEngine, startMode } = await import("./index.js");
     await initEngine();
 
     await expect(startMode("profitHunter", { pairs: ["SOL/USDC"] }))
+      .rejects.toThrow(AppError);
+    await expect(startMode("profitHunter", { pairs: ["SOL/USDC"] }))
       .rejects.toThrow("Unsupported mode type");
+  });
+
+  it("startMode throws AppError when mode is transitioning", async () => {
+    const { initEngine, getEngine, startMode } = await import("./index.js");
+    await initEngine();
+    getEngine().fundAllocator.setAllocation("volumeMax", 1_000_000_000);
+
+    // Start first — will lock the mode briefly
+    const p1 = startMode("volumeMax", { pairs: ["SOL/USDC"] });
+    // Immediately try again — mode is locked
+    const p2 = startMode("volumeMax", { pairs: ["SOL/USDC"] });
+
+    await expect(p2).rejects.toThrow(AppError);
+    await expect(p1).resolves.toBeUndefined();
   });
 
   it("stopAllModes stops all running modes", async () => {

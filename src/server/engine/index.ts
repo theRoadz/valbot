@@ -5,6 +5,11 @@ import { ModeRunner } from "./mode-runner.js";
 import { VolumeMaxStrategy } from "./strategies/volume-max.js";
 import { broadcast } from "../ws/broadcaster.js";
 import { logger } from "../lib/logger.js";
+import {
+  engineNotInitializedError,
+  modeTransitioningError,
+  unsupportedModeError,
+} from "../lib/errors.js";
 
 let fundAllocator: FundAllocator | null = null;
 let positionManager: PositionManager | null = null;
@@ -49,7 +54,7 @@ export async function startMode(
   config: { pairs: string[]; slippage?: number },
 ): Promise<void> {
   if (modeLocks.has(mode)) {
-    throw new Error(`Mode ${mode} is currently transitioning — try again shortly`);
+    throw modeTransitioningError(mode);
   }
 
   modeLocks.add(mode);
@@ -67,7 +72,7 @@ export async function startMode(
         );
         break;
       default:
-        throw new Error(`Unsupported mode type: ${mode}`);
+        throw unsupportedModeError(mode);
     }
 
     await runner.start();
@@ -79,7 +84,7 @@ export async function startMode(
 
 export async function stopMode(mode: ModeType): Promise<void> {
   if (modeLocks.has(mode)) {
-    throw new Error(`Mode ${mode} is currently transitioning — try again shortly`);
+    throw modeTransitioningError(mode);
   }
 
   const runner = modeRunners.get(mode);
@@ -136,7 +141,7 @@ export function getEngine(): {
   positionManager: PositionManager;
 } {
   if (!fundAllocator || !positionManager) {
-    throw new Error("Engine not initialized — call initEngine() first");
+    throw engineNotInitializedError();
   }
   return { fundAllocator, positionManager };
 }

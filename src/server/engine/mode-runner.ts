@@ -132,7 +132,18 @@ export abstract class ModeRunner {
                 details: null,
               };
 
-        logger.error({ err, mode: this.mode }, "Strategy iteration failed");
+        // Log at severity-appropriate level, preserving inner error context
+        if (err instanceof AppError) {
+          const logCtx = { err, mode: this.mode, code: err.code, iteration: "failed" };
+          if (err.severity === "critical") {
+            logger.error(logCtx, "Strategy iteration failed");
+          } else {
+            logger.warn(logCtx, "Strategy iteration failed");
+          }
+        } else {
+          logger.error({ err, mode: this.mode }, "Strategy iteration failed");
+        }
+
         this.broadcast(EVENTS.MODE_ERROR, {
           mode: this.mode,
           error: errorPayload,

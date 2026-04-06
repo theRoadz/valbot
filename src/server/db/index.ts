@@ -2,6 +2,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema.js';
+import { dbClosedError, dbInitializationFailedError } from '../lib/errors.js';
 
 // Resolve DB path: prefer VALBOT_DB_PATH env var, fallback to CWD (project root via npm scripts).
 // Uses process.cwd() instead of import.meta.url to stay bundler-safe.
@@ -13,7 +14,7 @@ let _closed = false;
 
 export function getDb() {
   if (_closed) {
-    throw new Error('Database has been permanently closed via closeDb(). Cannot re-open.');
+    throw dbClosedError();
   }
   if (!_db) {
     try {
@@ -31,7 +32,7 @@ export function getDb() {
       if (tables.length < 4) {
         const found = tables.map((t) => t.name);
         const missing = ['trades', 'positions', 'sessions', 'config'].filter((t) => !found.includes(t));
-        throw new Error(`Database is missing tables: ${missing.join(', ')}. Run 'pnpm db:migrate' first.`);
+        throw dbInitializationFailedError(`Database is missing tables: ${missing.join(', ')}. Run 'pnpm db:migrate' first.`);
       }
 
       _db = drizzle(_sqlite, { schema });
@@ -43,7 +44,8 @@ export function getDb() {
       _db = null;
       const message = error instanceof Error ? error.message : String(error);
       console.error(`Failed to initialize SQLite database at ${dbPath}: ${message}`);
-      throw error;
+      if (error instanceof Error && error.name === 'AppError') throw error;
+      throw dbInitializationFailedError(message);
     }
   }
   return _db;
