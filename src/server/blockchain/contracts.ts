@@ -18,6 +18,9 @@ import { withRetry } from "./client.js";
 // Override via TAKER_FEE_RATE env var if needed.
 const TAKER_FEE_RATE = parseFloat(process.env.TAKER_FEE_RATE || "0.00025");
 
+// Hyperliquid minimum order notional value
+const MIN_ORDER_VALUE = 10_000_000; // $10 in smallest-unit
+
 // --- Asset index cache ---
 
 interface AssetInfo {
@@ -87,6 +90,7 @@ export interface OpenPositionResult {
   positionId: string;
   entryPrice: number; // smallest-unit
   actualSize?: number; // smallest-unit — filled notional; undefined if not available
+  filledSz: string; // exact base-unit size from exchange (e.g., "0.08")
 }
 
 export interface ClosePositionParams {
@@ -96,6 +100,7 @@ export interface ClosePositionParams {
   pair: string;
   side: TradeSide;
   size: number; // smallest-unit
+  baseSz?: string; // exact base-unit size; if provided, skip re-derivation from USDC/price
 }
 
 export interface ClosePositionResult {
@@ -111,6 +116,7 @@ export interface SetStopLossParams {
   side: TradeSide;
   size: number; // smallest-unit (position size for the stop-loss)
   stopLossPrice: number; // smallest-unit
+  baseSz?: string; // exact base-unit size; if provided, skip re-derivation from USDC/price
 }
 
 export interface SetStopLossResult {
@@ -119,8 +125,17 @@ export interface SetStopLossResult {
 
 // --- Helpers ---
 
-function roundToSzDecimals(value: number, szDecimals: number): string {
-  return value.toFixed(szDecimals);
+function roundToSzDecimals(value: number, szDecimals: number, mode: "ceil" | "floor" = "ceil"): string {
+  const factor = 10 ** szDecimals;
+  const rounded = mode === "ceil"
+    ? Math.ceil(value * factor) / factor
+    : Math.floor(value * factor) / factor;
+  // Guard: floor rounding with low szDecimals can produce 0 for small values
+  if (rounded <= 0 && value > 0) {
+    const minUnit = 1 / factor;
+    return minUnit.toFixed(szDecimals);
+  }
+  return rounded.toFixed(szDecimals);
 }
 
 function roundPrice(price: number): string {
@@ -155,6 +170,13 @@ export async function openPosition(
   params: OpenPositionParams,
 ): Promise<OpenPositionResult> {
   const { exchange, info, pair, side, size, slippage } = params;
+
+  if (size < MIN_ORDER_VALUE) {
+    throw orderFailedError(
+      `Order size $${(size / 1e6).toFixed(2)} is below Hyperliquid minimum of $10. Increase allocation or position size.`,
+    );
+  }
+
   const asset = resolveAsset(pair);
   const isBuy = side === "Long";
 
@@ -217,6 +239,7 @@ export async function openPosition(
       positionId: `${asset.coin}-${side}`,
       entryPrice: entryPriceSmallest,
       actualSize: filledNotional,
+      filledSz: status.filled.totalSz,
     };
   }
 
@@ -227,7 +250,7 @@ export async function openPosition(
 export async function closePosition(
   params: ClosePositionParams,
 ): Promise<ClosePositionResult> {
-  const { exchange, info, pair, side, size } = params;
+  const { exchange, info, pair, side, size, baseSz } = params;
   const asset = resolveAsset(pair);
   // Close = opposite side, reduce-only
   const isBuy = side === "Short"; // Closing a Short means buying back
@@ -237,8 +260,8 @@ export async function closePosition(
   const slippageMultiplier = isBuy ? 1.01 : 0.99;
   const limitPrice = midPrice * slippageMultiplier;
 
-  const sizeDisplay = size / 1e6;
-  const baseSize = sizeDisplay / midPrice;
+  // Use exact filled size from open if available; otherwise re-derive from USDC/price
+  const orderSz = baseSz ?? roundToSzDecimals((size / 1e6) / midPrice, asset.szDecimals, "floor");
 
   const result = await withRetry(
     () => exchange.order({
@@ -247,7 +270,7 @@ export async function closePosition(
           a: asset.index,
           b: isBuy,
           p: roundPrice(limitPrice),
-          s: roundToSzDecimals(baseSize, asset.szDecimals),
+          s: orderSz,
           r: true, // reduce-only
           t: { limit: { tif: "Ioc" } },
         },
@@ -292,16 +315,14 @@ export async function closePosition(
 export async function setStopLoss(
   params: SetStopLossParams,
 ): Promise<SetStopLossResult> {
-  const { exchange, pair, side, size, stopLossPrice } = params;
+  const { exchange, pair, side, size, stopLossPrice, baseSz } = params;
   const asset = resolveAsset(pair);
   // Stop-loss: when price hits trigger, sell (for Long) or buy (for Short)
   const isBuy = side === "Short"; // SL for Short = buy back
 
   const triggerPx = stopLossPrice / 1e6;
-  // Use market order when triggered
-  const sizeDisplay = size / 1e6;
-  // We need base size — approximate from trigger price
-  const baseSize = sizeDisplay / triggerPx;
+  // Use exact filled size from open if available; otherwise re-derive from USDC/triggerPrice
+  const orderSz = baseSz ?? roundToSzDecimals((size / 1e6) / triggerPx, asset.szDecimals, "floor");
 
   const result = await withRetry(
     () => exchange.order({
@@ -310,7 +331,7 @@ export async function setStopLoss(
           a: asset.index,
           b: isBuy,
           p: roundPrice(triggerPx), // limit price = trigger price for SL
-          s: roundToSzDecimals(baseSize, asset.szDecimals),
+          s: orderSz,
           r: true, // reduce-only
           t: {
             trigger: {

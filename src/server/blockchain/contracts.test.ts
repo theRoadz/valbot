@@ -151,6 +151,21 @@ describe("openPosition", () => {
     ).rejects.toThrow("Failed to open position");
   });
 
+  it("throws ORDER_FAILED when size is below $10 minimum", async () => {
+    const { openPosition } = await import("./contracts.js");
+
+    await expect(
+      openPosition({
+        exchange: mockExchange,
+        info: mockInfo,
+        pair: "BTC/USDC",
+        side: "Long",
+        size: 5_000_000, // $5 — below $10 minimum
+        slippage: 0.5,
+      }),
+    ).rejects.toThrow("Failed to open position");
+  });
+
   it("throws MID_PRICE_UNAVAILABLE when no mid price", async () => {
     mockAllMids.mockResolvedValue({}); // no BTC mid
 

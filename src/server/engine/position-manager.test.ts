@@ -26,6 +26,7 @@ vi.mock("../blockchain/contracts.js", () => ({
     txHash: "mock-tx-open",
     positionId: "pos-mock-1",
     entryPrice: 100_000_000,
+    filledSz: "0.10",
   }),
   closePosition: vi.fn().mockResolvedValue({
     txHash: "mock-tx-close",
@@ -66,7 +67,8 @@ function setupTestDb() {
     entryPrice INTEGER NOT NULL,
     stopLoss INTEGER NOT NULL,
     timestamp INTEGER NOT NULL,
-    chainPositionId TEXT
+    chainPositionId TEXT,
+    filledSz TEXT
   )`);
   db.run(sql`CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,6 +105,7 @@ describe("PositionManager", () => {
       txHash: "mock-tx-open",
       positionId: "pos-mock-1",
       entryPrice: 100_000_000,
+      filledSz: "0.10",
     });
     vi.mocked(contracts.closePosition).mockResolvedValue({
       txHash: "mock-tx-close",
@@ -668,6 +671,7 @@ describe("PositionManager", () => {
         txHash: "mock-tx-open",
         positionId: "BTC-Long",
         entryPrice: 100_000_000,
+        filledSz: "0.10",
       });
 
       await pm.openPosition({

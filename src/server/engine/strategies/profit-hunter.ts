@@ -23,7 +23,7 @@ const DEFAULT_CLOSE_THRESHOLD = 0.003;
 const DEFAULT_ITERATION_INTERVAL_MS = 5_000;
 const DEFAULT_SLIPPAGE = 0.5;
 const STOP_LOSS_FACTOR = 0.03;
-const MIN_POSITION_SIZE = 1;
+const MIN_POSITION_SIZE = 10_000_000; // $10 in smallest-unit — Hyperliquid minimum order value
 
 export class ProfitHunterStrategy extends ModeRunner {
   private readonly config: ProfitHunterConfig;
@@ -65,6 +65,10 @@ export class ProfitHunterStrategy extends ModeRunner {
     this.dynamicPositionSize = config.positionSize === undefined;
 
     const allocation = fundAllocator.getAllocation(mode).allocation;
+    if (allocation < MIN_POSITION_SIZE) {
+      throw invalidStrategyConfigError(mode, "allocation must be at least $10");
+    }
+
     this.config = {
       pairs: this.sortPairsWithBoostedFirst(config.pairs),
       slippage: config.slippage ?? DEFAULT_SLIPPAGE,

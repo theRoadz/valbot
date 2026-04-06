@@ -149,3 +149,9 @@
 - ~~D3: `pairToOracleKey` silently handles malformed pair strings (no `/`)~~ — resolved: added validation guard with logger.warn, returns pair as-is so isAvailable() returns false [profit-hunter.ts:200]
 - ~~D8: No server-side allowlist validation for `pairs` on start endpoint~~ — resolved: added `enum: VALID_PAIRS` constraint to pairs schema on both start and config endpoints [mode.ts:26,75]
 - ~~D9: `catch` block on pair update swallows error silently in production~~ — resolved: added `toast.warning()` on rollback so user sees feedback [mode-card.tsx:265]
+
+## Deferred from: code review of story 8-5-minimum-order-value-enforcement (2026-04-06)
+
+- ~~`setStopLoss` derives baseSize from USDC/triggerPx, not from `filledSz`~~ — resolved: added `baseSz` to `SetStopLossParams`, piped from position-manager [contracts.ts:312]
+- ~~`filledSz` not persisted to DB~~ — resolved: added `filledSz TEXT` column via migration 0002, wired into DB inserts and `loadFromDb` [schema.ts:31, position-manager.ts]
+- ~~`roundToSzDecimals` with `szDecimals=0` and `floor` mode produces `"0"`~~ — resolved: added guard returning minimum unit (1/factor) when floor rounds to 0 [contracts.ts:132]

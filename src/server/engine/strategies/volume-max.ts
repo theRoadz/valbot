@@ -17,7 +17,7 @@ const DEFAULT_SLIPPAGE = 0.5;
 const LONG_STOP_LOSS_FACTOR = 0.95;
 const SHORT_STOP_LOSS_FACTOR = 1.05;
 const DEFAULT_REFERENCE_PRICE = 100_000_000; // placeholder: 100 USDC in smallest-unit until oracle is integrated
-const MIN_POSITION_SIZE = 1;
+const MIN_POSITION_SIZE = 10_000_000; // $10 in smallest-unit — Hyperliquid minimum order value
 
 export class VolumeMaxStrategy extends ModeRunner {
   private readonly config: VolumeMaxConfig;
@@ -37,6 +37,10 @@ export class VolumeMaxStrategy extends ModeRunner {
     }
 
     const allocation = fundAllocator.getAllocation(mode).allocation;
+    if (allocation < MIN_POSITION_SIZE) {
+      throw invalidStrategyConfigError(mode, "allocation must be at least $10");
+    }
+
     this.config = {
       pairs: this.sortPairsWithBoostedFirst(config.pairs),
       slippage: config.slippage ?? DEFAULT_SLIPPAGE,
@@ -57,61 +61,49 @@ export class VolumeMaxStrategy extends ModeRunner {
     // Step 2: Position size
     const size = this.config.positionSize;
 
-    // Step 3: Check funds (need 2x size for both sides)
-    if (!this.fundAllocator.canAllocate(this.mode, size * 2)) {
+    // Step 3: Check funds (only 1x size — sequential round-trips, not simultaneous)
+    if (!this.fundAllocator.canAllocate(this.mode, size)) {
       logger.info({ mode: this.mode, pair }, "Insufficient funds for cycle, skipping");
       return;
     }
 
-    // Step 4: Open long position
-    let longPos;
+    // Sequential round-trips: open→close each side independently
+    // Hyperliquid uses net positions — simultaneous long+short on same asset nets to 0
+    const longClosed = await this.executeRoundTrip(pair, "Long", size);
+    if (longClosed) {
+      await this.executeRoundTrip(pair, "Short", size);
+    }
+  }
+
+  /** Returns true if the round-trip completed (position closed or never opened). */
+  private async executeRoundTrip(
+    pair: string,
+    side: "Long" | "Short",
+    size: number,
+  ): Promise<boolean> {
+    const stopLossFactor = side === "Long" ? LONG_STOP_LOSS_FACTOR : SHORT_STOP_LOSS_FACTOR;
+
+    let position;
     try {
-      longPos = await this.positionManager.openPosition({
+      position = await this.positionManager.openPosition({
         mode: this.mode,
         pair,
-        side: "Long",
+        side,
         size,
         slippage: this.config.slippage,
-        stopLossPrice: Math.floor(DEFAULT_REFERENCE_PRICE * LONG_STOP_LOSS_FACTOR), // placeholder until oracle provides real-time price
+        stopLossPrice: Math.floor(DEFAULT_REFERENCE_PRICE * stopLossFactor),
       });
     } catch (err) {
-      logger.error({ err, mode: this.mode, pair, side: "Long" }, "Failed to open long position");
-      throw err;
-    }
-
-    // Step 5: Open short position
-    let shortPos;
-    try {
-      shortPos = await this.positionManager.openPosition({
-        mode: this.mode,
-        pair,
-        side: "Short",
-        size,
-        slippage: this.config.slippage,
-        stopLossPrice: Math.floor(DEFAULT_REFERENCE_PRICE * SHORT_STOP_LOSS_FACTOR), // placeholder until oracle provides real-time price
-      });
-    } catch (err) {
-      // Step 6: Orphan prevention — close long if short fails
-      logger.error({ err, mode: this.mode, pair, side: "Short" }, "Failed to open short position, closing long");
-      try {
-        await this.positionManager.closePosition(longPos.id);
-      } catch (closeErr) {
-        logger.error({ closeErr, positionId: longPos.id }, "Failed to close orphaned long position");
-      }
-      throw err;
-    }
-
-    // Step 7 & 8: Close both positions (delta-neutral cycling)
-    try {
-      await this.positionManager.closePosition(longPos.id);
-    } catch (err) {
-      logger.error({ err, positionId: longPos.id }, "Failed to close long position");
+      logger.error({ err, mode: this.mode, pair, side }, `Failed to open ${side} position, skipping leg`);
+      return true; // nothing opened — safe to continue
     }
 
     try {
-      await this.positionManager.closePosition(shortPos.id);
+      await this.positionManager.closePosition(position.id);
+      return true;
     } catch (err) {
-      logger.error({ err, positionId: shortPos.id }, "Failed to close short position");
+      logger.error({ err, positionId: position.id, side }, `Failed to close ${side} position — skipping remaining legs`);
+      return false; // position still open — unsafe to open opposite side
     }
   }
 

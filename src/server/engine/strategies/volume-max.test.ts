@@ -68,17 +68,17 @@ describe("VolumeMaxStrategy", () => {
     expect(strategy.getIntervalMs()).toBe(5000);
   });
 
-  it("executeIteration opens paired long/short positions then closes both", async () => {
+  it("executeIteration performs sequential long and short round-trips", async () => {
     await strategy.executeIteration();
 
-    // Should open 2 positions (long + short)
+    // Should open 2 positions (long then short, sequentially)
     expect(mocks.positionManager.openPosition).toHaveBeenCalledTimes(2);
 
-    // Should close 2 positions
+    // Should close 2 positions (one after each open)
     expect(mocks.positionManager.closePosition).toHaveBeenCalledTimes(2);
   });
 
-  it("positions are delta-neutral: same pair, same size, opposite sides", async () => {
+  it("opens long then short on the same pair with the same size", async () => {
     await strategy.executeIteration();
 
     const calls = mocks.positionManager.openPosition.mock.calls;
@@ -112,16 +112,15 @@ describe("VolumeMaxStrategy", () => {
     expect(secondPair).toBe("ETH/USDC");
   });
 
-  it("closes long position if short position fails (orphan prevention)", async () => {
+  it("continues to short leg when long open fails", async () => {
     let callCount = 0;
-    const longPosId = 42;
     mocks.positionManager.openPosition.mockImplementation(async (params: any) => {
       callCount++;
-      if (callCount === 2) {
-        throw new Error("Short position failed");
+      if (callCount === 1) {
+        throw new Error("Long position failed");
       }
       return {
-        id: longPosId,
+        id: 99,
         mode: params.mode,
         pair: params.pair,
         side: params.side,
@@ -132,10 +131,23 @@ describe("VolumeMaxStrategy", () => {
       };
     });
 
-    await expect(strategy.executeIteration()).rejects.toThrow("Short position failed");
+    // Should NOT throw — error is caught internally
+    await strategy.executeIteration();
 
-    // Should have attempted to close the orphaned long position
-    expect(mocks.positionManager.closePosition).toHaveBeenCalledWith(longPosId);
+    // Long open failed (no close for it), short open succeeded + closed
+    expect(mocks.positionManager.openPosition).toHaveBeenCalledTimes(2);
+    expect(mocks.positionManager.closePosition).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips short leg when long close fails (net-position safety)", async () => {
+    mocks.positionManager.closePosition.mockRejectedValueOnce(new Error("Close failed"));
+
+    // Should NOT throw
+    await strategy.executeIteration();
+
+    // Long opened + close attempted, short skipped to avoid net-position conflict
+    expect(mocks.positionManager.openPosition).toHaveBeenCalledTimes(1);
+    expect(mocks.positionManager.closePosition).toHaveBeenCalledTimes(1);
   });
 
   it("stop-loss prices: long uses 95% factor, short uses 105% factor", async () => {
@@ -170,8 +182,10 @@ describe("VolumeMaxStrategy", () => {
 
     await strategy.executeIteration();
 
-    expect(mocks.positionManager.closePosition).toHaveBeenCalledWith(longId);
-    expect(mocks.positionManager.closePosition).toHaveBeenCalledWith(shortId);
+    const closeCalls = mocks.positionManager.closePosition.mock.calls;
+    // Sequential: long opened then closed, then short opened then closed
+    expect(closeCalls[0][0]).toBe(longId);
+    expect(closeCalls[1][0]).toBe(shortId);
   });
 
   it("uses default position size as allocation / 20", () => {
@@ -179,13 +193,40 @@ describe("VolumeMaxStrategy", () => {
     const expectedSize = Math.floor(allocation / 20); // 50 USDC per side
 
     mocks.fundAllocator.canAllocate.mockImplementation((_mode: any, size: number) => {
-      // canAllocate is called with size * 2
-      expect(size).toBe(expectedSize * 2);
+      // canAllocate is called with 1x size (sequential)
+      expect(size).toBe(expectedSize);
       return true;
     });
 
-    // The strategy was created in beforeEach with this allocation
-    // Just verify canAllocate is called with the right size
     strategy.executeIteration();
+  });
+
+  it("throws when allocation is below $10 minimum", () => {
+    const smallMocks = createMocks(5_000_000); // $5 — below $10 minimum
+    expect(
+      () =>
+        new VolumeMaxStrategy(
+          smallMocks.fundAllocator as any,
+          smallMocks.positionManager as any,
+          smallMocks.broadcast,
+          { pairs: ["SOL/USDC"] },
+        ),
+    ).toThrow("Invalid strategy configuration");
+  });
+
+  it("clamps positionSize to $10 minimum when allocation/20 is less than $10", () => {
+    // $100 allocation → allocation/20 = $5, should clamp to $10
+    const smallMocks = createMocks(100_000_000);
+    const strat = new VolumeMaxStrategy(
+      smallMocks.fundAllocator as any,
+      smallMocks.positionManager as any,
+      smallMocks.broadcast,
+      { pairs: ["SOL/USDC"] },
+    );
+
+    strat.executeIteration();
+
+    // canAllocate is called with 1x size = $10
+    expect(smallMocks.fundAllocator.canAllocate).toHaveBeenCalledWith("volumeMax", 10_000_000);
   });
 });

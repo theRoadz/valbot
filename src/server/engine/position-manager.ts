@@ -46,6 +46,7 @@ interface InternalPosition {
   entryPrice: number; // smallest-unit
   stopLoss: number; // smallest-unit
   timestamp: number;
+  filledSz?: string; // exact base-unit size from exchange (e.g., "0.08") — used for precise close orders
 }
 
 export interface ClosedPositionDetail {
@@ -139,6 +140,7 @@ export class PositionManager {
           pair,
           side,
           size,
+          baseSz: openResult.filledSz,
         });
       } catch (closeErr) {
         logger.error({ err: closeErr, positionId: openResult.positionId, code: "POSITION_CLOSE_FAILED" },
@@ -157,6 +159,7 @@ export class PositionManager {
         side,
         size,
         stopLossPrice,
+        baseSz: openResult.filledSz,
       });
     } catch (err) {
       // Rollback: close position and release funds
@@ -170,6 +173,7 @@ export class PositionManager {
           pair,
           side,
           size,
+          baseSz: openResult.filledSz,
         });
         rollbackCloseSucceeded = true;
       } catch (closeErr) {
@@ -204,6 +208,7 @@ export class PositionManager {
           entryPrice: openResult.entryPrice,
           stopLoss: stopLossPrice,
           timestamp: now,
+          filledSz: openResult.filledSz,
         });
         try {
           assertSafeInteger(size, "position.size");
@@ -222,6 +227,7 @@ export class PositionManager {
               stopLoss: stopLossPrice,
               timestamp: now,
               chainPositionId: openResult.positionId,
+              filledSz: openResult.filledSz,
             })
             .run();
           const posId = Number(insertResult.lastInsertRowid);
@@ -280,6 +286,7 @@ export class PositionManager {
           stopLoss: stopLossPrice,
           timestamp: now,
           chainPositionId: openResult.positionId,
+          filledSz: openResult.filledSz,
         })
         .run();
       positionId = Number(insertResult.lastInsertRowid);
@@ -294,6 +301,7 @@ export class PositionManager {
           pair,
           side,
           size,
+          baseSz: openResult.filledSz,
         });
         dbRollbackCloseSucceeded = true;
       } catch (closeErr) {
@@ -316,6 +324,7 @@ export class PositionManager {
         entryPrice: openResult.entryPrice,
         stopLoss: stopLossPrice,
         timestamp: now,
+        filledSz: openResult.filledSz,
       });
       this.broadcast(EVENTS.ALERT_TRIGGERED, {
         severity: "critical",
@@ -339,6 +348,7 @@ export class PositionManager {
       entryPrice: openResult.entryPrice,
       stopLoss: stopLossPrice,
       timestamp: now,
+      filledSz: openResult.filledSz,
     };
     this.positions.set(positionId, internalPos);
 
@@ -386,6 +396,7 @@ export class PositionManager {
         pair: pos.pair,
         side: pos.side,
         size: pos.size,
+        baseSz: pos.filledSz,
       });
     } catch (err) {
       logger.error({ err, positionId, mode: pos.mode, code: "POSITION_CLOSE_FAILED" }, "Failed to close position on-chain");
@@ -816,6 +827,7 @@ export class PositionManager {
         entryPrice: row.entryPrice,
         stopLoss: row.stopLoss,
         timestamp: row.timestamp,
+        filledSz: row.filledSz ?? undefined,
       });
     }
     if (rows.length > 0) {

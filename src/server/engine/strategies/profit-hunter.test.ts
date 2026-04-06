@@ -72,6 +72,20 @@ describe("ProfitHunterStrategy", () => {
   // --- Constructor tests (Task 4.2) ---
 
   describe("constructor validation", () => {
+    it("rejects allocation below $10 minimum", () => {
+      const smallMocks = createMocks(5_000_000); // $5 — below $10 minimum
+      expect(
+        () =>
+          new ProfitHunterStrategy(
+            smallMocks.fundAllocator as any,
+            smallMocks.positionManager as any,
+            smallMocks.broadcast,
+            smallMocks.oracleClient as any,
+            { pairs: ["SOL/USDC"] },
+          ),
+      ).toThrow("Invalid strategy configuration");
+    });
+
     it("rejects empty pairs array", () => {
       expect(
         () =>
@@ -568,6 +582,30 @@ describe("ProfitHunterStrategy", () => {
       await strategy.executeIteration();
       expect(mocks.positionManager.openPosition).toHaveBeenCalledWith(
         expect.objectContaining({ size: 25_000_000 }),
+      );
+    });
+
+    it("clamps dynamic position size to $10 minimum", async () => {
+      // $100 allocation → allocation/20 = $5, should clamp to $10
+      const smallMocks = createMocks(100_000_000);
+      smallMocks.oracleClient.getPrice.mockReturnValue(98_000_000);
+      smallMocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+
+      const strategy = new ProfitHunterStrategy(
+        smallMocks.fundAllocator as any,
+        smallMocks.positionManager as any,
+        smallMocks.broadcast,
+        smallMocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      // Simulate allocation drop to $100 for dynamic recalc
+      smallMocks.fundAllocator.getAllocation.mockReturnValue({ allocation: 100_000_000, remaining: 100_000_000 });
+
+      await strategy.executeIteration();
+
+      expect(smallMocks.positionManager.openPosition).toHaveBeenCalledWith(
+        expect.objectContaining({ size: 10_000_000 }), // clamped to $10
       );
     });
 

@@ -39,6 +39,7 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-06
+# last review: 2026-04-06 code review of story 8-5, all patches applied
 # last review: 2026-04-06 code review of story 8-3, all patches applied
 # last review: 2026-04-06 code review of story 4-2, all patches applied
 # last dev: 2026-04-06 story 4-2 implementation complete
@@ -155,3 +156,11 @@ development_status:
   7-1-accessibility-baseline-audit-and-fixes: backlog
   7-2-transition-and-animation-polish: backlog
   epic-7-retrospective: optional
+
+  # Epic 8: Hotfixes & Bug Fixes
+  epic-8: in-progress
+  8-1-session-key-hex-and-32-byte-support: done
+  8-2-hyperliquid-blockchain-layer-rewrite: done
+  8-3-fund-allocation-sync-fix: done
+  8-4-pair-selection-and-mode-start-fix: done
+  8-5-minimum-order-value-enforcement: done

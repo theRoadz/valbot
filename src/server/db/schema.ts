@@ -28,6 +28,7 @@ export const positions = sqliteTable('positions', {
   stopLoss: integer().notNull(),
   timestamp: integer().notNull(), // Unix ms
   chainPositionId: text(), // nullable — null for pre-migration rows
+  filledSz: text(), // nullable — exact base-unit size from exchange (e.g., "0.08")
 }, (t) => [
   check('positions_side_check', sql`${t.side} IN ('Long', 'Short')`),
 ]);
