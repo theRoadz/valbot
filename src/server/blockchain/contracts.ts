@@ -148,7 +148,7 @@ function roundPrice(price: number): string {
   return price.toFixed(5);
 }
 
-async function getMidPrice(
+export async function getMidPrice(
   info: InfoClient,
   coin: string,
 ): Promise<number> {

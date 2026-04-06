@@ -38,7 +38,9 @@ function createMockBroadcast() {
 }
 
 // Helper to create a Pyth SSE message event
-function makePriceMessage(feedId: string, price: string, expo: number, publishTimeSec: number, conf = "100") {
+function nowSec() { return Math.floor(Date.now() / 1000); }
+
+function makePriceMessage(feedId: string, price: string, expo: number, publishTimeSec: number = nowSec(), conf = "100") {
   return {
     data: JSON.stringify({
       parsed: [
@@ -95,7 +97,7 @@ describe("OracleClient", () => {
     const es = getEs();
 
     // SOL price: 3847250000 * 10^-8 = $38.4725 → 38_472_500 smallest-unit
-    es.onmessage!(makePriceMessage(SOL_FEED, "3847250000", -8, 1700000000));
+    es.onmessage!(makePriceMessage(SOL_FEED, "3847250000", -8));
 
     expect(oracle.getPrice("SOL-PERP")).toBe(38_472_500);
   });
@@ -105,11 +107,12 @@ describe("OracleClient", () => {
     const es = getEs();
 
     // Send 4 price updates over 31 seconds (enough for MA)
+    const base = nowSec();
     const prices = [
-      { price: "3800000000", time: 1700000000 },
-      { price: "3900000000", time: 1700000010 },
-      { price: "4000000000", time: 1700000020 },
-      { price: "4100000000", time: 1700000031 },
+      { price: "3800000000", time: base },
+      { price: "3900000000", time: base + 10 },
+      { price: "4000000000", time: base + 20 },
+      { price: "4100000000", time: base + 31 },
     ];
 
     for (const p of prices) {
@@ -126,8 +129,9 @@ describe("OracleClient", () => {
     const es = getEs();
 
     // Only 10 seconds of data
-    es.onmessage!(makePriceMessage(SOL_FEED, "3800000000", -8, 1700000000));
-    es.onmessage!(makePriceMessage(SOL_FEED, "3900000000", -8, 1700000010));
+    const base = nowSec();
+    es.onmessage!(makePriceMessage(SOL_FEED, "3800000000", -8, base));
+    es.onmessage!(makePriceMessage(SOL_FEED, "3900000000", -8, base + 10));
 
     expect(oracle.getMovingAverage("SOL-PERP")).toBeNull();
   });
@@ -164,15 +168,16 @@ describe("OracleClient", () => {
     await oracle.connect(["SOL-PERP", "BTC-PERP"]);
     const es = getEs();
 
-    const nowSec = Math.floor(Date.now() / 1000);
+    const btcTime = Math.floor(Date.now() / 1000);
     // BTC: will become stale
-    es.onmessage!(makePriceMessage(BTC_FEED, "6100000000000", -8, nowSec));
+    es.onmessage!(makePriceMessage(BTC_FEED, "6100000000000", -8, btcTime));
 
     // Advance 31s so BTC goes stale
     vi.advanceTimersByTime(31_000);
 
-    // SOL: fresh (sent after time advance)
-    es.onmessage!(makePriceMessage(SOL_FEED, "3800000000", -8, nowSec));
+    // SOL: fresh (sent after time advance, with current publish_time)
+    const solTime = Math.floor(Date.now() / 1000);
+    es.onmessage!(makePriceMessage(SOL_FEED, "3800000000", -8, solTime));
 
     expect(oracle.isAvailable("SOL-PERP")).toBe(true);
     expect(oracle.isAvailable("BTC-PERP")).toBe(false);
@@ -225,7 +230,7 @@ describe("OracleClient", () => {
     const es = getEs();
 
     // Add some data
-    es.onmessage!(makePriceMessage(SOL_FEED, "3800000000", -8, 1700000000));
+    es.onmessage!(makePriceMessage(SOL_FEED, "3800000000", -8));
     expect(oracle.getPrice("SOL-PERP")).not.toBeNull();
 
     oracle.disconnect();
@@ -240,8 +245,9 @@ describe("OracleClient", () => {
     const es = getEs();
 
     // Send 5 rapid updates
+    const base = nowSec();
     for (let i = 0; i < 5; i++) {
-      es.onmessage!(makePriceMessage(SOL_FEED, `${3800000000 + i * 1000000}`, -8, 1700000000 + i));
+      es.onmessage!(makePriceMessage(SOL_FEED, `${3800000000 + i * 1000000}`, -8, base + i));
     }
 
     // Only 1 broadcast should have been sent (the first one)
@@ -254,7 +260,7 @@ describe("OracleClient", () => {
     vi.advanceTimersByTime(600);
 
     // Send another update
-    es.onmessage!(makePriceMessage(SOL_FEED, "3900000000", -8, 1700000010));
+    es.onmessage!(makePriceMessage(SOL_FEED, "3900000000", -8));
 
     const priceBroadcasts2 = broadcast.mock.calls.filter(
       (call: unknown[]) => call[0] === EVENTS.PRICE_UPDATED,
@@ -281,7 +287,7 @@ describe("OracleClient", () => {
     await oracle.connect(["SOL-PERP"]);
     const es = getEs();
 
-    es.onmessage!(makePriceMessage(SOL_FEED, "3847250000", -8, 1700000000));
+    es.onmessage!(makePriceMessage(SOL_FEED, "3847250000", -8));
 
     const entry = oracle.getFeedEntry("SOL-PERP");
     expect(entry).not.toBeNull();
@@ -301,14 +307,15 @@ describe("OracleClient", () => {
     await oracle.connect(["SOL-PERP"]);
     const es = getEs();
 
-    es.onmessage!(makePriceMessage(SOL_FEED, "3847250000", -8, 1700000000, "5000"));
+    const ts = nowSec();
+    es.onmessage!(makePriceMessage(SOL_FEED, "3847250000", -8, ts, "5000"));
 
     const raw = oracle.getRawData("SOL-PERP");
     expect(raw).not.toBeNull();
     expect(raw!.price).toBe(3847250000);
     expect(raw!.confidence).toBe(5000);
     expect(raw!.expo).toBe(-8);
-    expect(raw!.publishTime).toBe(1700000000000); // ms
+    expect(raw!.publishTime).toBe(ts * 1000); // ms
     expect(raw!.feedId).toBe(SOL_FEED);
   });
 
@@ -323,8 +330,8 @@ describe("OracleClient", () => {
     const es = getEs();
 
     // Populate both pairs
-    es.onmessage!(makePriceMessage(SOL_FEED, "3800000000", -8, 1700000000));
-    es.onmessage!(makePriceMessage(BTC_FEED, "6100000000000", -8, 1700000000));
+    es.onmessage!(makePriceMessage(SOL_FEED, "3800000000", -8));
+    es.onmessage!(makePriceMessage(BTC_FEED, "6100000000000", -8));
 
     expect(oracle.getPrice("SOL-PERP")).not.toBeNull();
     expect(oracle.getPrice("BTC-PERP")).not.toBeNull();
@@ -368,13 +375,37 @@ describe("OracleClient", () => {
       data: JSON.stringify({
         parsed: [{
           id: SOL_FEED.replace("0x", ""),
-          price: { price: "not-a-number", conf: "100", expo: -8, publish_time: 1700000000 },
-          ema_price: { price: "not-a-number", conf: "100", expo: -8, publish_time: 1700000000 },
+          price: { price: "not-a-number", conf: "100", expo: -8, publish_time: nowSec() },
+          ema_price: { price: "not-a-number", conf: "100", expo: -8, publish_time: nowSec() },
         }],
       }),
     } as MessageEvent;
 
     es.onmessage!(badMsg);
     expect(oracle.getPrice("SOL-PERP")).toBeNull();
+  });
+
+  it("rejects stale prices where publish_time is older than 30s", async () => {
+    await oracle.connect(["SOL-PERP"]);
+    const es = getEs();
+
+    // Send a price with publish_time 60 seconds in the past
+    const staleSec = nowSec() - 60;
+    es.onmessage!(makePriceMessage(SOL_FEED, "3800000000", -8, staleSec));
+
+    // Price should be rejected
+    expect(oracle.getPrice("SOL-PERP")).toBeNull();
+    expect(oracle.isAvailable("SOL-PERP")).toBe(false);
+  });
+
+  it("accepts prices where publish_time is within 30s", async () => {
+    await oracle.connect(["SOL-PERP"]);
+    const es = getEs();
+
+    // Send a price with publish_time 5 seconds ago
+    const freshSec = nowSec() - 5;
+    es.onmessage!(makePriceMessage(SOL_FEED, "3800000000", -8, freshSec));
+
+    expect(oracle.getPrice("SOL-PERP")).toBe(38_000_000);
   });
 });

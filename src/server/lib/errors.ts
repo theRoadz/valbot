@@ -158,7 +158,7 @@ export function unsupportedModeError(mode: string): AppError {
     severity: "warning",
     code: "UNSUPPORTED_MODE",
     message: `Unsupported mode type: ${mode}`,
-    resolution: "Check mode name. Supported modes: volumeMax, profitHunter.",
+    resolution: "Check mode name. Supported modes: volumeMax, profitHunter, arbitrage.",
   });
 }
 
@@ -431,6 +431,35 @@ export function stopLossSubmissionFailedError(details: string): AppError {
     message: "Failed to submit stop-loss order on-chain",
     details,
     resolution: "Check stop-loss price and try again.",
+  });
+}
+
+// --- Arbitrage errors ---
+
+export function arbitrageNoBlockchainClientError(): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "ARBITRAGE_NO_BLOCKCHAIN_CLIENT",
+    message: "Arbitrage requires Hyperliquid connectivity for mid-price data",
+    resolution: "Ensure the Hyperliquid blockchain client is connected before starting Arbitrage mode.",
+  });
+}
+
+export function arbitrageNoSpreadError(pair: string): AppError {
+  return new AppError({
+    severity: "info",
+    code: "ARBITRAGE_NO_SPREAD",
+    message: `No arbitrage spread for ${pair} — within threshold`,
+    resolution: "No action needed. The strategy will continue monitoring for spread opportunities.",
+  });
+}
+
+export function arbitrageMidPriceError(pair: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "ARBITRAGE_MID_PRICE_ERROR",
+    message: `Failed to fetch Hyperliquid mid-price for ${pair}`,
+    resolution: "Check Hyperliquid API connection. The strategy will retry on the next iteration.",
   });
 }
 

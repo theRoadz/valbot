@@ -1,6 +1,8 @@
 # generated: 2026-04-03
 # last_updated: 2026-04-06
-# last story created: 2026-04-06 story 3-5
+# last review: 2026-04-06 code review of story 4-3, all patches applied
+# last dev: 2026-04-06 story 4-3 implementation complete
+# last story created: 2026-04-06 story 4-3
 # project: ValBot
 # project_key: NOKEY
 # tracking_system: file-system
@@ -39,6 +41,7 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-06
+# last story created: 2026-04-06 story 4-3
 # last review: 2026-04-06 code review of story 8-5, all patches applied
 # last review: 2026-04-06 code review of story 8-3, all patches applied
 # last review: 2026-04-06 code review of story 4-2, all patches applied
@@ -134,7 +137,7 @@ development_status:
   epic-4: in-progress
   4-1-pyth-oracle-client-and-price-feed: done
   4-2-profit-hunter-strategy: done
-  4-3-arbitrage-strategy: backlog
+  4-3-arbitrage-strategy: done
   4-4-parallel-mode-execution-and-independent-control: backlog
   epic-4-retrospective: optional
 

@@ -5,7 +5,10 @@ import { PositionManager } from "./position-manager.js";
 import { ModeRunner } from "./mode-runner.js";
 import { VolumeMaxStrategy } from "./strategies/volume-max.js";
 import { ProfitHunterStrategy } from "./strategies/profit-hunter.js";
+import { ArbitrageStrategy } from "./strategies/arbitrage.js";
 import { OracleClient } from "../blockchain/oracle.js";
+import { getMidPrice } from "../blockchain/contracts.js";
+import { getBlockchainClient } from "../blockchain/client.js";
 import { broadcast } from "../ws/broadcaster.js";
 import { logger } from "../lib/logger.js";
 import {
@@ -13,6 +16,7 @@ import {
   modeTransitioningError,
   unsupportedModeError,
   oracleFeedUnavailableError,
+  arbitrageNoBlockchainClientError,
 } from "../lib/errors.js";
 
 let fundAllocator: FundAllocator | null = null;
@@ -77,10 +81,17 @@ export async function startMode(
   try {
     const engine = getEngine();
 
-    // Oracle gate: Profit Hunter requires live price data
-    if (mode === "profitHunter") {
+    // Oracle gate: Profit Hunter and Arbitrage require live price data
+    if (mode === "profitHunter" || mode === "arbitrage") {
       if (!oracleClient || !oracleClient.isAvailable()) {
-        throw oracleFeedUnavailableError("profitHunter");
+        throw oracleFeedUnavailableError(mode);
+      }
+    }
+
+    // Arbitrage additionally requires Hyperliquid connectivity for mid-prices
+    if (mode === "arbitrage") {
+      if (!getBlockchainClient()) {
+        throw arbitrageNoBlockchainClientError();
       }
     }
 
@@ -102,6 +113,16 @@ export async function startMode(
           oracleClient!, { pairs: config.pairs, slippage: config.slippage, positionSize: storedPositionSize },
         );
         break;
+      case "arbitrage": {
+        const bcClient = getBlockchainClient()!;
+        const getMidPriceFn = (coin: string) => getMidPrice(bcClient.info, coin);
+        runner = new ArbitrageStrategy(
+          engine.fundAllocator, engine.positionManager, broadcast,
+          oracleClient!, getMidPriceFn,
+          { pairs: config.pairs, slippage: config.slippage, positionSize: storedPositionSize },
+        );
+        break;
+      }
       default:
         throw unsupportedModeError(mode);
     }

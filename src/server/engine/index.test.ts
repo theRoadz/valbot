@@ -51,6 +51,7 @@ vi.mock("../blockchain/contracts.js", () => ({
     txHash: "mock-tx-sl",
   }),
   initAssetIndices: vi.fn().mockResolvedValue(undefined),
+  getMidPrice: vi.fn().mockResolvedValue(100.0),
 }));
 
 function setupTestDb() {
@@ -151,9 +152,9 @@ describe("engine/index", () => {
     const { initEngine, startMode } = await import("./index.js");
     await initEngine();
 
-    await expect(startMode("arbitrage" as any, { pairs: ["SOL/USDC"] }))
+    await expect(startMode("badMode" as any, { pairs: ["SOL/USDC"] }))
       .rejects.toThrow(AppError);
-    await expect(startMode("arbitrage" as any, { pairs: ["SOL/USDC"] }))
+    await expect(startMode("badMode" as any, { pairs: ["SOL/USDC"] }))
       .rejects.toThrow("Unsupported mode type");
   });
 
@@ -227,9 +228,39 @@ describe("engine/index", () => {
     expect(fundAllocator.getStats("volumeMax").remaining).toBe(400);
   });
 
-  it("startMode throws oracleFeedUnavailableError when starting profitHunter with oracle unavailable", async () => {
+  it("startMode throws when starting arbitrage with oracle unavailable", async () => {
     const { initEngine, startMode } = await import("./index.js");
     await initEngine();
+
+    await expect(startMode("arbitrage", { pairs: ["SOL/USDC"] }))
+      .rejects.toThrow(AppError);
+    await expect(startMode("arbitrage", { pairs: ["SOL/USDC"] }))
+      .rejects.toThrow("requires live oracle price data");
+  });
+
+  it("startMode throws arbitrageNoBlockchainClientError when blockchain client unavailable", async () => {
+    const { initEngine, getEngine, startMode, getOracleClient } = await import("./index.js");
+    await initEngine();
+
+    getEngine().fundAllocator.setAllocation("arbitrage", 400_000_000);
+
+    // Make oracle available but blockchain client is already mocked to null
+    const oracle = getOracleClient()!;
+    (oracle.isAvailable as any).mockReturnValue(true);
+
+    await expect(startMode("arbitrage", { pairs: ["SOL/USDC"] }))
+      .rejects.toThrow(AppError);
+    await expect(startMode("arbitrage", { pairs: ["SOL/USDC"] }))
+      .rejects.toThrow("Hyperliquid connectivity");
+  });
+
+  it("startMode throws oracleFeedUnavailableError when starting profitHunter with oracle unavailable", async () => {
+    const { initEngine, startMode, getOracleClient } = await import("./index.js");
+    await initEngine();
+
+    // Ensure oracle is unavailable (may have been changed by prior tests)
+    const oracle = getOracleClient()!;
+    (oracle.isAvailable as any).mockReturnValue(false);
 
     await expect(startMode("profitHunter", { pairs: ["SOL-PERP"] }))
       .rejects.toThrow(AppError);

@@ -39,6 +39,9 @@ import {
   oracleStaleDataError,
   profitHunterNoSignalError,
   profitHunterStaleOracleError,
+  arbitrageNoBlockchainClientError,
+  arbitrageNoSpreadError,
+  arbitrageMidPriceError,
 } from "./errors.js";
 
 describe("AppError", () => {
@@ -489,6 +492,41 @@ describe("oracleStaleDataError", () => {
     expect(err.message).toContain("SOL-PERP");
     expect(err.message).toContain("1700000000");
     expect(err.resolution).toContain("SOL-PERP");
+  });
+});
+
+// --- Arbitrage error factories ---
+
+describe("arbitrageNoBlockchainClientError", () => {
+  it("returns warning AppError for missing Hyperliquid client", () => {
+    const err = arbitrageNoBlockchainClientError();
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("ARBITRAGE_NO_BLOCKCHAIN_CLIENT");
+    expect(err.message).toContain("Hyperliquid");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("arbitrageNoSpreadError", () => {
+  it("returns info AppError with pair", () => {
+    const err = arbitrageNoSpreadError("SOL/USDC");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("info");
+    expect(err.code).toBe("ARBITRAGE_NO_SPREAD");
+    expect(err.message).toContain("SOL/USDC");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("arbitrageMidPriceError", () => {
+  it("returns warning AppError with pair", () => {
+    const err = arbitrageMidPriceError("ETH/USDC");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("ARBITRAGE_MID_PRICE_ERROR");
+    expect(err.message).toContain("ETH/USDC");
+    expect(err.resolution).toBeDefined();
   });
 });
 

@@ -162,6 +162,13 @@ export class OracleClient {
     rawPrice: number,
     expo: number,
   ): void {
+    // Guard against stale prices (e.g., replayed after SSE reconnection)
+    const receiveTime = Date.now();
+    if (receiveTime - timestamp > STALE_THRESHOLD_MS) {
+      logger.info({ pair, publishTime: timestamp, age: receiveTime - timestamp }, "Rejecting stale Pyth price — publish_time too old");
+      return;
+    }
+
     let entry = this.priceMap.get(pair);
 
     if (!entry) {
@@ -170,7 +177,7 @@ export class OracleClient {
     }
 
     entry.price = price;
-    entry.lastUpdate = Date.now();
+    entry.lastUpdate = receiveTime;
     entry.feedId = feedId;
     entry.rawData = {
       price: rawPrice,

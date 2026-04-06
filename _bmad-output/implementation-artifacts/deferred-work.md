@@ -159,3 +159,7 @@
 ## Deferred from: code review of story 8-6-configurable-position-size-and-max-allocation (2026-04-06)
 
 - `positionSize` updated while strategy is running not reflected until restart [engine/index.ts:88] — strategies snapshot config at construction; live config re-read is a broader architecture change
+
+## Deferred from: code review of story 4-3-arbitrage-strategy (2026-04-06)
+
+- ~~No staleness guard on oracle `publishTime` after SSE reconnection~~ — resolved: added `publish_time` freshness check in `updatePrice()` — rejects prices where `receiveTime - publishTime > 30s` before creating/updating priceMap entry
