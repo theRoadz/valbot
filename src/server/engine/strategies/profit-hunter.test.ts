@@ -471,6 +471,48 @@ describe("ProfitHunterStrategy", () => {
     });
   });
 
+  // --- pairToOracleKey mapping (AC 4) ---
+
+  describe("oracle key mapping", () => {
+    it("calls oracle with SOL-PERP key for SOL/USDC pair", async () => {
+      mocks.oracleClient.getPrice.mockReturnValue(98_000_000);
+      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      expect(mocks.oracleClient.isAvailable).toHaveBeenCalledWith("SOL-PERP");
+      expect(mocks.oracleClient.getPrice).toHaveBeenCalledWith("SOL-PERP");
+      expect(mocks.oracleClient.getMovingAverage).toHaveBeenCalledWith("SOL-PERP");
+    });
+
+    it("maps all supported pairs to correct oracle keys", async () => {
+      mocks.oracleClient.getPrice.mockReturnValue(98_000_000);
+      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC", "ETH/USDC", "BTC/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      expect(mocks.oracleClient.isAvailable).toHaveBeenCalledWith("SOL-PERP");
+      expect(mocks.oracleClient.isAvailable).toHaveBeenCalledWith("ETH-PERP");
+      expect(mocks.oracleClient.isAvailable).toHaveBeenCalledWith("BTC-PERP");
+    });
+  });
+
   // --- getIntervalMs returns configured value ---
 
   describe("getIntervalMs", () => {

@@ -9,7 +9,7 @@ function defaultModeConfig(mode: ModeType): ModeConfig {
     mode,
     status: "stopped",
     allocation: 0,
-    pairs: [],
+    pairs: ["SOL/USDC"],
     slippage: 0.5,
     stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
   };
@@ -26,7 +26,7 @@ function getModeConfig(mode: ModeType): ModeConfig {
       mode,
       status: pmStatus === "kill-switch" ? "kill-switch" : runnerStatus,
       allocation: fromSmallestUnit(alloc.allocation),
-      pairs: [],
+      pairs: ["SOL/USDC"],
       slippage: 0.5,
       stats,
     };

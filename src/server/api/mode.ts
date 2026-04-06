@@ -6,6 +6,7 @@ import { getEngine, startMode, stopMode, resetKillSwitch, getModeStatus } from "
 import { broadcast } from "../ws/broadcaster.js";
 
 const modeEnum = ["volume-max", "profit-hunter", "arbitrage"] as const;
+const VALID_PAIRS = ["SOL/USDC", "ETH/USDC", "BTC/USDC"];
 
 const modeParamSchema = {
   type: "object" as const,
@@ -23,7 +24,7 @@ export default async function modeRoutes(fastify: FastifyInstance) {
         type: "object" as const,
         additionalProperties: false,
         properties: {
-          pairs: { type: "array" as const, items: { type: "string" as const }, maxItems: 50 },
+          pairs: { type: "array" as const, items: { type: "string" as const, enum: VALID_PAIRS }, maxItems: 50 },
           slippage: { type: "number" as const, minimum: 0, maximum: 100 },
         },
       },
@@ -71,7 +72,7 @@ export default async function modeRoutes(fastify: FastifyInstance) {
         additionalProperties: false,
         properties: {
           allocation: { type: "number" as const, minimum: 0, maximum: 500 },
-          pairs: { type: "array" as const, items: { type: "string" as const }, maxItems: 50 },
+          pairs: { type: "array" as const, items: { type: "string" as const, enum: VALID_PAIRS }, maxItems: 50 },
           slippage: { type: "number" as const, minimum: 0, maximum: 100 },
         },
       },

@@ -56,10 +56,17 @@ async function handleResponse(res: Response): Promise<void> {
   }
 }
 
-export async function startMode(mode: ModeType): Promise<void> {
+export async function startMode(
+  mode: ModeType,
+  config?: { pairs?: string[]; slippage?: number },
+): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`/api/mode/${modeTypeToSlug(mode)}/start`, { method: "POST" });
+    res = await fetch(`/api/mode/${modeTypeToSlug(mode)}/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config ?? {}),
+    });
   } catch {
     throw new ApiError({
       severity: "critical",

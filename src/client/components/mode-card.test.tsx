@@ -122,7 +122,7 @@ describe("ModeCard", () => {
       render(<ModeCard {...defaultProps} />);
       const toggle = document.querySelector('[role="switch"]')!;
       await user.click(toggle);
-      expect(api.startMode).toHaveBeenCalledWith("volumeMax");
+      expect(api.startMode).toHaveBeenCalledWith("volumeMax", expect.objectContaining({ pairs: expect.any(Array), slippage: expect.any(Number) }));
     });
 
     it("optimistic badge update: changes to Starting on toggle on", async () => {
@@ -252,6 +252,38 @@ describe("ModeCard", () => {
       expect(api.updateModeConfig).toHaveBeenCalledWith("volumeMax", {
         pairs: ["SOL/USDC", "ETH/USDC"],
       });
+    });
+
+    it("checkbox stays checked after toggling a pair", async () => {
+      const user = userEvent.setup();
+      render(<ModeCard {...defaultProps} />);
+      const btn = screen.getByLabelText("Select trading pairs for Volume Max");
+      await user.click(btn);
+      const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+      // ETH/USDC checkbox (index 1) should be unchecked initially
+      expect(checkboxes[1]).not.toBeChecked();
+      await user.click(checkboxes[1]);
+      // After click, ETH/USDC should be checked
+      expect(checkboxes[1]).toBeChecked();
+    });
+
+    it("rolls back pair selection on API failure", async () => {
+      (api.updateModeConfig as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("network"));
+      const user = userEvent.setup();
+      render(<ModeCard {...defaultProps} />);
+      const btn = screen.getByLabelText("Select trading pairs for Volume Max");
+      await user.click(btn);
+      const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+      // ETH/USDC starts unchecked
+      expect(checkboxes[1]).not.toBeChecked();
+      // Click to add — optimistic update fires, then rejection rolls back
+      await user.click(checkboxes[1]);
+      // After rejection + rollback, should be unchecked again
+      await vi.waitFor(() => {
+        expect(checkboxes[1]).not.toBeChecked();
+      });
+      // Verify the store was restored to original pairs
+      expect(useStore.getState().modes.volumeMax.pairs).toEqual(["SOL/USDC"]);
     });
   });
 

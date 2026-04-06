@@ -9,6 +9,7 @@ import { formatCurrency, formatInteger } from "@client/lib/format";
 import { cn } from "@client/lib/utils";
 import type { ModeType, ModeStatus } from "@shared/types";
 import { Flame } from "lucide-react";
+import { toast } from "sonner";
 
 interface ModeCardProps {
   mode: ModeType;
@@ -159,7 +160,7 @@ export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
 
       try {
         if (checked) {
-          await api.startMode(mode);
+          await api.startMode(mode, { pairs, slippage });
         } else {
           await api.stopMode(mode);
         }
@@ -180,7 +181,7 @@ export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
         togglingRef.current = false;
       }
     },
-    [mode, setModeStatus, clearSafetyTimeout],
+    [mode, pairs, slippage, setModeStatus, clearSafetyTimeout],
   );
 
   // Allocation input handlers
@@ -251,13 +252,22 @@ export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
   };
 
   // Pair selector handlers
+  const pairTogglingRef = useRef(false);
   const handlePairToggle = (pair: string) => {
+    if (pairTogglingRef.current) return;
     const newPairs = pairs.includes(pair)
       ? pairs.filter((p) => p !== pair)
       : [...pairs, pair];
     if (newPairs.length === 0) return; // must select at least 1
+    const prevPairs = pairs;
+    pairTogglingRef.current = true;
+    setModeConfig(mode, { pairs: newPairs });
     api.updateModeConfig(mode, { pairs: newPairs }).catch((err) => {
+      setModeConfig(mode, { pairs: prevPairs });
+      toast.warning("Pair selection failed — reverted to previous selection");
       if (import.meta.env.DEV) console.error("[ModeCard] Pair update failed:", err);
+    }).finally(() => {
+      pairTogglingRef.current = false;
     });
   };
 

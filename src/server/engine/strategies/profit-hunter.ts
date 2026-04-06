@@ -84,12 +84,13 @@ export class ProfitHunterStrategy extends ModeRunner {
     const openPositions = this.positionManager.getPositions(this.mode);
 
     for (const position of openPositions) {
-      if (!this.oracleClient.isAvailable(position.pair)) {
+      const oracleKey = this.pairToOracleKey(position.pair);
+      if (!this.oracleClient.isAvailable(oracleKey)) {
         continue;
       }
 
-      const price = this.oracleClient.getPrice(position.pair);
-      const ma = this.oracleClient.getMovingAverage(position.pair);
+      const price = this.oracleClient.getPrice(oracleKey);
+      const ma = this.oracleClient.getMovingAverage(oracleKey);
 
       if (price === null || price === 0 || ma === null || ma === 0) {
         continue;
@@ -125,14 +126,15 @@ export class ProfitHunterStrategy extends ModeRunner {
       }
 
       // Skip if oracle unavailable for this pair
-      if (!this.oracleClient.isAvailable(pair)) {
+      const oracleKey = this.pairToOracleKey(pair);
+      if (!this.oracleClient.isAvailable(oracleKey)) {
         const err = profitHunterStaleOracleError(pair);
         logger.info({ mode: this.mode, pair, code: err.code }, err.message);
         continue;
       }
 
-      const price = this.oracleClient.getPrice(pair);
-      const ma = this.oracleClient.getMovingAverage(pair);
+      const price = this.oracleClient.getPrice(oracleKey);
+      const ma = this.oracleClient.getMovingAverage(oracleKey);
 
       if (price === null || ma === null) {
         // MA requires ~30s of data after connect — normal warm-up, not an error
@@ -193,6 +195,15 @@ export class ProfitHunterStrategy extends ModeRunner {
     }
     const { allocation } = this.fundAllocator.getAllocation(this.mode);
     return Math.max(MIN_POSITION_SIZE, Math.floor(allocation / 20));
+  }
+
+  private pairToOracleKey(pair: string): string {
+    const parts = pair.split("/");
+    if (parts.length < 2 || !parts[0]) {
+      logger.warn({ mode: this.mode, pair }, "Malformed pair format — expected 'COIN/QUOTE'");
+      return pair; // return as-is; isAvailable() will return false
+    }
+    return `${parts[0]}-PERP`;
   }
 
   private sortPairsWithBoostedFirst(pairs: string[]): string[] {

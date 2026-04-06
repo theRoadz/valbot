@@ -61,7 +61,7 @@ describe("status route", () => {
       mode: "volumeMax",
       status: "stopped",
       allocation: 0,
-      pairs: [],
+      pairs: ["SOL/USDC"],
       slippage: 0.5,
       stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
     });

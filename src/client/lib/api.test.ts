@@ -17,19 +17,31 @@ describe("API client", () => {
     it("sends POST to correct URL for volumeMax", async () => {
       mockFetch.mockResolvedValue({ ok: true });
       await startMode("volumeMax");
-      expect(mockFetch).toHaveBeenCalledWith("/api/mode/volume-max/start", { method: "POST" });
+      expect(mockFetch).toHaveBeenCalledWith("/api/mode/volume-max/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
     });
 
     it("sends POST to correct URL for profitHunter", async () => {
       mockFetch.mockResolvedValue({ ok: true });
-      await startMode("profitHunter");
-      expect(mockFetch).toHaveBeenCalledWith("/api/mode/profit-hunter/start", { method: "POST" });
+      await startMode("profitHunter", { pairs: ["SOL/USDC"], slippage: 0.5 });
+      expect(mockFetch).toHaveBeenCalledWith("/api/mode/profit-hunter/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pairs: ["SOL/USDC"], slippage: 0.5 }),
+      });
     });
 
     it("sends POST to correct URL for arbitrage", async () => {
       mockFetch.mockResolvedValue({ ok: true });
       await startMode("arbitrage");
-      expect(mockFetch).toHaveBeenCalledWith("/api/mode/arbitrage/start", { method: "POST" });
+      expect(mockFetch).toHaveBeenCalledWith("/api/mode/arbitrage/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
     });
   });
 

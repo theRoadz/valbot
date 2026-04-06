@@ -143,3 +143,9 @@
 ## Deferred from: code review of story 8-3-fund-allocation-sync-fix (2026-04-06)
 
 - ~~No upper-bound validation on allocation~~ — resolved: added 10M USDC max in API schema (`maximum: 10_000_000`) and `ALLOCATION_TOO_LARGE` AppError guard in `FundAllocator.setAllocation()` [src/server/api/mode.ts, src/server/engine/fund-allocator.ts]
+
+## Deferred from: code review of story 8-4-pair-selection-and-mode-start-fix (2026-04-06)
+
+- ~~D3: `pairToOracleKey` silently handles malformed pair strings (no `/`)~~ — resolved: added validation guard with logger.warn, returns pair as-is so isAvailable() returns false [profit-hunter.ts:200]
+- ~~D8: No server-side allowlist validation for `pairs` on start endpoint~~ — resolved: added `enum: VALID_PAIRS` constraint to pairs schema on both start and config endpoints [mode.ts:26,75]
+- ~~D9: `catch` block on pair update swallows error silently in production~~ — resolved: added `toast.warning()` on rollback so user sees feedback [mode-card.tsx:265]
