@@ -135,3 +135,7 @@
 - ~~Running profitHunter mode has no ongoing oracle availability re-check after startup~~ — resolved: `handleError()` broadcasts warning alert when active connection drops
 - ~~`priceMap` not cleared on `connect()` for dropped pairs~~ — resolved: added pair pruning on `connect()`
 - ~~Clock skew between local machine and Pyth `publish_time`~~ — resolved: `lastUpdate` now uses `Date.now()` instead of Pyth publish_time
+
+## Deferred from: code review of story 4-2-profit-hunter-strategy (2026-04-06)
+
+- ~~Position size frozen at construction time~~ — resolved: added dynamic `getPositionSize()` that recalculates from current allocation each iteration when no explicit size configured

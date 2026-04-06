@@ -37,6 +37,8 @@ import {
   oracleConnectionFailedError,
   oracleFeedUnavailableError,
   oracleStaleDataError,
+  profitHunterNoSignalError,
+  profitHunterStaleOracleError,
 } from "./errors.js";
 
 describe("AppError", () => {
@@ -487,5 +489,29 @@ describe("oracleStaleDataError", () => {
     expect(err.message).toContain("SOL-PERP");
     expect(err.message).toContain("1700000000");
     expect(err.resolution).toContain("SOL-PERP");
+  });
+});
+
+// --- Profit Hunter error factories ---
+
+describe("profitHunterNoSignalError", () => {
+  it("returns info AppError with pair", () => {
+    const err = profitHunterNoSignalError("SOL/USDC");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("info");
+    expect(err.code).toBe("PROFIT_HUNTER_NO_SIGNAL");
+    expect(err.message).toContain("SOL/USDC");
+    expect(err.resolution).toBeDefined();
+  });
+});
+
+describe("profitHunterStaleOracleError", () => {
+  it("returns info AppError with pair", () => {
+    const err = profitHunterStaleOracleError("ETH/USDC");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("info");
+    expect(err.code).toBe("PROFIT_HUNTER_STALE_ORACLE");
+    expect(err.message).toContain("ETH/USDC");
+    expect(err.resolution).toBeDefined();
   });
 });

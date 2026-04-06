@@ -235,4 +235,21 @@ describe("engine/index", () => {
     await expect(startMode("profitHunter", { pairs: ["SOL-PERP"] }))
       .rejects.toThrow("requires live oracle price data");
   });
+
+  it("startMode creates ProfitHunterStrategy when oracle is available", async () => {
+    const { initEngine, getEngine, startMode, getOracleClient, getModeStatus, stopMode } = await import("./index.js");
+    await initEngine();
+
+    getEngine().fundAllocator.setAllocation("profitHunter", 1_000_000_000);
+
+    // Make oracle available for profitHunter start
+    const oracle = getOracleClient()!;
+    (oracle.isAvailable as any).mockReturnValue(true);
+
+    await startMode("profitHunter", { pairs: ["SOL/USDC"] });
+    expect(getModeStatus("profitHunter")).toBe("running");
+
+    await stopMode("profitHunter");
+    expect(getModeStatus("profitHunter")).toBe("stopped");
+  });
 });

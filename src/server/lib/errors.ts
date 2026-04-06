@@ -158,7 +158,7 @@ export function unsupportedModeError(mode: string): AppError {
     severity: "warning",
     code: "UNSUPPORTED_MODE",
     message: `Unsupported mode type: ${mode}`,
-    resolution: "Check mode name. Supported modes: volumeMax.",
+    resolution: "Check mode name. Supported modes: volumeMax, profitHunter.",
   });
 }
 
@@ -431,6 +431,26 @@ export function stopLossSubmissionFailedError(details: string): AppError {
     message: "Failed to submit stop-loss order on-chain",
     details,
     resolution: "Check stop-loss price and try again.",
+  });
+}
+
+// --- Profit Hunter errors ---
+
+export function profitHunterNoSignalError(pair: string): AppError {
+  return new AppError({
+    severity: "info",
+    code: "PROFIT_HUNTER_NO_SIGNAL",
+    message: `No trading signal for ${pair} — deviation within threshold`,
+    resolution: "No action needed. The strategy will continue monitoring for signals.",
+  });
+}
+
+export function profitHunterStaleOracleError(pair: string): AppError {
+  return new AppError({
+    severity: "info",
+    code: "PROFIT_HUNTER_STALE_ORACLE",
+    message: `Oracle data for ${pair} is stale or unavailable — skipping pair`,
+    resolution: "Wait for Pyth oracle feed to resume. The strategy will automatically retry on the next iteration.",
   });
 }
 

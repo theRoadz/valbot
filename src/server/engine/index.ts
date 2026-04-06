@@ -4,6 +4,7 @@ import { FundAllocator } from "./fund-allocator.js";
 import { PositionManager } from "./position-manager.js";
 import { ModeRunner } from "./mode-runner.js";
 import { VolumeMaxStrategy } from "./strategies/volume-max.js";
+import { ProfitHunterStrategy } from "./strategies/profit-hunter.js";
 import { OracleClient } from "../blockchain/oracle.js";
 import { broadcast } from "../ws/broadcaster.js";
 import { logger } from "../lib/logger.js";
@@ -92,6 +93,12 @@ export async function startMode(
           engine.positionManager,
           broadcast,
           { pairs: config.pairs, slippage: config.slippage },
+        );
+        break;
+      case "profitHunter":
+        runner = new ProfitHunterStrategy(
+          engine.fundAllocator, engine.positionManager, broadcast,
+          oracleClient!, { pairs: config.pairs, slippage: config.slippage },
         );
         break;
       default:
