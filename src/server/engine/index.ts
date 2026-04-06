@@ -1,18 +1,22 @@
 import type { ModeType, ModeStatus } from "../../shared/types.js";
+import { PYTH_FEED_IDS } from "../../shared/types.js";
 import { FundAllocator } from "./fund-allocator.js";
 import { PositionManager } from "./position-manager.js";
 import { ModeRunner } from "./mode-runner.js";
 import { VolumeMaxStrategy } from "./strategies/volume-max.js";
+import { OracleClient } from "../blockchain/oracle.js";
 import { broadcast } from "../ws/broadcaster.js";
 import { logger } from "../lib/logger.js";
 import {
   engineNotInitializedError,
   modeTransitioningError,
   unsupportedModeError,
+  oracleFeedUnavailableError,
 } from "../lib/errors.js";
 
 let fundAllocator: FundAllocator | null = null;
 let positionManager: PositionManager | null = null;
+let oracleClient: OracleClient | null = null;
 let modeRunners: Map<ModeType, ModeRunner> = new Map();
 const modeLocks: Set<ModeType> = new Set();
 
@@ -46,7 +50,18 @@ export async function initEngine(): Promise<void> {
 
   modeRunners = new Map();
 
+  // Initialize oracle client and start streaming (non-blocking)
+  oracleClient = new OracleClient(broadcast);
+  const defaultPairs = Object.keys(PYTH_FEED_IDS);
+  oracleClient.connect(defaultPairs).catch((err) => {
+    logger.error({ err }, "Oracle client connection failed during init");
+  });
+
   logger.info("Engine initialized — fund allocator and position manager ready");
+}
+
+export function getOracleClient(): OracleClient | null {
+  return oracleClient;
 }
 
 export async function startMode(
@@ -60,6 +75,14 @@ export async function startMode(
   modeLocks.add(mode);
   try {
     const engine = getEngine();
+
+    // Oracle gate: Profit Hunter requires live price data
+    if (mode === "profitHunter") {
+      if (!oracleClient || !oracleClient.isAvailable()) {
+        throw oracleFeedUnavailableError("profitHunter");
+      }
+    }
+
     let runner: ModeRunner;
 
     switch (mode) {

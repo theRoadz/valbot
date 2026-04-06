@@ -108,6 +108,30 @@ export function modeTypeToSlug(mode: ModeType): string {
   return MODE_SLUG_MAP[mode];
 }
 
+// --- Pyth Oracle types ---
+
+export interface PythPriceData {
+  price: number;
+  confidence: number;
+  expo: number;
+  publishTime: number;
+  feedId: string;
+}
+
+export interface PriceFeedEntry {
+  pair: string;
+  price: number;
+  movingAverage: number | null;
+  lastUpdate: number;
+  feedId: string;
+}
+
+export const PYTH_FEED_IDS: Record<string, string> = {
+  "SOL-PERP": "0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
+  "BTC-PERP": "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43",
+  "ETH-PERP": "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace",
+};
+
 export interface StatusResponse {
   modes: Record<ModeType, ModeConfig>;
   positions: Position[];

@@ -323,6 +323,37 @@ export function allocationPersistenceFailedError(details?: string): AppError {
   });
 }
 
+// --- Oracle errors ---
+
+export function oracleConnectionFailedError(details?: string): AppError {
+  return new AppError({
+    severity: "critical",
+    code: "ORACLE_CONNECTION_FAILED",
+    message: "Pyth oracle feed connection failed",
+    details,
+    resolution:
+      "Pyth oracle feed unavailable. Check network connection and Pyth Network status at https://pyth.network",
+  });
+}
+
+export function oracleFeedUnavailableError(mode: string): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "ORACLE_FEED_UNAVAILABLE",
+    message: `${mode} mode requires live oracle price data which is currently unavailable`,
+    resolution: `${mode} mode requires live oracle price data which is currently unavailable. Wait for Pyth feed to reconnect or check network status.`,
+  });
+}
+
+export function oracleStaleDataError(pair: string, lastUpdate: number): AppError {
+  return new AppError({
+    severity: "warning",
+    code: "ORACLE_STALE_DATA",
+    message: `Price data for ${pair} is stale (last update: ${lastUpdate})`,
+    resolution: `Price data for ${pair} is stale (last update: ${lastUpdate}). Verify Pyth feed status.`,
+  });
+}
+
 // --- Contract errors ---
 
 export function assetNotFoundError(pair: string): AppError {

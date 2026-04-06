@@ -19,6 +19,20 @@ vi.mock("../blockchain/client.js", () => ({
   isApiHealthy: vi.fn(() => true),
 }));
 
+// Mock oracle client
+vi.mock("../blockchain/oracle.js", () => {
+  class MockOracleClient {
+    connect = vi.fn().mockResolvedValue(undefined);
+    disconnect = vi.fn();
+    isAvailable = vi.fn(() => false);
+    getPrice = vi.fn(() => null);
+    getMovingAverage = vi.fn(() => null);
+    getFeedEntry = vi.fn(() => null);
+    getRawData = vi.fn(() => null);
+  }
+  return { OracleClient: MockOracleClient };
+});
+
 // Mock contracts (needed by position manager)
 vi.mock("../blockchain/contracts.js", () => ({
   openPosition: vi.fn().mockResolvedValue({
@@ -136,9 +150,9 @@ describe("engine/index", () => {
     const { initEngine, startMode } = await import("./index.js");
     await initEngine();
 
-    await expect(startMode("profitHunter", { pairs: ["SOL/USDC"] }))
+    await expect(startMode("arbitrage" as any, { pairs: ["SOL/USDC"] }))
       .rejects.toThrow(AppError);
-    await expect(startMode("profitHunter", { pairs: ["SOL/USDC"] }))
+    await expect(startMode("arbitrage" as any, { pairs: ["SOL/USDC"] }))
       .rejects.toThrow("Unsupported mode type");
   });
 
@@ -210,5 +224,15 @@ describe("engine/index", () => {
     // allocation preserved, remaining reset to match allocation
     expect(fundAllocator.getStats("volumeMax").allocated).toBe(1000);
     expect(fundAllocator.getStats("volumeMax").remaining).toBe(1000);
+  });
+
+  it("startMode throws oracleFeedUnavailableError when starting profitHunter with oracle unavailable", async () => {
+    const { initEngine, startMode } = await import("./index.js");
+    await initEngine();
+
+    await expect(startMode("profitHunter", { pairs: ["SOL-PERP"] }))
+      .rejects.toThrow(AppError);
+    await expect(startMode("profitHunter", { pairs: ["SOL-PERP"] }))
+      .rejects.toThrow("requires live oracle price data");
   });
 });

@@ -29,7 +29,7 @@ describe("EVENTS constants", () => {
   });
 
   it("EVENTS is readonly", () => {
-    expect(Object.keys(EVENTS)).toHaveLength(9);
+    expect(Object.keys(EVENTS)).toHaveLength(10);
   });
 });
 

@@ -34,6 +34,9 @@ import {
   closeFailedError,
   closeNotFilledError,
   stopLossSubmissionFailedError,
+  oracleConnectionFailedError,
+  oracleFeedUnavailableError,
+  oracleStaleDataError,
 } from "./errors.js";
 
 describe("AppError", () => {
@@ -443,5 +446,46 @@ describe("stopLossSubmissionFailedError", () => {
     expect(err.code).toBe("STOP_LOSS_SUBMISSION_FAILED");
     expect(err.details).toBe("Invalid trigger price");
     expect(err.resolution).toBeDefined();
+  });
+});
+
+// --- Oracle error factories ---
+
+describe("oracleConnectionFailedError", () => {
+  it("returns critical AppError with details", () => {
+    const err = oracleConnectionFailedError("SSE timeout");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("critical");
+    expect(err.code).toBe("ORACLE_CONNECTION_FAILED");
+    expect(err.details).toBe("SSE timeout");
+    expect(err.resolution).toContain("Pyth");
+  });
+
+  it("works without details", () => {
+    const err = oracleConnectionFailedError();
+    expect(err.details).toBeUndefined();
+  });
+});
+
+describe("oracleFeedUnavailableError", () => {
+  it("returns warning AppError with mode name", () => {
+    const err = oracleFeedUnavailableError("profitHunter");
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("ORACLE_FEED_UNAVAILABLE");
+    expect(err.message).toContain("profitHunter");
+    expect(err.resolution).toContain("profitHunter");
+  });
+});
+
+describe("oracleStaleDataError", () => {
+  it("returns warning AppError with pair and lastUpdate", () => {
+    const err = oracleStaleDataError("SOL-PERP", 1700000000);
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.severity).toBe("warning");
+    expect(err.code).toBe("ORACLE_STALE_DATA");
+    expect(err.message).toContain("SOL-PERP");
+    expect(err.message).toContain("1700000000");
+    expect(err.resolution).toContain("SOL-PERP");
   });
 });

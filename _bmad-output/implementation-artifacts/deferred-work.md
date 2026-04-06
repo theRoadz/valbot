@@ -127,3 +127,11 @@
 - ~~Rollback-close success path never records trade~~ — resolved: added `fundAllocator.recordTrade(mode, size, 0)` after successful rollback close
 - ~~Kill-switch alert `lossAmount` excludes triggering position's loss~~ — resolved: triggering position's PnL now included
 - ~~`apiHealthy` stays false after non-retriable error during retry~~ — resolved: non-retriable errors restore `apiHealthy = true`
+
+## Deferred from: code review of story 4-1-pyth-oracle-client-and-price-feed (2026-04-06)
+
+- ~~`PriceFeedEntry` type defined but never produced by `OracleClient`~~ — resolved: added `getFeedEntry(pair)` method
+- ~~`PythPriceData` interface defined but never instantiated~~ — resolved: stored raw data, added `getRawData(pair)` method
+- ~~Running profitHunter mode has no ongoing oracle availability re-check after startup~~ — resolved: `handleError()` broadcasts warning alert when active connection drops
+- ~~`priceMap` not cleared on `connect()` for dropped pairs~~ — resolved: added pair pruning on `connect()`
+- ~~Clock skew between local machine and Pyth `publish_time`~~ — resolved: `lastUpdate` now uses `Date.now()` instead of Pyth publish_time

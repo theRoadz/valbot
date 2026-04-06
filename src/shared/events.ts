@@ -12,6 +12,7 @@ export const EVENTS = {
   POSITION_CLOSED: "position.closed",
   ALERT_TRIGGERED: "alert.triggered",
   CONNECTION_STATUS: "connection.status",
+  PRICE_UPDATED: "price.updated",
 } as const;
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
@@ -95,6 +96,13 @@ export interface PositionClosedPayload {
   pnl: number;
 }
 
+export interface PriceUpdatedPayload {
+  pair: string;
+  price: number;
+  movingAverage: number | null;
+  timestamp: number;
+}
+
 export interface EventPayloadMap {
   "trade.executed": TradeExecutedPayload;
   "stats.updated": StatsUpdatedPayload;
@@ -105,4 +113,5 @@ export interface EventPayloadMap {
   "position.closed": PositionClosedPayload;
   "alert.triggered": AlertTriggeredPayload;
   "connection.status": ConnectionStatusPayload;
+  "price.updated": PriceUpdatedPayload;
 }

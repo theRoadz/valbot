@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { stopAllModes, getEngine } from "../engine/index.js";
+import { stopAllModes, getEngine, getOracleClient } from "../engine/index.js";
 import { broadcast } from "../ws/broadcaster.js";
 import { closeWebSocket } from "../ws/broadcaster.js";
 import { closeDb } from "../db/index.js";
@@ -68,7 +68,18 @@ export function registerShutdownHandlers(fastify: FastifyInstance): void {
       logger.error({ err }, "Error closing remaining positions during shutdown");
     }
 
-    // Step 5: Close Fastify HTTP server
+    // Step 5: Disconnect oracle client
+    try {
+      const oracle = getOracleClient();
+      if (oracle) {
+        oracle.disconnect();
+        logger.info("Oracle client disconnected");
+      }
+    } catch (err) {
+      logger.error({ err }, "Error disconnecting oracle during shutdown");
+    }
+
+    // Step 6: Close Fastify HTTP server
     try {
       await fastify.close();
       logger.info("Fastify server closed");
@@ -76,7 +87,7 @@ export function registerShutdownHandlers(fastify: FastifyInstance): void {
       logger.error({ err }, "Error closing Fastify server during shutdown");
     }
 
-    // Step 6: Close WebSocket connections
+    // Step 7: Close WebSocket connections
     try {
       await closeWebSocket();
       logger.info("WebSocket connections closed");
@@ -84,7 +95,7 @@ export function registerShutdownHandlers(fastify: FastifyInstance): void {
       logger.error({ err }, "Error closing WebSocket during shutdown");
     }
 
-    // Step 7: Close database
+    // Step 8: Close database
     try {
       closeDb();
       logger.info("Database closed");
