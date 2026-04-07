@@ -167,6 +167,10 @@
 - [ ] `setAllocation(mode, 0)` with open positions leaves stale accounting — remaining capped at 0, released funds lost from accounting [src/server/engine/fund-allocator.ts]
 - [ ] No negative allocation guard on server `setAllocation` — API schema validates but direct engine calls don't [src/server/engine/fund-allocator.ts]
 
+## Deferred from: code review of story 5-2-trade-history-view (2026-04-07)
+
+- ~~`formatDateTime` uses runtime-local timezone~~ — resolved: added `timeZone: "UTC"` to both `timeFormatter` and `dateTimeFormatter` [src/client/lib/format.ts:27,40]
+
 ## Deferred from: code review of story 4-3-arbitrage-strategy (2026-04-06)
 
 - ~~No staleness guard on oracle `publishTime` after SSE reconnection~~ — resolved: added `publish_time` freshness check in `updatePrice()` — rejects prices where `receiveTime - publishTime > 30s` before creating/updating priceMap entry

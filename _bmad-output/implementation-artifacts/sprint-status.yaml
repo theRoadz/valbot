@@ -41,6 +41,9 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-07
+# last review: 2026-04-07 code review of story 5-2, all patches applied
+# last dev: 2026-04-07 story 5-2 implementation complete
+# last story created: 2026-04-07 story 5-2
 # last review: 2026-04-07 code review of story 5-1, all patches applied
 # last dev: 2026-04-07 story 5-1 implementation complete
 # last story created: 2026-04-07 story 5-1
@@ -150,7 +153,7 @@ development_status:
   # Epic 5: Performance Dashboard & Session History
   epic-5: in-progress
   5-1-session-persistence-and-cross-session-profit-tracking: done
-  5-2-trade-history-view: backlog
+  5-2-trade-history-view: done
   5-3-combined-cross-mode-statistics: backlog
   epic-5-retrospective: optional
 

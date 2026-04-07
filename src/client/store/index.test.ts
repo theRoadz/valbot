@@ -21,6 +21,12 @@ describe("ValBotStore", () => {
       trades: [],
       positions: [],
       closingPositions: [],
+      tradeHistory: {
+        trades: [],
+        total: 0,
+        page: 0,
+        loading: false,
+      },
       modes: {
         volumeMax: {
           mode: "volumeMax",
@@ -604,7 +610,7 @@ describe("ValBotStore", () => {
       expect(trades[0].pnl).toBe(0);
       expect(trades[0].fees).toBe(0.5);
       expect(trades[0].timestamp).toBe(1000);
-      expect(trades[0].id).toBeGreaterThan(0);
+      expect(trades[0].id).toBeLessThan(0);
     });
 
     it("TRADE_EXECUTED appends new trades (newest last)", () => {
@@ -1803,6 +1809,136 @@ describe("ValBotStore", () => {
       expect(useStore.getState().historicalPnlBase).toBe(0);
       expect(useStore.getState().stats.totalPnl).toBe(0);
       expect(useStore.getState().stats.sessionPnl).toBe(0);
+    });
+  });
+
+  describe("tradeHistory", () => {
+    it("setTradeHistory updates state correctly", () => {
+      const trades = [
+        { id: 1, mode: "volumeMax" as const, pair: "SOL/USDC", side: "Long" as const, size: 10, price: 150, pnl: 5, fees: 0.1, timestamp: 1000 },
+        { id: 2, mode: "profitHunter" as const, pair: "SOL/USDC", side: "Short" as const, size: 20, price: 145, pnl: -2, fees: 0.2, timestamp: 2000 },
+      ];
+      useStore.getState().setTradeHistory({ trades, total: 42 }, 2);
+
+      const th = useStore.getState().tradeHistory;
+      expect(th.trades).toHaveLength(2);
+      expect(th.total).toBe(42);
+      expect(th.page).toBe(2);
+      expect(th.loading).toBe(false);
+    });
+
+    it("setTradeHistoryLoading updates loading state", () => {
+      useStore.getState().setTradeHistoryLoading(true);
+      expect(useStore.getState().tradeHistory.loading).toBe(true);
+
+      useStore.getState().setTradeHistoryLoading(false);
+      expect(useStore.getState().tradeHistory.loading).toBe(false);
+    });
+
+    it("loadInitialStatus populates tradeHistory from trades", () => {
+      const trades = [
+        { id: 1, mode: "volumeMax" as const, pair: "SOL/USDC", side: "Long" as const, size: 10, price: 150, pnl: 5, fees: 0.1, timestamp: 1000 },
+      ];
+
+      useStore.getState().loadInitialStatus({
+        modes: {
+          volumeMax: {
+            mode: "volumeMax",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+          profitHunter: {
+            mode: "profitHunter",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+          arbitrage: {
+            mode: "arbitrage",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+        },
+        positions: [],
+        trades,
+        connection: { status: "disconnected", equity: 0, available: 0 },
+      });
+
+      const th = useStore.getState().tradeHistory;
+      expect(th.trades).toHaveLength(1);
+      expect(th.total).toBe(1);
+      expect(th.page).toBe(0);
+    });
+
+    it("TRADE_EXECUTED prepends trade to tradeHistory on page 0", () => {
+      useStore.setState({
+        tradeHistory: {
+          trades: [
+            { id: 1, mode: "volumeMax" as const, pair: "SOL/USDC", side: "Long" as const, size: 10, price: 150, pnl: 5, fees: 0.1, timestamp: 1000 },
+          ],
+          total: 1,
+          page: 0,
+          loading: false,
+        },
+      });
+
+      useStore.getState().handleWsMessage({
+        event: "trade.executed",
+        timestamp: 2000,
+        data: {
+          mode: "profitHunter",
+          pair: "SOL/USDC",
+          side: "Short",
+          size: 20,
+          price: 145,
+          pnl: -2,
+          fees: 0.2,
+        },
+      });
+
+      const th = useStore.getState().tradeHistory;
+      expect(th.trades).toHaveLength(2);
+      expect(th.trades[0].mode).toBe("profitHunter"); // newest first
+      expect(th.total).toBe(2);
+    });
+
+    it("TRADE_EXECUTED only increments total on other pages", () => {
+      useStore.setState({
+        tradeHistory: {
+          trades: [
+            { id: 1, mode: "volumeMax" as const, pair: "SOL/USDC", side: "Long" as const, size: 10, price: 150, pnl: 5, fees: 0.1, timestamp: 1000 },
+          ],
+          total: 51,
+          page: 1,
+          loading: false,
+        },
+      });
+
+      useStore.getState().handleWsMessage({
+        event: "trade.executed",
+        timestamp: 2000,
+        data: {
+          mode: "volumeMax",
+          pair: "SOL/USDC",
+          side: "Long",
+          size: 10,
+          price: 150,
+          pnl: 0,
+          fees: 0.1,
+        },
+      });
+
+      const th = useStore.getState().tradeHistory;
+      expect(th.trades).toHaveLength(1); // not prepended
+      expect(th.total).toBe(52); // incremented
     });
   });
 });

@@ -3,6 +3,7 @@ import { TopBar } from "./components/top-bar";
 import { ModeCard } from "./components/mode-card";
 import { MaxAllocationControl } from "./components/max-allocation-control";
 import { PositionsTable } from "./components/positions-table";
+import { TradeHistoryTable } from "./components/trade-history-table";
 import { TradeLog } from "./components/trade-log";
 import { AlertBanner } from "./components/alert-banner";
 import { Toaster } from "./components/ui/sonner";
@@ -55,9 +56,12 @@ function App() {
           </div>
         </div>
 
-        {/* Bottom Split: Positions Table (3fr) + Trade Log (2fr) */}
+        {/* Bottom Split: Positions + Trade History (3fr) + Trade Log (2fr) */}
         <div className="grid grid-cols-[3fr_2fr] gap-4 min-h-0">
-          <PositionsTable />
+          <div className="flex flex-col gap-4 min-h-0 overflow-auto">
+            <PositionsTable />
+            <TradeHistoryTable />
+          </div>
           <TradeLog />
         </div>
       </div>

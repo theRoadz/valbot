@@ -24,8 +24,23 @@ const timeFormatter = new Intl.DateTimeFormat("en-GB", {
   minute: "2-digit",
   second: "2-digit",
   hour12: false,
+  timeZone: "UTC",
 });
 
 export function formatTime(timestamp: number): string {
   return timeFormatter.format(new Date(timestamp));
+}
+
+const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+  timeZone: "UTC",
+});
+
+export function formatDateTime(timestamp: number): string {
+  return dateTimeFormatter.format(new Date(timestamp));
 }

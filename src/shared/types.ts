@@ -134,6 +134,11 @@ export const PYTH_FEED_IDS: Record<string, string> = {
   "ETH-PERP": "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace",
 };
 
+export interface TradeHistoryResponse {
+  trades: Trade[];
+  total: number;
+}
+
 export interface StatusResponse {
   modes: Record<ModeType, ModeConfig>;
   positions: Position[];

@@ -3,6 +3,7 @@ import type { ModeConfig, ModeType } from "../../shared/types.js";
 import { fromSmallestUnit } from "../../shared/types.js";
 import { getEngine, getModeStatus } from "../engine/index.js";
 import { getConnectionStatus } from "../blockchain/client.js";
+import { getRecentTrades } from "./trades.js";
 
 function defaultModeConfig(mode: ModeType): ModeConfig {
   return {
@@ -86,7 +87,13 @@ export default async function statusRoutes(fastify: FastifyInstance) {
         arbitrage: getModeConfig("arbitrage"),
       },
       positions,
-      trades: [],
+      trades: (() => {
+        try {
+          return getRecentTrades(50, 0).trades;
+        } catch {
+          return [];
+        }
+      })(),
       connection: await getConnectionData(),
       stats: getStats(),
     };

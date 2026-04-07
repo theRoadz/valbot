@@ -1,9 +1,9 @@
 import { create } from "zustand";
-import type { ConnectionStatus, SummaryStats, Alert, ModeType, ModeStatus, ModeConfig, ModeStats, StatusResponse, Trade, Position } from "@shared/types";
+import type { ConnectionStatus, SummaryStats, Alert, ModeType, ModeStatus, ModeConfig, ModeStats, StatusResponse, Trade, Position, TradeHistoryResponse } from "@shared/types";
 import { EVENTS, type ConnectionStatusPayload, type PositionOpenedPayload, type PositionClosedPayload, type WsMessage } from "@shared/events";
 
 let alertIdCounter = Date.now();
-let tradeIdCounter = 0;
+let tradeIdCounter = -1;
 let positionIdCounter = 0;
 const pendingCloseTimers: Map<number, ReturnType<typeof setTimeout>> = new Map();
 const VALID_SEVERITIES = new Set(["info", "warning", "critical"]);
@@ -84,6 +84,15 @@ interface ValBotStore {
   setModeStatus: (mode: ModeType, status: ModeStatus) => void;
   updateModeStats: (mode: ModeType, stats: ModeStats) => void;
   setModeConfig: (mode: ModeType, config: Partial<ModeConfig>) => void;
+  tradeHistory: {
+    trades: Trade[];
+    total: number;
+    page: number;
+    loading: boolean;
+  };
+  setTradeHistory: (data: TradeHistoryResponse, page: number) => void;
+  setTradeHistoryLoading: (loading: boolean) => void;
+  setTradeHistoryPage: (page: number) => void;
   loadInitialStatus: (data: StatusResponse) => void;
   handleWsMessage: (message: WsMessage) => void;
   toastQueue: Alert[];
@@ -108,6 +117,12 @@ const useStore = create<ValBotStore>()((set) => ({
   alerts: [],
   trades: [],
   positions: [],
+  tradeHistory: {
+    trades: [],
+    total: 0,
+    page: 0,
+    loading: false,
+  },
   toastQueue: [],
   closingPositions: [],
   modes: {
@@ -175,6 +190,23 @@ const useStore = create<ValBotStore>()((set) => ({
         stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available, state.historicalPnlBase),
       };
     }),
+  setTradeHistory: (data, page) =>
+    set({
+      tradeHistory: {
+        trades: data.trades,
+        total: data.total,
+        page,
+        loading: false,
+      },
+    }),
+  setTradeHistoryLoading: (loading) =>
+    set((state) => ({
+      tradeHistory: { ...state.tradeHistory, loading },
+    })),
+  setTradeHistoryPage: (page) =>
+    set((state) => ({
+      tradeHistory: { ...state.tradeHistory, page },
+    })),
   loadInitialStatus: (data) =>
     set((state) => {
       const modes = { ...state.modes };
@@ -218,6 +250,12 @@ const useStore = create<ValBotStore>()((set) => ({
           available: data.connection.available,
         },
         stats: aggregateSummaryStats(modes, data.connection.equity, data.connection.available, historicalPnlBase),
+        tradeHistory: {
+          trades: loadedTrades.slice(0, 50),
+          total: loadedTrades.length,
+          page: 0,
+          loading: false,
+        },
       };
     }),
   handleWsMessage: (message) => {
@@ -436,7 +474,7 @@ const useStore = create<ValBotStore>()((set) => ({
         Number.isFinite(data?.fees)
       ) {
         const trade: Trade = {
-          id: ++tradeIdCounter,
+          id: tradeIdCounter--,
           mode: data.mode as ModeType,
           pair: data.pair,
           side: data.side as Trade["side"],
@@ -448,6 +486,13 @@ const useStore = create<ValBotStore>()((set) => ({
         };
         set((state) => ({
           trades: [...state.trades, trade].slice(-500),
+          tradeHistory: {
+            ...state.tradeHistory,
+            total: state.tradeHistory.total + 1,
+            trades: state.tradeHistory.page === 0
+              ? [trade, ...state.tradeHistory.trades].slice(0, 50)
+              : state.tradeHistory.trades,
+          },
         }));
       }
     } else if (message.event === EVENTS.POSITION_OPENED) {

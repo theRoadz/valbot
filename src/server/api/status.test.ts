@@ -23,7 +23,17 @@ vi.mock("../engine/index.js", () => {
   };
 });
 
+// Mock trades module
+vi.mock("./trades.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./trades.js")>();
+  return {
+    ...original,
+    getRecentTrades: vi.fn(() => ({ trades: [], total: 0 })),
+  };
+});
+
 import { getEngine, _setMockEngine } from "../engine/index.js";
+import { getRecentTrades } from "./trades.js";
 
 describe("status route", () => {
   let app: FastifyInstance;
@@ -125,6 +135,30 @@ describe("status route", () => {
 
     const body = res.json();
     expect(body.connection).toEqual({ status: "connected", equity: 150_000_000, available: 80_000_000 });
+  });
+
+  it("GET /api/status returns recent trades from DB", async () => {
+    const mockTrades = [
+      { id: 1, mode: "volumeMax" as const, pair: "SOL/USDC", side: "Long" as const, size: 10, price: 150, pnl: 5, fees: 0.1, timestamp: 3000 },
+      { id: 2, mode: "profitHunter" as const, pair: "SOL/USDC", side: "Short" as const, size: 20, price: 145, pnl: -2, fees: 0.2, timestamp: 2000 },
+    ];
+    vi.mocked(getRecentTrades).mockReturnValueOnce({ trades: mockTrades, total: 2 });
+
+    const res = await app.inject({ method: "GET", url: "/api/status" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.trades).toHaveLength(2);
+    expect(body.trades[0].id).toBe(1);
+    expect(body.trades[1].mode).toBe("profitHunter");
+  });
+
+  it("GET /api/status returns empty trades when DB query fails", async () => {
+    vi.mocked(getRecentTrades).mockImplementationOnce(() => { throw new Error("DB failed"); });
+
+    const res = await app.inject({ method: "GET", url: "/api/status" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.trades).toEqual([]);
   });
 
   it("GET /api/status returns disconnected when getConnectionStatus throws", async () => {

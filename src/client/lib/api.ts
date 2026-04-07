@@ -1,4 +1,4 @@
-import type { ModeType, StatusResponse } from "@shared/types";
+import type { ModeType, StatusResponse, TradeHistoryResponse } from "@shared/types";
 import { modeTypeToSlug } from "@shared/types";
 
 export class ApiError extends Error {
@@ -152,6 +152,50 @@ export async function fetchStatus(): Promise<StatusResponse> {
       severity: "critical",
       code: "INVALID_RESPONSE",
       message: "Status response has unexpected shape",
+      details: null,
+      resolution: "Server may be running an incompatible version",
+    });
+  }
+  return data;
+}
+
+function isValidTradeHistoryResponse(data: unknown): data is TradeHistoryResponse {
+  if (data == null || typeof data !== "object") return false;
+  const d = data as Record<string, unknown>;
+  if (!Array.isArray(d.trades)) return false;
+  if (typeof d.total !== "number") return false;
+  return true;
+}
+
+export async function fetchTrades(
+  limit = 50,
+  offset = 0,
+  mode?: ModeType,
+): Promise<TradeHistoryResponse> {
+  let url = `/api/trades?limit=${limit}&offset=${offset}`;
+  if (mode) url += `&mode=${mode}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch {
+    throw new ApiError({
+      severity: "critical",
+      code: "NETWORK_ERROR",
+      message: "Network request failed",
+      details: null,
+      resolution: "Check your network connection",
+    });
+  }
+  if (!res.ok) {
+    await handleResponse(res);
+  }
+  const data: unknown = await res.json();
+  if (!isValidTradeHistoryResponse(data)) {
+    throw new ApiError({
+      severity: "critical",
+      code: "INVALID_RESPONSE",
+      message: "Trade history response has unexpected shape",
       details: null,
       resolution: "Server may be running an incompatible version",
     });
