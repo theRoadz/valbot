@@ -43,7 +43,7 @@ export function PositionsTable() {
   const closingPositions = useStore((s) => s.closingPositions);
 
   return (
-    <Card className="flex flex-col overflow-hidden">
+    <Card className="flex flex-col overflow-hidden min-h-0">
       <CardHeader className="p-4 pb-0">
         <CardTitle className="text-lg font-semibold">Open Positions</CardTitle>
       </CardHeader>

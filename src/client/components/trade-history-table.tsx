@@ -79,7 +79,7 @@ export function TradeHistoryTable() {
   };
 
   return (
-    <Card className="flex flex-col overflow-hidden">
+    <Card className="flex flex-col overflow-hidden min-h-0">
       <CardHeader className="p-4 pb-0">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg font-semibold">Trade History</CardTitle>

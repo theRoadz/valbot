@@ -32,7 +32,7 @@ function App() {
   );
 
   return (
-    <div className="flex flex-col h-screen min-w-[1280px] bg-background overflow-hidden">
+    <div className="flex flex-col min-h-screen min-w-[1280px] bg-background overflow-auto">
       <Toaster />
       <AlertBanner alerts={bannerAlerts} onDismiss={dismissAlert} />
 
@@ -51,8 +51,8 @@ function App() {
         </div>
 
         {/* Bottom Split: Positions + Trade History (3fr) + Trade Log (2fr) */}
-        <div className="grid grid-cols-[3fr_2fr] gap-4 min-h-0">
-          <div className="flex flex-col gap-4 min-h-0 overflow-auto">
+        <div className="grid grid-cols-[3fr_2fr] gap-4 min-h-[400px]">
+          <div className="grid grid-rows-2 gap-4 min-h-0">
             <PositionsTable />
             <TradeHistoryTable />
           </div>
