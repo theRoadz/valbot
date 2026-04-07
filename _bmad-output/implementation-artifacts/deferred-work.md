@@ -184,3 +184,9 @@
 - ~~Race condition: runner added to modeRunners map after `start()` already fires run loop~~ — resolved: set runner in map before `start()`, delete on failure [engine/index.ts]
 - ~~`stopAllModes` doesn't acquire `modeLocks`, allowing concurrent `startMode` during shutdown~~ — resolved: acquires modeLocks for all modes during shutdown [engine/index.ts]
 - ~~`loadFromDb` doesn't handle malformed JSON in config rows~~ — resolved: wrapped JSON.parse in try/catch with logger.warn [fund-allocator.ts]
+
+## Deferred from: code review of story 6-2-strategy-management-on-dashboard (2026-04-07)
+
+- ~~Unsanitized ModeType strings interpolated into API URL paths [src/client/lib/api.ts:64,84,103]~~ — resolved: added `encodeURIComponent(mode)` to all API URL path interpolations and query parameters
+- ~~WS events silently dropped before `loadInitialStatus` completes [src/client/store/index.ts]~~ — resolved: added `initialized` flag to store; WebSocket hook now defers connection until after `loadInitialStatus` sets `initialized: true`
+- [ ] No WS event for runtime strategy registration [src/client/store/index.ts] — strategies only loaded at startup via HTTP; runtime hot-registration not supported (requires new server-side WS event)

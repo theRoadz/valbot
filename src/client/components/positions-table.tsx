@@ -9,23 +9,19 @@ import {
 } from "./ui/table";
 import useStore from "@client/store";
 import { formatCurrency } from "@client/lib/format";
-import type { ModeType, Position } from "@shared/types";
-
-const MODE_TAGS: Record<ModeType, { label: string; colorClass: string }> = {
-  volumeMax: { label: "VOL", colorClass: "text-mode-volume" },
-  profitHunter: { label: "PRO", colorClass: "text-mode-profit" },
-  arbitrage: { label: "ARB", colorClass: "text-mode-arb" },
-};
+import { getModeTag } from "@client/lib/mode-utils";
+import type { Position } from "@shared/types";
 
 function PositionRow({ position, isClosing }: { position: Position; isClosing: boolean }) {
-  const tag = MODE_TAGS[position.mode];
+  const strategies = useStore((s) => s.strategies);
+  const tag = getModeTag(position.mode, strategies);
 
   return (
     <TableRow
       className={`hover:bg-surface-elevated ${isClosing ? "bg-warning/20 transition-colors duration-200" : "transition-colors duration-200"}`}
     >
       <TableCell className="text-xs">
-        <span className={tag.colorClass}>{tag.label}</span>
+        <span style={{ color: tag.color }}>{tag.label}</span>
       </TableCell>
       <TableCell className="text-xs">{position.pair}</TableCell>
       <TableCell className="text-xs">

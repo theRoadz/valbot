@@ -52,6 +52,7 @@ describe("useWebSocket", () => {
     vi.stubGlobal("WebSocket", MockWebSocket);
     vi.useFakeTimers();
     useStore.setState({
+      initialized: true,
       connection: { status: "disconnected", equity: 0, available: 0 },
       stats: {
         equity: 0,
@@ -68,6 +69,12 @@ describe("useWebSocket", () => {
     cleanup();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("does not connect before store is initialized", () => {
+    useStore.setState({ initialized: false });
+    renderHook(() => useWebSocket());
+    expect(MockWebSocket.instances).toHaveLength(0);
   });
 
   it("creates a WebSocket connection on mount", () => {

@@ -4,7 +4,13 @@ import { render, screen, cleanup, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ModeCard } from "./mode-card";
 import useStore from "@client/store";
-import type { ModeStatus } from "@shared/types";
+import type { ModeStatus, StrategyInfo } from "@shared/types";
+
+const TEST_STRATEGIES: StrategyInfo[] = [
+  { name: "Volume Max", description: "Volume maximization", modeType: "volumeMax", urlSlug: "volume-max", modeColor: "#8b5cf6", status: "stopped" as ModeStatus },
+  { name: "Profit Hunter", description: "Profit hunting", modeType: "profitHunter", urlSlug: "profit-hunter", modeColor: "#22c55e", status: "stopped" as ModeStatus },
+  { name: "Arbitrage", description: "Arbitrage trading", modeType: "arbitrage", urlSlug: "arbitrage", modeColor: "#06b6d4", status: "stopped" as ModeStatus },
+];
 
 vi.mock("@client/lib/api", () => ({
   startMode: vi.fn(() => Promise.resolve()),
@@ -30,6 +36,7 @@ const api = await import("@client/lib/api");
 
 function resetStore() {
   useStore.setState({
+    strategies: TEST_STRATEGIES,
     modes: {
       volumeMax: {
         mode: "volumeMax",
@@ -68,7 +75,8 @@ function resetStore() {
 const defaultProps = {
   mode: "volumeMax" as const,
   name: "Volume Max",
-  color: "text-mode-volume",
+  description: "Volume maximization",
+  color: "#8b5cf6",
   barColor: "#8b5cf6",
 };
 
@@ -95,9 +103,9 @@ describe("ModeCard", () => {
     expect(screen.getByLabelText("Select trading pairs for Volume Max")).toBeInTheDocument();
   });
 
-  it("applies mode color class to name", () => {
+  it("applies mode color via inline style", () => {
     render(<ModeCard {...defaultProps} />);
-    expect(screen.getByText("Volume Max").className).toContain("text-mode-volume");
+    expect(screen.getByText("Volume Max").style.color).toBe("rgb(139, 92, 246)");
   });
 
   it("shows zero-value stats in muted color", () => {
@@ -454,9 +462,9 @@ describe("ModeCard", () => {
 
   it("renders all three mode variants", () => {
     const modes = [
-      { mode: "volumeMax" as const, name: "Volume Max", color: "text-mode-volume", barColor: "#8b5cf6" },
-      { mode: "profitHunter" as const, name: "Profit Hunter", color: "text-mode-profit", barColor: "#22c55e" },
-      { mode: "arbitrage" as const, name: "Arbitrage", color: "text-mode-arb", barColor: "#06b6d4" },
+      { mode: "volumeMax" as const, name: "Volume Max", description: "Volume maximization", color: "#8b5cf6", barColor: "#8b5cf6" },
+      { mode: "profitHunter" as const, name: "Profit Hunter", description: "Profit hunting", color: "#22c55e", barColor: "#22c55e" },
+      { mode: "arbitrage" as const, name: "Arbitrage", description: "Arbitrage trading", color: "#06b6d4", barColor: "#06b6d4" },
     ];
     for (const m of modes) {
       const { unmount } = render(<ModeCard {...m} />);

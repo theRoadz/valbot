@@ -3,7 +3,13 @@ import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
 import { TradeHistoryTable } from "./trade-history-table";
 import useStore from "@client/store";
-import type { Trade } from "@shared/types";
+import type { Trade, StrategyInfo, ModeStatus } from "@shared/types";
+
+const TEST_STRATEGIES: StrategyInfo[] = [
+  { name: "Volume Max", description: "Volume maximization", modeType: "volumeMax", urlSlug: "volume-max", modeColor: "#8b5cf6", status: "stopped" as ModeStatus },
+  { name: "Profit Hunter", description: "Profit hunting", modeType: "profitHunter", urlSlug: "profit-hunter", modeColor: "#22c55e", status: "stopped" as ModeStatus },
+  { name: "Arbitrage", description: "Arbitrage trading", modeType: "arbitrage", urlSlug: "arbitrage", modeColor: "#06b6d4", status: "stopped" as ModeStatus },
+];
 
 vi.mock("@client/lib/api", () => ({
   fetchTrades: vi.fn(() => Promise.resolve({ trades: [], total: 0 })),
@@ -26,6 +32,7 @@ function makeTrade(overrides: Partial<Trade> = {}): Trade {
 
 beforeEach(() => {
   useStore.setState({
+    strategies: TEST_STRATEGIES,
     tradeHistory: {
       trades: [],
       total: 0,
@@ -56,7 +63,7 @@ describe("TradeHistoryTable", () => {
     expect(screen.getByText("No trade history")).toBeInTheDocument();
   });
 
-  it("renders trade rows with correct mode tags and colors", () => {
+  it("renders trade rows with correct mode tags and inline colors", () => {
     useStore.setState({
       tradeHistory: {
         trades: [
@@ -73,13 +80,13 @@ describe("TradeHistoryTable", () => {
     render(<TradeHistoryTable />);
 
     const volTag = screen.getByText("VOL");
-    expect(volTag.className).toContain("text-mode-volume");
+    expect(volTag.style.color).toBe("rgb(139, 92, 246)");
 
     const proTag = screen.getByText("PRO");
-    expect(proTag.className).toContain("text-mode-profit");
+    expect(proTag.style.color).toBe("rgb(34, 197, 94)");
 
     const arbTag = screen.getByText("ARB");
-    expect(arbTag.className).toContain("text-mode-arb");
+    expect(arbTag.style.color).toBe("rgb(6, 182, 212)");
   });
 
   it("renders Side with correct color classes", () => {

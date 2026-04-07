@@ -11,8 +11,11 @@ function getWsUrl(): string {
 
 export function useWebSocket() {
   const status = useStore((s) => s.connection.status);
+  const initialized = useStore((s) => s.initialized);
 
   useEffect(() => {
+    if (!initialized) return;
+
     let ws: WebSocket | null = null;
     let attempts = 0;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -79,7 +82,7 @@ export function useWebSocket() {
         ws.close();
       }
     };
-  }, []);
+  }, [initialized]);
 
   return { status };
 }

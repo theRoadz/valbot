@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ConnectionStatus, SummaryStats, Alert, ModeType, ModeStatus, ModeConfig, ModeStats, StatusResponse, Trade, Position, TradeHistoryResponse } from "@shared/types";
+import type { ConnectionStatus, SummaryStats, Alert, ModeType, ModeStatus, ModeConfig, ModeStats, StatusResponse, Trade, Position, TradeHistoryResponse, StrategyInfo } from "@shared/types";
 import { EVENTS, type ConnectionStatusPayload, type PositionOpenedPayload, type PositionClosedPayload, type WsMessage } from "@shared/events";
 
 let alertIdCounter = Date.now();
@@ -7,7 +7,6 @@ let tradeIdCounter = -1;
 let positionIdCounter = 0;
 const pendingCloseTimers: Map<number, ReturnType<typeof setTimeout>> = new Map();
 const VALID_SEVERITIES = new Set(["info", "warning", "critical"]);
-const VALID_MODES = new Set<string>(["volumeMax", "profitHunter", "arbitrage"]);
 const VALID_SIDES = new Set<string>(["Long", "Short"]);
 
 function isValidPosition(p: unknown): p is Position {
@@ -16,7 +15,7 @@ function isValidPosition(p: unknown): p is Position {
   return (
     Number.isFinite(pos.id) &&
     typeof pos.mode === "string" &&
-    VALID_MODES.has(pos.mode) &&
+    (pos.mode as string).length > 0 &&
     typeof pos.pair === "string" &&
     (pos.pair as string).length > 0 &&
     typeof pos.side === "string" &&
@@ -74,11 +73,8 @@ interface ValBotStore {
   trades: Trade[];
   positions: Position[];
   closingPositions: number[];
-  modes: {
-    volumeMax: ModeStoreEntry;
-    profitHunter: ModeStoreEntry;
-    arbitrage: ModeStoreEntry;
-  };
+  strategies: StrategyInfo[];
+  modes: Record<ModeType, ModeStoreEntry>;
   setConnectionStatus: (status: ConnectionStatus) => void;
   updateConnection: (data: ConnectionStatusPayload) => void;
   addAlert: (alert: Alert) => void;
@@ -95,6 +91,7 @@ interface ValBotStore {
   setTradeHistory: (data: TradeHistoryResponse, page: number) => void;
   setTradeHistoryLoading: (loading: boolean) => void;
   setTradeHistoryPage: (page: number) => void;
+  initialized: boolean;
   loadInitialStatus: (data: StatusResponse) => void;
   handleWsMessage: (message: WsMessage) => void;
   toastQueue: Alert[];
@@ -127,13 +124,11 @@ const useStore = create<ValBotStore>()((set) => ({
     page: 0,
     loading: false,
   },
+  initialized: false,
   toastQueue: [],
   closingPositions: [],
-  modes: {
-    volumeMax: createDefaultMode("volumeMax"),
-    profitHunter: createDefaultMode("profitHunter"),
-    arbitrage: createDefaultMode("arbitrage"),
-  },
+  strategies: [],
+  modes: {},
   setConnectionStatus: (status) =>
     set((state) => ({
       connection: { ...state.connection, status },
@@ -155,19 +150,23 @@ const useStore = create<ValBotStore>()((set) => ({
       alerts: state.alerts.filter((a) => a.id !== id),
     })),
   setModeStatus: (mode, status) =>
-    set((state) => ({
-      modes: {
-        ...state.modes,
-        [mode]: {
-          ...state.modes[mode],
-          status,
-          errorDetail: status !== "error" ? null : state.modes[mode].errorDetail,
-          killSwitchDetail: status !== "kill-switch" ? null : state.modes[mode].killSwitchDetail,
+    set((state) => {
+      if (!state.modes[mode]) return state;
+      return {
+        modes: {
+          ...state.modes,
+          [mode]: {
+            ...state.modes[mode],
+            status,
+            errorDetail: status !== "error" ? null : state.modes[mode].errorDetail,
+            killSwitchDetail: status !== "kill-switch" ? null : state.modes[mode].killSwitchDetail,
+          },
         },
-      },
-    })),
+      };
+    }),
   updateModeStats: (mode, stats) =>
     set((state) => {
+      if (!state.modes[mode]) return state;
       const modes = {
         ...state.modes,
         [mode]: { ...state.modes[mode], stats },
@@ -180,6 +179,7 @@ const useStore = create<ValBotStore>()((set) => ({
   setModeConfig: (mode, config) =>
     set((state) => {
       const current = state.modes[mode];
+      if (!current) return state;
       const isKillSwitchReset = current.status === "kill-switch" && config.allocation !== undefined;
       const modes = {
         ...state.modes,
@@ -213,26 +213,30 @@ const useStore = create<ValBotStore>()((set) => ({
     })),
   loadInitialStatus: (data) =>
     set((state) => {
-      const modes = { ...state.modes };
-      const validModes = new Set<string>(Object.keys(modes));
-      for (const key of Object.keys(data.modes).filter((k) => validModes.has(k)) as ModeType[]) {
-        const mc = data.modes[key];
-        modes[key] = {
-          ...modes[key],
-          ...mc,
-          errorDetail: (mc as Record<string, unknown>).errorDetail !== undefined
-            ? (mc as ModeStoreEntry).errorDetail
-            : modes[key].errorDetail,
-          killSwitchDetail: (mc as Record<string, unknown>).killSwitchDetail !== undefined
-            ? (mc as ModeStoreEntry).killSwitchDetail
-            : modes[key].killSwitchDetail,
-        };
+      const strategies = data.strategies ?? [];
+      const modes: Record<ModeType, ModeStoreEntry> = {};
+      for (const s of strategies) {
+        modes[s.modeType] = createDefaultMode(s.modeType);
+      }
+      for (const [key, mc] of Object.entries(data.modes)) {
+        if (modes[key]) {
+          modes[key] = {
+            ...modes[key],
+            ...mc,
+            errorDetail: (mc as Record<string, unknown>).errorDetail !== undefined
+              ? (mc as ModeStoreEntry).errorDetail
+              : modes[key].errorDetail,
+            killSwitchDetail: (mc as Record<string, unknown>).killSwitchDetail !== undefined
+              ? (mc as ModeStoreEntry).killSwitchDetail
+              : modes[key].killSwitchDetail,
+          };
+        }
       }
       const loadedTrades = data.trades?.slice(0, 500) ?? [];
       if (loadedTrades.length > 0) {
         tradeIdCounter = Math.max(tradeIdCounter, ...loadedTrades.map((t) => t.id));
       }
-      const loadedPositions = (data.positions ?? []).filter(isValidPosition).slice(0, 200);
+      const loadedPositions = (data.positions ?? []).filter((p) => isValidPosition(p) && modes[(p as Position).mode] !== undefined).slice(0, 200);
       if (loadedPositions.length > 0) {
         positionIdCounter = Math.max(positionIdCounter, ...loadedPositions.map((p) => p.id));
       }
@@ -246,6 +250,8 @@ const useStore = create<ValBotStore>()((set) => ({
       const historicalTradesBase = serverStats ? Math.max(0, (serverStats.totalTrades ?? 0) - modesArray.reduce((s, m) => s + m.stats.trades, 0)) : 0;
       const historicalVolumeBase = serverStats ? Math.max(0, (serverStats.totalVolume ?? 0) - modesArray.reduce((s, m) => s + m.stats.volume, 0)) : 0;
       return {
+        initialized: true,
+        strategies,
         modes,
         historicalPnlBase,
         historicalTradesBase,
@@ -296,7 +302,7 @@ const useStore = create<ValBotStore>()((set) => ({
         const autoDismissMs = typeof data.autoDismissMs === "number" && data.autoDismissMs > 0
           ? data.autoDismissMs
           : undefined;
-        const alertMode = typeof data.mode === "string" && VALID_MODES.has(data.mode)
+        const alertMode = typeof data.mode === "string" && data.mode.length > 0
           ? data.mode as ModeType
           : undefined;
         const alert: Alert = {
@@ -337,7 +343,7 @@ const useStore = create<ValBotStore>()((set) => ({
           const modeMatch = details?.match(/mode[:\s]+(\w+)/i);
           const regexMode = modeMatch?.[1];
           const targetMode = alertMode
-            || (regexMode && VALID_MODES.has(regexMode) ? regexMode as ModeType : undefined);
+            || (regexMode ? regexMode as ModeType : undefined);
           if (targetMode) {
             set((state) => {
               if (!state.modes[targetMode]) return state;
@@ -472,7 +478,6 @@ const useStore = create<ValBotStore>()((set) => ({
       const data = message.data as Record<string, unknown>;
       if (
         typeof data?.mode === "string" &&
-        VALID_MODES.has(data.mode) &&
         typeof data?.pair === "string" &&
         data.pair.length > 0 &&
         typeof data?.side === "string" &&
@@ -482,33 +487,35 @@ const useStore = create<ValBotStore>()((set) => ({
         Number.isFinite(data?.pnl) &&
         Number.isFinite(data?.fees)
       ) {
-        const trade: Trade = {
-          id: tradeIdCounter--,
-          mode: data.mode as ModeType,
-          pair: data.pair,
-          side: data.side as Trade["side"],
-          size: data.size,
-          price: data.price,
-          pnl: data.pnl,
-          fees: data.fees,
-          timestamp: message.timestamp,
-        };
-        set((state) => ({
-          trades: [...state.trades, trade].slice(-500),
-          tradeHistory: {
-            ...state.tradeHistory,
-            total: state.tradeHistory.total + 1,
-            trades: state.tradeHistory.page === 0
-              ? [trade, ...state.tradeHistory.trades].slice(0, 50)
-              : state.tradeHistory.trades,
-          },
-        }));
+        set((state) => {
+          if (state.modes[data.mode as string] === undefined) return state;
+          const trade: Trade = {
+            id: tradeIdCounter--,
+            mode: data.mode as ModeType,
+            pair: data.pair,
+            side: data.side as Trade["side"],
+            size: data.size,
+            price: data.price,
+            pnl: data.pnl,
+            fees: data.fees,
+            timestamp: message.timestamp,
+          };
+          return {
+            trades: [...state.trades, trade].slice(-500),
+            tradeHistory: {
+              ...state.tradeHistory,
+              total: state.tradeHistory.total + 1,
+              trades: state.tradeHistory.page === 0
+                ? [trade, ...state.tradeHistory.trades].slice(0, 50)
+                : state.tradeHistory.trades,
+            },
+          };
+        });
       }
     } else if (message.event === EVENTS.POSITION_OPENED) {
       const data = message.data as Record<string, unknown>;
       if (
         typeof data?.mode === "string" &&
-        VALID_MODES.has(data.mode) &&
         typeof data?.pair === "string" &&
         data.pair.length > 0 &&
         typeof data?.side === "string" &&
@@ -517,25 +524,27 @@ const useStore = create<ValBotStore>()((set) => ({
         Number.isFinite(data?.entryPrice) &&
         Number.isFinite(data?.stopLoss)
       ) {
-        const position: Position = {
-          id: ++positionIdCounter,
-          mode: data.mode as ModeType,
-          pair: data.pair,
-          side: data.side as Position["side"],
-          size: data.size as number,
-          entryPrice: data.entryPrice as number,
-          stopLoss: data.stopLoss as number,
-          timestamp: message.timestamp,
-        };
-        set((state) => ({
-          positions: [...state.positions, position].slice(-200),
-        }));
+        set((state) => {
+          if (state.modes[data.mode as string] === undefined) return state;
+          const position: Position = {
+            id: ++positionIdCounter,
+            mode: data.mode as ModeType,
+            pair: data.pair,
+            side: data.side as Position["side"],
+            size: data.size as number,
+            entryPrice: data.entryPrice as number,
+            stopLoss: data.stopLoss as number,
+            timestamp: message.timestamp,
+          };
+          return {
+            positions: [...state.positions, position].slice(-200),
+          };
+        });
       }
     } else if (message.event === EVENTS.POSITION_CLOSED) {
       const data = message.data as Record<string, unknown>;
       if (
         typeof data?.mode === "string" &&
-        VALID_MODES.has(data.mode) &&
         typeof data?.pair === "string" &&
         data.pair.length > 0 &&
         typeof data?.side === "string" &&
@@ -546,6 +555,7 @@ const useStore = create<ValBotStore>()((set) => ({
       ) {
         let matchedId: number | null = null;
         set((state) => {
+          if (state.modes[data.mode as string] === undefined) return state;
           const matched = state.positions.find(
             (p) => p.mode === data.mode && p.pair === data.pair && p.side === data.side
           );

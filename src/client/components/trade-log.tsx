@@ -3,16 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { ScrollArea } from "./ui/scroll-area";
 import useStore from "@client/store";
 import { formatTime, formatCurrency } from "@client/lib/format";
-import type { ModeType, Trade } from "@shared/types";
-
-const MODE_TAGS: Record<ModeType, { label: string; colorClass: string }> = {
-  volumeMax: { label: "[VOL]", colorClass: "text-mode-volume" },
-  profitHunter: { label: "[PRO]", colorClass: "text-mode-profit" },
-  arbitrage: { label: "[ARB]", colorClass: "text-mode-arb" },
-};
+import { getModeTag } from "@client/lib/mode-utils";
+import type { Trade } from "@shared/types";
 
 function TradeEntry({ trade }: { trade: Trade }) {
-  const tag = MODE_TAGS[trade.mode];
+  const strategies = useStore((s) => s.strategies);
+  const tag = getModeTag(trade.mode, strategies);
   const isClose = trade.pnl !== 0;
   const action = isClose ? "Closed" : "Opened";
 
@@ -29,7 +25,7 @@ function TradeEntry({ trade }: { trade: Trade }) {
   return (
     <div className="font-mono text-xs leading-relaxed">
       <span className="text-text-muted">{formatTime(trade.timestamp)}</span>{" "}
-      <span className={tag.colorClass}>{tag.label}</span>{" "}
+      <span style={{ color: tag.color }}>[{tag.label}]</span>{" "}
       <span>{action} {trade.side} {trade.pair}</span>{" "}
       <span className={detailClass}>{details}</span>
     </div>

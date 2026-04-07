@@ -1,9 +1,26 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import App from './App';
 import useStore from './store';
+import type { StrategyInfo, ModeStatus } from '@shared/types';
 
+const TEST_STRATEGIES: StrategyInfo[] = [
+  { name: "Volume Max", description: "Volume maximization", modeType: "volumeMax", urlSlug: "volume-max", modeColor: "#8b5cf6", status: "stopped" as ModeStatus },
+  { name: "Profit Hunter", description: "Profit hunting", modeType: "profitHunter", urlSlug: "profit-hunter", modeColor: "#22c55e", status: "stopped" as ModeStatus },
+  { name: "Arbitrage", description: "Arbitrage trading", modeType: "arbitrage", urlSlug: "arbitrage", modeColor: "#06b6d4", status: "stopped" as ModeStatus },
+];
+
+beforeEach(() => {
+  useStore.setState({
+    strategies: TEST_STRATEGIES,
+    modes: {
+      volumeMax: { mode: "volumeMax", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 }, errorDetail: null, killSwitchDetail: null },
+      profitHunter: { mode: "profitHunter", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 }, errorDetail: null, killSwitchDetail: null },
+      arbitrage: { mode: "arbitrage", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 }, errorDetail: null, killSwitchDetail: null },
+    },
+  });
+});
 afterEach(cleanup);
 
 describe('App (Dashboard Layout)', () => {
@@ -80,5 +97,43 @@ describe('App (Dashboard Layout)', () => {
 
     // Clean up store
     useStore.setState({ alerts: [] });
+  });
+
+  it('renders a 4th mode card when a 4th strategy is added', () => {
+    useStore.setState({
+      strategies: [
+        ...TEST_STRATEGIES,
+        { name: "Mean Reversion", description: "Mean reversion", modeType: "meanReversion", urlSlug: "mean-reversion", modeColor: "#f59e0b", status: "stopped" as ModeStatus },
+      ],
+      modes: {
+        ...useStore.getState().modes,
+        meanReversion: { mode: "meanReversion", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 }, errorDetail: null, killSwitchDetail: null },
+      },
+    });
+
+    render(<App />);
+    expect(screen.getByText('Mean Reversion')).toBeInTheDocument();
+    expect(screen.getByText('Volume Max')).toBeInTheDocument();
+  });
+
+  it('grid layout adapts to strategy count', () => {
+    const { container } = render(<App />);
+    // Find the grid container that holds mode cards
+    const modeGrid = container.querySelector('[style*="grid-template-columns"]');
+    expect(modeGrid).not.toBeNull();
+    expect(modeGrid!.getAttribute('style')).toContain('repeat(3');
+  });
+
+  it('grid adapts to 1 strategy', () => {
+    useStore.setState({
+      strategies: [TEST_STRATEGIES[0]],
+      modes: {
+        volumeMax: useStore.getState().modes.volumeMax,
+      },
+    });
+
+    const { container } = render(<App />);
+    const modeGrid = container.querySelector('[style*="grid-template-columns"]');
+    expect(modeGrid!.getAttribute('style')).toContain('repeat(1');
   });
 });

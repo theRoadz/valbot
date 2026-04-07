@@ -12,7 +12,7 @@ import type {
   ModeStats,
   ModeConfig,
 } from "./types";
-import { urlModeToModeType, modeTypeToSlug, fromSmallestUnit, toSmallestUnit } from "./types";
+import { fromSmallestUnit, toSmallestUnit } from "./types";
 
 describe("shared types", () => {
   it("ConnectionStatus is a string literal union", () => {
@@ -154,38 +154,6 @@ describe("shared types", () => {
     expectTypeOf(config.mode).toEqualTypeOf<ModeType>();
     expectTypeOf(config.status).toEqualTypeOf<ModeStatus>();
     expectTypeOf(config.stats).toEqualTypeOf<ModeStats>();
-  });
-});
-
-describe("urlModeToModeType", () => {
-  it("maps volume-max to volumeMax", () => {
-    expect(urlModeToModeType("volume-max")).toBe("volumeMax");
-  });
-
-  it("maps profit-hunter to profitHunter", () => {
-    expect(urlModeToModeType("profit-hunter")).toBe("profitHunter");
-  });
-
-  it("maps arbitrage to arbitrage", () => {
-    expect(urlModeToModeType("arbitrage")).toBe("arbitrage");
-  });
-
-  it("returns undefined for unknown mode", () => {
-    expect(urlModeToModeType("invalid")).toBeUndefined();
-  });
-});
-
-describe("modeTypeToSlug", () => {
-  it("maps volumeMax to volume-max", () => {
-    expect(modeTypeToSlug("volumeMax")).toBe("volume-max");
-  });
-
-  it("maps profitHunter to profit-hunter", () => {
-    expect(modeTypeToSlug("profitHunter")).toBe("profit-hunter");
-  });
-
-  it("maps arbitrage to arbitrage", () => {
-    expect(modeTypeToSlug("arbitrage")).toBe("arbitrage");
   });
 });
 

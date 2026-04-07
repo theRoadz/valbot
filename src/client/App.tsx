@@ -11,13 +11,6 @@ import { useAlertToast } from "./hooks/use-alert-toast";
 import { useWebSocket } from "./hooks/use-websocket";
 import useStore from "./store";
 import { fetchStatus } from "./lib/api";
-import type { ModeType } from "@shared/types";
-
-const MODES = [
-  { mode: "volumeMax" as ModeType, name: "Volume Max", color: "text-mode-volume", barColor: "#8b5cf6" },
-  { mode: "profitHunter" as ModeType, name: "Profit Hunter", color: "text-mode-profit", barColor: "#22c55e" },
-  { mode: "arbitrage" as ModeType, name: "Arbitrage", color: "text-mode-arb", barColor: "#06b6d4" },
-] as const;
 
 function App() {
   useWebSocket();
@@ -25,6 +18,7 @@ function App() {
   const alerts = useStore((s) => s.alerts);
   const dismissAlert = useStore((s) => s.dismissAlert);
   const loadInitialStatus = useStore((s) => s.loadInitialStatus);
+  const strategies = useStore((s) => s.strategies);
 
   useEffect(() => {
     fetchStatus()
@@ -49,9 +43,9 @@ function App() {
         {/* Max Allocation + Mode Cards */}
         <div className="flex flex-col gap-2">
           <MaxAllocationControl />
-          <div className="grid grid-cols-3 gap-4">
-            {MODES.map((m) => (
-              <ModeCard key={m.mode} mode={m.mode} name={m.name} color={m.color} barColor={m.barColor} />
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${strategies.length || 1}, minmax(0, 1fr))`, gap: "1rem" }}>
+            {strategies.map((s) => (
+              <ModeCard key={s.modeType} mode={s.modeType} name={s.name} description={s.description} color={s.modeColor} barColor={s.modeColor} />
             ))}
           </div>
         </div>

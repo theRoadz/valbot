@@ -11,25 +11,21 @@ import {
 import useStore from "@client/store";
 import { formatCurrency, formatDateTime } from "@client/lib/format";
 import { fetchTrades } from "@client/lib/api";
-import type { ModeType, Trade } from "@shared/types";
+import { getModeTag } from "@client/lib/mode-utils";
+import type { Trade } from "@shared/types";
 
 const PAGE_SIZE = 50;
 
-const MODE_TAGS: Record<ModeType, { label: string; colorClass: string }> = {
-  volumeMax: { label: "VOL", colorClass: "text-mode-volume" },
-  profitHunter: { label: "PRO", colorClass: "text-mode-profit" },
-  arbitrage: { label: "ARB", colorClass: "text-mode-arb" },
-};
-
 function TradeRow({ trade }: { trade: Trade }) {
-  const tag = MODE_TAGS[trade.mode];
+  const strategies = useStore((s) => s.strategies);
+  const tag = getModeTag(trade.mode, strategies);
   const pnlClass = trade.pnl > 0 ? "text-profit" : trade.pnl < 0 ? "text-loss" : "";
 
   return (
     <TableRow className="hover:bg-surface-elevated transition-colors duration-200">
       <TableCell className="text-xs">{formatDateTime(trade.timestamp)}</TableCell>
       <TableCell className="text-xs">
-        <span className={tag.colorClass}>{tag.label}</span>
+        <span style={{ color: tag.color }}>{tag.label}</span>
       </TableCell>
       <TableCell className="text-xs">{trade.pair}</TableCell>
       <TableCell className="text-xs">

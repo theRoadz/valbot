@@ -3,11 +3,19 @@ import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { PositionsTable } from './positions-table';
 import useStore from '@client/store';
+import type { StrategyInfo, ModeStatus } from '@shared/types';
+
+const TEST_STRATEGIES: StrategyInfo[] = [
+  { name: "Volume Max", description: "Volume maximization", modeType: "volumeMax", urlSlug: "volume-max", modeColor: "#8b5cf6", status: "stopped" as ModeStatus },
+  { name: "Profit Hunter", description: "Profit hunting", modeType: "profitHunter", urlSlug: "profit-hunter", modeColor: "#22c55e", status: "stopped" as ModeStatus },
+  { name: "Arbitrage", description: "Arbitrage trading", modeType: "arbitrage", urlSlug: "arbitrage", modeColor: "#06b6d4", status: "stopped" as ModeStatus },
+];
 
 beforeEach(() => {
   useStore.setState({
     positions: [],
     closingPositions: [],
+    strategies: TEST_STRATEGIES,
   });
 });
 
@@ -32,7 +40,7 @@ describe('PositionsTable', () => {
     expect(screen.getByText('No open positions')).toBeInTheDocument();
   });
 
-  it('renders position rows with correct mode tag abbreviation and color class', () => {
+  it('renders position rows with correct mode tag abbreviation and inline color', () => {
     useStore.setState({
       positions: [
         { id: 1, mode: 'volumeMax', pair: 'SOL-PERP', side: 'Long', size: 100, entryPrice: 150, stopLoss: 140, timestamp: 1000 },
@@ -44,13 +52,13 @@ describe('PositionsTable', () => {
     render(<PositionsTable />);
 
     const volTag = screen.getByText('VOL');
-    expect(volTag.className).toContain('text-mode-volume');
+    expect(volTag.style.color).toBe('rgb(139, 92, 246)');
 
     const proTag = screen.getByText('PRO');
-    expect(proTag.className).toContain('text-mode-profit');
+    expect(proTag.style.color).toBe('rgb(34, 197, 94)');
 
     const arbTag = screen.getByText('ARB');
-    expect(arbTag.className).toContain('text-mode-arb');
+    expect(arbTag.style.color).toBe('rgb(6, 182, 212)');
   });
 
   it('renders Side with correct color classes', () => {

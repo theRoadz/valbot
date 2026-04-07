@@ -17,7 +17,7 @@ describe("API client", () => {
     it("sends POST to correct URL for volumeMax", async () => {
       mockFetch.mockResolvedValue({ ok: true });
       await startMode("volumeMax");
-      expect(mockFetch).toHaveBeenCalledWith("/api/mode/volume-max/start", {
+      expect(mockFetch).toHaveBeenCalledWith("/api/mode/volumeMax/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -27,7 +27,7 @@ describe("API client", () => {
     it("sends POST to correct URL for profitHunter", async () => {
       mockFetch.mockResolvedValue({ ok: true });
       await startMode("profitHunter", { pairs: ["SOL/USDC"], slippage: 0.5 });
-      expect(mockFetch).toHaveBeenCalledWith("/api/mode/profit-hunter/start", {
+      expect(mockFetch).toHaveBeenCalledWith("/api/mode/profitHunter/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pairs: ["SOL/USDC"], slippage: 0.5 }),
@@ -49,7 +49,7 @@ describe("API client", () => {
     it("sends POST to correct URL", async () => {
       mockFetch.mockResolvedValue({ ok: true });
       await stopMode("volumeMax");
-      expect(mockFetch).toHaveBeenCalledWith("/api/mode/volume-max/stop", { method: "POST" });
+      expect(mockFetch).toHaveBeenCalledWith("/api/mode/volumeMax/stop", { method: "POST" });
     });
   });
 
@@ -57,7 +57,7 @@ describe("API client", () => {
     it("sends PUT with body", async () => {
       mockFetch.mockResolvedValue({ ok: true });
       await updateModeConfig("volumeMax", { allocation: 100, pairs: ["SOL/USDC"], slippage: 0.5 });
-      expect(mockFetch).toHaveBeenCalledWith("/api/mode/volume-max/config", {
+      expect(mockFetch).toHaveBeenCalledWith("/api/mode/volumeMax/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ allocation: 100, pairs: ["SOL/USDC"], slippage: 0.5 }),
@@ -67,7 +67,7 @@ describe("API client", () => {
 
   describe("fetchStatus", () => {
     it("returns parsed response", async () => {
-      const mockData = { modes: {}, positions: [], trades: [], connection: { status: "connected", equity: 0, available: 0 } };
+      const mockData = { modes: {}, positions: [], trades: [], strategies: [], connection: { status: "connected", equity: 0, available: 0 } };
       mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(mockData) });
       const result = await fetchStatus();
       expect(result).toEqual(mockData);

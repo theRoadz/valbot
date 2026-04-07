@@ -14,6 +14,7 @@ import { toast } from "sonner";
 interface ModeCardProps {
   mode: ModeType;
   name: string;
+  description: string;
   color: string;
   barColor: string;
 }
@@ -107,7 +108,7 @@ function FundAllocationBar({
   );
 }
 
-export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
+export function ModeCard({ mode, name, description, color, barColor }: ModeCardProps) {
   const modeState = useStore((s) => s.modes[mode]);
   const totalAllocated = useStore((s) =>
     Object.values(s.modes).reduce((sum, m) => sum + m.allocation, 0),
@@ -124,6 +125,9 @@ export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
   const [slippageFocused, setSlippageFocused] = useState(false);
   const [positionSizeInput, setPositionSizeInput] = useState("");
   const [positionSizeFocused, setPositionSizeFocused] = useState(false);
+
+  if (!modeState) return null;
+
   const { status, stats, allocation, maxAllocation: modeMaxAllocation, positionSize, pairs, slippage, errorDetail, killSwitchDetail } = modeState;
   const maxAlloc = modeMaxAllocation ?? 500;
   const availableForMode = Math.max(0, maxAlloc - totalAllocated + allocation);
@@ -345,7 +349,7 @@ export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
       <CardHeader className="p-4 pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className={`text-lg font-semibold ${color}`}>{name}</span>
+            <span className="text-lg font-semibold" style={{ color }}>{name}</span>
             <Badge
               className={cn(
                 "transition-colors duration-200",
@@ -362,6 +366,7 @@ export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
             aria-label={`Toggle ${name} mode`}
           />
         </div>
+        <p className="text-xs text-text-muted mt-1">{description}</p>
       </CardHeader>
       <CardContent className="p-4 pt-0">
         {/* Stats Grid */}

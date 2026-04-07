@@ -2,12 +2,22 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import useStore from "./index";
 import { EVENTS } from "@shared/events";
+import type { StrategyInfo, ModeStatus } from "@shared/types";
+
+const TEST_STRATEGIES: StrategyInfo[] = [
+  { name: "Volume Max", description: "Volume maximization", modeType: "volumeMax", urlSlug: "volume-max", modeColor: "#8b5cf6", status: "stopped" as ModeStatus },
+  { name: "Profit Hunter", description: "Profit hunting", modeType: "profitHunter", urlSlug: "profit-hunter", modeColor: "#22c55e", status: "stopped" as ModeStatus },
+  { name: "Arbitrage", description: "Arbitrage trading", modeType: "arbitrage", urlSlug: "arbitrage", modeColor: "#06b6d4", status: "stopped" as ModeStatus },
+];
 
 describe("ValBotStore", () => {
   beforeEach(() => {
     useStore.setState({
       connection: { status: "disconnected", equity: 0, available: 0 },
       historicalPnlBase: 0,
+      historicalTradesBase: 0,
+      historicalVolumeBase: 0,
+      strategies: TEST_STRATEGIES,
       stats: {
         equity: 0,
         available: 0,
@@ -337,6 +347,7 @@ describe("ValBotStore", () => {
 
     it("loadInitialStatus hydrates all mode configs", () => {
       useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
         modes: {
           volumeMax: {
             mode: "volumeMax",
@@ -378,6 +389,7 @@ describe("ValBotStore", () => {
 
     it("loadInitialStatus sets stats.equity from connection data", () => {
       useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
         modes: {
           volumeMax: {
             mode: "volumeMax",
@@ -414,6 +426,7 @@ describe("ValBotStore", () => {
 
     it("loadInitialStatus populates aggregated stats from mode stats", () => {
       useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
         modes: {
           volumeMax: {
             mode: "volumeMax",
@@ -718,6 +731,7 @@ describe("ValBotStore", () => {
         { id: 2, mode: "profitHunter" as const, pair: "ETH-PERP", side: "Short" as const, size: 50, price: 3000, pnl: 14.2, fees: 1.0, timestamp: 2000 },
       ];
       useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
         modes: {
           volumeMax: { mode: "volumeMax", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
           profitHunter: { mode: "profitHunter", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
@@ -879,6 +893,7 @@ describe("ValBotStore", () => {
         { id: 20, mode: "profitHunter" as const, pair: "ETH-PERP", side: "Short" as const, size: 50, entryPrice: 3000, stopLoss: 3100, timestamp: 2000 },
       ];
       useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
         modes: {
           volumeMax: { mode: "volumeMax", status: "running", allocation: 500, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
           profitHunter: { mode: "profitHunter", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
@@ -1679,6 +1694,7 @@ describe("ValBotStore", () => {
   describe("historical PnL differentiation (Story 5.1)", () => {
     it("loadInitialStatus with stats differentiates totalPnl from sessionPnl", () => {
       useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
         modes: {
           volumeMax: {
             mode: "volumeMax",
@@ -1723,6 +1739,7 @@ describe("ValBotStore", () => {
     it("STATS_UPDATED preserves historical base in totalPnl", () => {
       // Set historicalPnlBase via loadInitialStatus
       useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
         modes: {
           volumeMax: {
             mode: "volumeMax",
@@ -1775,6 +1792,7 @@ describe("ValBotStore", () => {
 
     it("loadInitialStatus without stats field defaults historicalPnlBase to 0", () => {
       useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
         modes: {
           volumeMax: {
             mode: "volumeMax",
@@ -1813,6 +1831,7 @@ describe("ValBotStore", () => {
 
     it("loadInitialStatus with stats populates historicalTradesBase and historicalVolumeBase", () => {
       useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
         modes: {
           volumeMax: {
             mode: "volumeMax",
@@ -1858,6 +1877,7 @@ describe("ValBotStore", () => {
     it("STATS_UPDATED preserves historical trades and volume baselines", () => {
       // Set historical baselines via loadInitialStatus
       useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
         modes: {
           volumeMax: {
             mode: "volumeMax",
@@ -1909,6 +1929,7 @@ describe("ValBotStore", () => {
 
     it("loadInitialStatus without stats field defaults historical trades and volume baselines to 0", () => {
       useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
         modes: {
           volumeMax: {
             mode: "volumeMax",
@@ -1949,6 +1970,7 @@ describe("ValBotStore", () => {
 
     it("clamps historicalTradesBase and historicalVolumeBase to zero when mode stats exceed server totals", () => {
       useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
         modes: {
           volumeMax: {
             mode: "volumeMax",
@@ -2020,6 +2042,7 @@ describe("ValBotStore", () => {
       ];
 
       useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
         modes: {
           volumeMax: {
             mode: "volumeMax",
@@ -2118,6 +2141,85 @@ describe("ValBotStore", () => {
       const th = useStore.getState().tradeHistory;
       expect(th.trades).toHaveLength(1); // not prepended
       expect(th.total).toBe(52); // incremented
+    });
+  });
+
+  describe("dynamic strategy support (Story 6.2)", () => {
+    it("loadInitialStatus populates strategies from response", () => {
+      useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
+        modes: {
+          volumeMax: { mode: "volumeMax", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
+          profitHunter: { mode: "profitHunter", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
+          arbitrage: { mode: "arbitrage", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
+        },
+        positions: [],
+        trades: [],
+        connection: { status: "connected", equity: 5000, available: 0 },
+      });
+
+      expect(useStore.getState().strategies).toEqual(TEST_STRATEGIES);
+      expect(Object.keys(useStore.getState().modes)).toEqual(["volumeMax", "profitHunter", "arbitrage"]);
+    });
+
+    it("loadInitialStatus creates modes from strategies, not hardcoded", () => {
+      const customStrategies: StrategyInfo[] = [
+        { name: "Volume Max", description: "V", modeType: "volumeMax", urlSlug: "volume-max", modeColor: "#8b5cf6", status: "stopped" as ModeStatus },
+        { name: "Mean Reversion", description: "M", modeType: "meanReversion", urlSlug: "mean-reversion", modeColor: "#f59e0b", status: "stopped" as ModeStatus },
+      ];
+
+      useStore.getState().loadInitialStatus({
+        strategies: customStrategies,
+        modes: {
+          volumeMax: { mode: "volumeMax", status: "running", allocation: 500, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 50, trades: 3, volume: 1000, allocated: 500, remaining: 450 } },
+          meanReversion: { mode: "meanReversion", status: "stopped", allocation: 0, pairs: ["ETH/USDC"], slippage: 1.0, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
+        },
+        positions: [],
+        trades: [],
+        connection: { status: "connected", equity: 5000, available: 0 },
+      });
+
+      const state = useStore.getState();
+      expect(state.strategies).toEqual(customStrategies);
+      expect(Object.keys(state.modes)).toEqual(["volumeMax", "meanReversion"]);
+      expect(state.modes.volumeMax.status).toBe("running");
+      expect(state.modes.meanReversion).toBeDefined();
+      expect(state.modes.meanReversion.pairs).toEqual(["ETH/USDC"]);
+    });
+
+    it("WS events for modes not yet loaded are safely rejected", () => {
+      // Start with empty modes (before loadInitialStatus)
+      useStore.setState({ modes: {}, strategies: [] });
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.TRADE_EXECUTED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, price: 150, pnl: 0, fees: 0.5 },
+      });
+
+      expect(useStore.getState().trades).toHaveLength(0);
+    });
+
+    it("WS events work after loadInitialStatus populates modes", () => {
+      useStore.getState().loadInitialStatus({
+        strategies: TEST_STRATEGIES,
+        modes: {
+          volumeMax: { mode: "volumeMax", status: "running", allocation: 500, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
+          profitHunter: { mode: "profitHunter", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
+          arbitrage: { mode: "arbitrage", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 } },
+        },
+        positions: [],
+        trades: [],
+        connection: { status: "connected", equity: 5000, available: 0 },
+      });
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.TRADE_EXECUTED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax", pair: "SOL-PERP", side: "Long", size: 100, price: 150, pnl: 0, fees: 0.5 },
+      });
+
+      expect(useStore.getState().trades).toHaveLength(1);
     });
   });
 });

@@ -4,7 +4,10 @@ import useStore from "@client/store";
 import * as api from "@client/lib/api";
 
 export function MaxAllocationControl() {
-  const maxAllocation = useStore((s) => s.modes.volumeMax.maxAllocation ?? 500);
+  const maxAllocation = useStore((s) => {
+    const first = Object.values(s.modes)[0];
+    return first?.maxAllocation ?? 500;
+  });
   const setModeConfig = useStore((s) => s.setModeConfig);
   const [input, setInput] = useState("");
   const [focused, setFocused] = useState(false);
@@ -25,15 +28,14 @@ export function MaxAllocationControl() {
     const numVal = parseFloat(input);
     if (!isNaN(numVal) && isFinite(numVal) && numVal >= 10 && numVal <= 10000 && numVal !== maxAllocation) {
       const prev = maxAllocation;
+      const modeKeys = Object.keys(useStore.getState().modes);
+      if (modeKeys.length === 0) return;
       // Update all modes optimistically (global setting)
-      setModeConfig("volumeMax", { maxAllocation: numVal });
-      setModeConfig("profitHunter", { maxAllocation: numVal });
-      setModeConfig("arbitrage", { maxAllocation: numVal });
-      // Send via any mode — server treats it as global
-      api.updateModeConfig("volumeMax", { maxAllocation: numVal }).catch((err) => {
-        setModeConfig("volumeMax", { maxAllocation: prev });
-        setModeConfig("profitHunter", { maxAllocation: prev });
-        setModeConfig("arbitrage", { maxAllocation: prev });
+      for (const mode of modeKeys) setModeConfig(mode, { maxAllocation: numVal });
+      // Send via first mode — server treats it as global
+      const firstMode = modeKeys[0];
+      api.updateModeConfig(firstMode, { maxAllocation: numVal }).catch((err) => {
+        for (const mode of modeKeys) setModeConfig(mode, { maxAllocation: prev });
         if (import.meta.env.DEV) console.error("[MaxAllocationControl] Update failed:", err);
       });
     }

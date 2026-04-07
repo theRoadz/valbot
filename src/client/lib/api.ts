@@ -1,5 +1,4 @@
 import type { ModeType, StatusResponse, TradeHistoryResponse } from "@shared/types";
-import { modeTypeToSlug } from "@shared/types";
 
 export class ApiError extends Error {
   severity: string;
@@ -62,7 +61,7 @@ export async function startMode(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`/api/mode/${modeTypeToSlug(mode)}/start`, {
+    res = await fetch(`/api/mode/${encodeURIComponent(mode)}/start`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config ?? {}),
@@ -82,7 +81,7 @@ export async function startMode(
 export async function stopMode(mode: ModeType): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`/api/mode/${modeTypeToSlug(mode)}/stop`, { method: "POST" });
+    res = await fetch(`/api/mode/${encodeURIComponent(mode)}/stop`, { method: "POST" });
   } catch {
     throw new ApiError({
       severity: "critical",
@@ -101,7 +100,7 @@ export async function updateModeConfig(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`/api/mode/${modeTypeToSlug(mode)}/config`, {
+    res = await fetch(`/api/mode/${encodeURIComponent(mode)}/config`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config),
@@ -124,6 +123,7 @@ function isValidStatusResponse(data: unknown): data is StatusResponse {
   if (d.modes == null || typeof d.modes !== "object") return false;
   if (!Array.isArray(d.positions)) return false;
   if (!Array.isArray(d.trades)) return false;
+  if (!Array.isArray(d.strategies)) return false;
   if (d.connection == null || typeof d.connection !== "object") return false;
   const conn = d.connection as Record<string, unknown>;
   if (typeof conn.status !== "string" || !Number.isFinite(conn.equity) || !Number.isFinite(conn.available)) return false;
@@ -173,7 +173,7 @@ export async function fetchTrades(
   mode?: ModeType,
 ): Promise<TradeHistoryResponse> {
   let url = `/api/trades?limit=${limit}&offset=${offset}`;
-  if (mode) url += `&mode=${mode}`;
+  if (mode) url += `&mode=${encodeURIComponent(mode)}`;
 
   let res: Response;
   try {

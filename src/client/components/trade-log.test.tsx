@@ -4,7 +4,13 @@ import { render, screen, cleanup } from "@testing-library/react";
 import { TradeLog } from "./trade-log";
 import useStore from "@client/store";
 import { formatTime } from "@client/lib/format";
-import type { Trade } from "@shared/types";
+import type { Trade, StrategyInfo, ModeStatus } from "@shared/types";
+
+const TEST_STRATEGIES: StrategyInfo[] = [
+  { name: "Volume Max", description: "Volume maximization", modeType: "volumeMax", urlSlug: "volume-max", modeColor: "#8b5cf6", status: "stopped" as ModeStatus },
+  { name: "Profit Hunter", description: "Profit hunting", modeType: "profitHunter", urlSlug: "profit-hunter", modeColor: "#22c55e", status: "stopped" as ModeStatus },
+  { name: "Arbitrage", description: "Arbitrage trading", modeType: "arbitrage", urlSlug: "arbitrage", modeColor: "#06b6d4", status: "stopped" as ModeStatus },
+];
 
 const TEST_TIMESTAMP = 1712345027000; // fixed timestamp
 const EXPECTED_TIME = formatTime(TEST_TIMESTAMP); // locale-dependent but consistent
@@ -25,7 +31,7 @@ function makeTrade(overrides: Partial<Trade> = {}): Trade {
 }
 
 beforeEach(() => {
-  useStore.setState({ trades: [] });
+  useStore.setState({ trades: [], strategies: TEST_STRATEGIES });
 });
 
 afterEach(cleanup);
@@ -48,7 +54,7 @@ describe("TradeLog", () => {
     expect(screen.getByText(/Opened Long SOL-PERP/)).toBeInTheDocument();
   });
 
-  it("mode tags display correct abbreviation and color class", () => {
+  it("mode tags display correct abbreviation and inline color", () => {
     useStore.setState({
       trades: [
         makeTrade({ id: 1, mode: "volumeMax" }),
@@ -60,13 +66,13 @@ describe("TradeLog", () => {
     render(<TradeLog />);
 
     const volTag = screen.getByText("[VOL]");
-    expect(volTag).toHaveClass("text-mode-volume");
+    expect(volTag.style.color).toBe("rgb(139, 92, 246)");
 
     const proTag = screen.getByText("[PRO]");
-    expect(proTag).toHaveClass("text-mode-profit");
+    expect(proTag.style.color).toBe("rgb(34, 197, 94)");
 
     const arbTag = screen.getByText("[ARB]");
-    expect(arbTag).toHaveClass("text-mode-arb");
+    expect(arbTag.style.color).toBe("rgb(6, 182, 212)");
   });
 
   it("PnL values render with correct sign and color class", () => {
