@@ -222,16 +222,21 @@ function loadWalletAddress(): `0x${string}` {
   if (!/^0x[0-9a-fA-F]{40}$/.test(trimmed)) {
     throw walletAddressInvalidError(`Got: ${trimmed.slice(0, 6)}...${trimmed.slice(-4)}`);
   }
+  if (/^0x0+$/.test(trimmed)) {
+    throw walletAddressInvalidError("Zero address is not allowed");
+  }
   return trimmed as `0x${string}`;
 }
 
 export interface BlockchainClient {
   exchange: ExchangeClient;
   info: InfoClient;
-  walletAddress: string; // 0x master wallet — for info queries
+  walletAddress: `0x${string}`; // 0x master wallet — for info queries and vault address
   agentAddress: string; // 0x derived from SESSION_KEY — for signing
 }
 
+// Immutable singleton — wallet/agent addresses are fixed after init.
+// Restart required if .env changes.
 let client: BlockchainClient | null = null;
 
 export async function initBlockchainClient(): Promise<BlockchainClient> {

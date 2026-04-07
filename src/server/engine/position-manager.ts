@@ -128,6 +128,7 @@ export class PositionManager {
         side,
         size,
         slippage,
+        vaultAddress: client.walletAddress,
       });
     } catch (err) {
       this.fundAllocator.release(mode, size);
@@ -148,6 +149,7 @@ export class PositionManager {
           side,
           size,
           baseSz: openResult.filledSz,
+          vaultAddress: client.walletAddress,
         });
       } catch (closeErr) {
         logger.error({ err: closeErr, positionId: openResult.positionId, code: "POSITION_CLOSE_FAILED" },
@@ -167,6 +169,7 @@ export class PositionManager {
         size,
         stopLossPrice,
         baseSz: openResult.filledSz,
+        vaultAddress: client.walletAddress,
       });
     } catch (err) {
       // Rollback: close position and release funds
@@ -181,6 +184,7 @@ export class PositionManager {
           side,
           size,
           baseSz: openResult.filledSz,
+          vaultAddress: client.walletAddress,
         });
         rollbackCloseSucceeded = true;
       } catch (closeErr) {
@@ -250,6 +254,7 @@ export class PositionManager {
             entryPrice: openResult.entryPrice,
             stopLoss: stopLossPrice,
             timestamp: now,
+            filledSz: openResult.filledSz,
           });
           logger.warn({ positionId: posId, mode, pair }, "Orphaned position persisted to DB for crash recovery");
         } catch (dbErr) {
@@ -309,6 +314,7 @@ export class PositionManager {
           side,
           size,
           baseSz: openResult.filledSz,
+          vaultAddress: client.walletAddress,
         });
         dbRollbackCloseSucceeded = true;
       } catch (closeErr) {
@@ -404,6 +410,7 @@ export class PositionManager {
         side: pos.side,
         size: pos.size,
         baseSz: pos.filledSz,
+        vaultAddress: client.walletAddress,
       });
     } catch (err) {
       logger.error({ err, positionId, mode: pos.mode, code: "POSITION_CLOSE_FAILED" }, "Failed to close position on-chain");
@@ -612,7 +619,7 @@ export class PositionManager {
     };
   }
 
-  async reconcileOnChainPositions(walletAddress: string): Promise<void> {
+  async reconcileOnChainPositions(walletAddress: `0x${string}`): Promise<void> {
     const client = getBlockchainClient();
     const recoveredCount = this.positions.size;
 

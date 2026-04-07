@@ -198,3 +198,10 @@
 ## Deferred from: code review of story 7-2-transition-and-animation-polish (2026-04-07)
 
 - ~~Toast slide direction is vertical (Sonner library default), not horizontal "from right" per AC #5~~ — resolved: added CSS `translate` override for right-positioned toasts in index.css
+
+## Deferred from: code review of story 8-7-pass-vault-address-in-exchange-calls (2026-04-07)
+
+- ~~Zero-address (`0x000...000`) passes `loadWalletAddress()` validation~~ — resolved: added zero-address guard in loadWalletAddress [client.ts:225]
+- ~~Singleton blockchain client holds stale wallet address if env changes at runtime~~ — resolved: documented immutability with comment on singleton [client.ts:238]
+- ~~Orphaned position replacement drops `filledSz` in stop-loss rollback error path~~ — resolved: added `filledSz: openResult.filledSz` to replacement entry [position-manager.ts:252]
+- ~~`reconcileOnChainPositions` accepts unvalidated `string` parameter~~ — resolved: narrowed to `` `0x${string}` `` [position-manager.ts:621]

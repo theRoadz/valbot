@@ -83,6 +83,7 @@ export interface OpenPositionParams {
   side: TradeSide;
   size: number; // smallest-unit
   slippage: number;
+  vaultAddress: `0x${string}`;
 }
 
 export interface OpenPositionResult {
@@ -101,6 +102,7 @@ export interface ClosePositionParams {
   side: TradeSide;
   size: number; // smallest-unit
   baseSz?: string; // exact base-unit size; if provided, skip re-derivation from USDC/price
+  vaultAddress: `0x${string}`;
 }
 
 export interface ClosePositionResult {
@@ -117,6 +119,7 @@ export interface SetStopLossParams {
   size: number; // smallest-unit (position size for the stop-loss)
   stopLossPrice: number; // smallest-unit
   baseSz?: string; // exact base-unit size; if provided, skip re-derivation from USDC/price
+  vaultAddress: `0x${string}`;
 }
 
 export interface SetStopLossResult {
@@ -169,7 +172,7 @@ export async function getMidPrice(
 export async function openPosition(
   params: OpenPositionParams,
 ): Promise<OpenPositionResult> {
-  const { exchange, info, pair, side, size, slippage } = params;
+  const { exchange, info, pair, side, size, slippage, vaultAddress } = params;
 
   if (size < MIN_ORDER_VALUE) {
     throw orderFailedError(
@@ -203,6 +206,7 @@ export async function openPosition(
         },
       ],
       grouping: "na",
+      vaultAddress,
     }),
     "openPosition",
     { writeCall: true },
@@ -250,7 +254,7 @@ export async function openPosition(
 export async function closePosition(
   params: ClosePositionParams,
 ): Promise<ClosePositionResult> {
-  const { exchange, info, pair, side, size, baseSz } = params;
+  const { exchange, info, pair, side, size, baseSz, vaultAddress } = params;
   const asset = resolveAsset(pair);
   // Close = opposite side, reduce-only
   const isBuy = side === "Short"; // Closing a Short means buying back
@@ -276,6 +280,7 @@ export async function closePosition(
         },
       ],
       grouping: "na",
+      vaultAddress,
     }),
     "closePosition",
     { writeCall: true },
@@ -315,7 +320,7 @@ export async function closePosition(
 export async function setStopLoss(
   params: SetStopLossParams,
 ): Promise<SetStopLossResult> {
-  const { exchange, pair, side, size, stopLossPrice, baseSz } = params;
+  const { exchange, pair, side, size, stopLossPrice, baseSz, vaultAddress } = params;
   const asset = resolveAsset(pair);
   // Stop-loss: when price hits trigger, sell (for Long) or buy (for Short)
   const isBuy = side === "Short"; // SL for Short = buy back
@@ -343,6 +348,7 @@ export async function setStopLoss(
         },
       ],
       grouping: "positionTpsl",
+      vaultAddress,
     }),
     "setStopLoss",
     { writeCall: true },
