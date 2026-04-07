@@ -52,6 +52,18 @@ export class FundAllocator {
         resolution: `Enter a value up to $${fromSmallestUnit(this.maxAllocation)}`,
       });
     }
+    // Cross-mode total allocation check: sum of all modes cannot exceed maxAllocation
+    const currentModeAllocation = this.getOrCreate(mode).allocation;
+    const totalAfter = this.getTotalAllocated() - currentModeAllocation + amount;
+    if (totalAfter > this.maxAllocation) {
+      const available = this.maxAllocation - this.getTotalAllocated() + currentModeAllocation;
+      throw new AppError({
+        severity: "warning",
+        code: "TOTAL_ALLOCATION_EXCEEDED",
+        message: `Total allocation across all modes would be $${fromSmallestUnit(totalAfter)}, exceeding maximum of $${fromSmallestUnit(this.maxAllocation)}`,
+        resolution: `Available for ${mode}: $${fromSmallestUnit(Math.max(0, available))}`,
+      });
+    }
     const entry = this.getOrCreate(mode);
     const prevAllocation = entry.allocation;
     const prevRemaining = entry.remaining;

@@ -408,8 +408,8 @@ describe("PositionManager", () => {
     });
 
     it("filters by mode", async () => {
-      allocator.setAllocation("volumeMax", 400_000_000);
-      allocator.setAllocation("profitHunter", 500_000_000);
+      allocator.setAllocation("volumeMax", 250_000_000);
+      allocator.setAllocation("profitHunter", 250_000_000);
 
       await pm.openPosition({
         mode: "volumeMax",
@@ -728,8 +728,8 @@ describe("PositionManager", () => {
 
   describe("closeAllPositions", () => {
     it("closes positions across multiple modes", async () => {
-      allocator.setAllocation("volumeMax", 400_000_000);
-      allocator.setAllocation("profitHunter", 500_000_000);
+      allocator.setAllocation("volumeMax", 250_000_000);
+      allocator.setAllocation("profitHunter", 250_000_000);
 
       await pm.openPosition({
         mode: "volumeMax",

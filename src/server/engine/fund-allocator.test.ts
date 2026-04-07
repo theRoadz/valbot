@@ -197,10 +197,10 @@ describe("FundAllocator", () => {
 
   describe("cross-mode isolation", () => {
     it("allocating in one mode does not affect another", () => {
-      allocator.setAllocation("volumeMax", 400_000_000);
+      allocator.setAllocation("volumeMax", 300_000_000);
       allocator.setAllocation("profitHunter", 200_000_000);
 
-      allocator.reserve("volumeMax", 300_000_000);
+      allocator.reserve("volumeMax", 200_000_000);
 
       expect(allocator.getAllocation("profitHunter").remaining).toBe(200_000_000);
       expect(allocator.canAllocate("profitHunter", 200_000_000)).toBe(true);
@@ -251,20 +251,20 @@ describe("FundAllocator", () => {
     });
 
     it("loadFromDb restores state", async () => {
-      allocator.setAllocation("volumeMax", 500_000_000);
-      allocator.setAllocation("profitHunter", 300_000_000);
+      allocator.setAllocation("volumeMax", 300_000_000);
+      allocator.setAllocation("profitHunter", 200_000_000);
 
       // Create a new allocator and load from DB
       const allocator2 = new FundAllocator();
       await allocator2.loadFromDb();
 
       expect(allocator2.getAllocation("volumeMax")).toEqual({
-        allocation: 500_000_000,
-        remaining: 500_000_000,
-      });
-      expect(allocator2.getAllocation("profitHunter")).toEqual({
         allocation: 300_000_000,
         remaining: 300_000_000,
+      });
+      expect(allocator2.getAllocation("profitHunter")).toEqual({
+        allocation: 200_000_000,
+        remaining: 200_000_000,
       });
     });
   });
@@ -435,8 +435,8 @@ describe("FundAllocator", () => {
     });
 
     it("is independent per mode", () => {
-      allocator.setAllocation("volumeMax", 500_000_000);
-      allocator.setAllocation("profitHunter", 300_000_000);
+      allocator.setAllocation("volumeMax", 300_000_000);
+      allocator.setAllocation("profitHunter", 200_000_000);
       allocator.setPositionSize("volumeMax", 50_000_000);
       allocator.setPositionSize("profitHunter", 30_000_000);
 
@@ -457,6 +457,109 @@ describe("FundAllocator", () => {
       expect(() => {
         allocator.setAllocation("volumeMax", 1.5);
       }).toThrow(RangeError);
+    });
+  });
+
+  // === Task 2: Cross-mode isolation validation (Story 4-4) ===
+
+  describe("cross-mode fund isolation (parallel modes)", () => {
+    it("canAllocate respects per-mode budgets — mode A doesn't draw from mode B (2.1)", () => {
+      allocator.setAllocation("volumeMax", 200_000_000);
+      allocator.setAllocation("profitHunter", 300_000_000);
+
+      // volumeMax can only allocate up to its own 200M
+      expect(allocator.canAllocate("volumeMax", 200_000_000)).toBe(true);
+      expect(allocator.canAllocate("volumeMax", 201_000_000)).toBe(false);
+
+      // profitHunter has its own separate 300M
+      expect(allocator.canAllocate("profitHunter", 300_000_000)).toBe(true);
+      expect(allocator.canAllocate("profitHunter", 301_000_000)).toBe(false);
+
+      // Reserve from volumeMax — profitHunter unaffected
+      allocator.reserve("volumeMax", 150_000_000);
+      expect(allocator.canAllocate("profitHunter", 300_000_000)).toBe(true);
+      expect(allocator.canAllocate("volumeMax", 100_000_000)).toBe(false);
+    });
+
+    it("reserve/release for concurrent modes — mode A's reserve doesn't affect mode B (2.3)", () => {
+      allocator.setAllocation("volumeMax", 200_000_000);
+      allocator.setAllocation("profitHunter", 200_000_000);
+      allocator.setAllocation("arbitrage", 100_000_000);
+
+      // Reserve from all three modes
+      allocator.reserve("volumeMax", 100_000_000);
+      allocator.reserve("profitHunter", 150_000_000);
+      allocator.reserve("arbitrage", 50_000_000);
+
+      // Each mode's remaining reflects only its own reserves
+      expect(allocator.getAllocation("volumeMax").remaining).toBe(100_000_000);
+      expect(allocator.getAllocation("profitHunter").remaining).toBe(50_000_000);
+      expect(allocator.getAllocation("arbitrage").remaining).toBe(50_000_000);
+
+      // Release from one mode doesn't affect others
+      allocator.release("volumeMax", 100_000_000);
+      expect(allocator.getAllocation("volumeMax").remaining).toBe(200_000_000);
+      expect(allocator.getAllocation("profitHunter").remaining).toBe(50_000_000);
+      expect(allocator.getAllocation("arbitrage").remaining).toBe(50_000_000);
+    });
+
+    it("kill-switch triggers independently per mode — mode A's 10% loss doesn't affect mode B (2.4)", () => {
+      allocator.setAllocation("volumeMax", 250_000_000);
+      allocator.setAllocation("profitHunter", 250_000_000);
+
+      // volumeMax: simulate loss → remaining drops below 90% threshold
+      allocator.reserve("volumeMax", 200_000_000);
+      allocator.release("volumeMax", 160_000_000); // 40M lost, remaining = 210M (< 225M = 250M * 0.9)
+
+      expect(allocator.checkKillSwitch("volumeMax")).toBe(true);
+      // profitHunter untouched — no kill-switch
+      expect(allocator.checkKillSwitch("profitHunter")).toBe(false);
+
+      // profitHunter can still trade normally
+      expect(allocator.canAllocate("profitHunter", 250_000_000)).toBe(true);
+    });
+
+    it("total allocation validation: sum of all mode allocations cannot exceed maxAllocation (2.2 / 7.1)", () => {
+      // Default max is 500 USDC (500_000_000)
+      allocator.setAllocation("volumeMax", 200_000_000);
+      allocator.setAllocation("profitHunter", 200_000_000);
+
+      // This should work (total = 500M = max)
+      expect(() => allocator.setAllocation("arbitrage", 100_000_000)).not.toThrow();
+
+      // This should fail (total would be 200 + 200 + 200 = 600 > 500)
+      expect(() => allocator.setAllocation("arbitrage", 200_000_000)).toThrow();
+      try {
+        allocator.setAllocation("arbitrage", 200_000_000);
+      } catch (err: unknown) {
+        const e = err as { code: string; resolution: string };
+        expect(e.code).toBe("TOTAL_ALLOCATION_EXCEEDED");
+        expect(e.resolution).toContain("Available for arbitrage");
+      }
+
+      // Reducing one mode frees up space for another
+      allocator.setAllocation("volumeMax", 100_000_000);
+      // Now total = 100 + 200 + 100 = 400, so arbitrage can go up to 200
+      expect(() => allocator.setAllocation("arbitrage", 200_000_000)).not.toThrow();
+    });
+
+    it("reconcilePositions correctly attributes positions to the right mode after restart (2.5)", () => {
+      allocator.setAllocation("volumeMax", 200_000_000);
+      allocator.setAllocation("profitHunter", 200_000_000);
+      allocator.setAllocation("arbitrage", 100_000_000);
+
+      // Simulate crash recovery: open positions from multiple modes
+      allocator.reconcilePositions([
+        { mode: "volumeMax", size: 50_000_000 },
+        { mode: "profitHunter", size: 50_000_000 },
+        { mode: "arbitrage", size: 75_000_000 },
+        { mode: "volumeMax", size: 50_000_000 }, // second volumeMax position
+      ]);
+
+      // Each mode's remaining should reflect only its own positions
+      expect(allocator.getAllocation("volumeMax").remaining).toBe(100_000_000); // 200 - 50 - 50
+      expect(allocator.getAllocation("profitHunter").remaining).toBe(150_000_000); // 200 - 50
+      expect(allocator.getAllocation("arbitrage").remaining).toBe(25_000_000); // 100 - 75
     });
   });
 });

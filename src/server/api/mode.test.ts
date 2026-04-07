@@ -287,6 +287,24 @@ describe("mode routes", () => {
       expect(res.statusCode).toBe(400);
     });
 
+    it("returns error when allocation exceeds total across modes (Task 7.3)", async () => {
+      const mockAllocator = (_getMockFundAllocator as () => { setAllocation: ReturnType<typeof vi.fn> })();
+      const err = new Error("Total allocation across all modes would be $600, exceeding maximum of $500");
+      (err as any).name = "AppError";
+      (err as any).code = "TOTAL_ALLOCATION_EXCEEDED";
+      (err as any).severity = "warning";
+      (err as any).resolution = "Available for volumeMax: $100";
+      mockAllocator.setAllocation.mockImplementationOnce(() => { throw err; });
+
+      const res = await app.inject({
+        method: "PUT",
+        url: "/api/mode/volume-max/config",
+        payload: { allocation: 600 },
+      });
+      expect(res.statusCode).toBeGreaterThanOrEqual(400);
+      expect(mockAllocator.setAllocation).toHaveBeenCalled();
+    });
+
     it("strips additional properties in body", async () => {
       const res = await app.inject({
         method: "PUT",

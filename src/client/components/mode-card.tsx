@@ -109,6 +109,9 @@ function FundAllocationBar({
 
 export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
   const modeState = useStore((s) => s.modes[mode]);
+  const totalAllocated = useStore((s) =>
+    Object.values(s.modes).reduce((sum, m) => sum + m.allocation, 0),
+  );
   const setModeStatus = useStore((s) => s.setModeStatus);
   const setModeConfig = useStore((s) => s.setModeConfig);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -121,7 +124,9 @@ export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
   const [slippageFocused, setSlippageFocused] = useState(false);
   const [positionSizeInput, setPositionSizeInput] = useState("");
   const [positionSizeFocused, setPositionSizeFocused] = useState(false);
-  const { status, stats, allocation, positionSize, pairs, slippage, errorDetail, killSwitchDetail } = modeState;
+  const { status, stats, allocation, maxAllocation: modeMaxAllocation, positionSize, pairs, slippage, errorDetail, killSwitchDetail } = modeState;
+  const maxAlloc = modeMaxAllocation ?? 500;
+  const availableForMode = Math.max(0, maxAlloc - totalAllocated + allocation);
 
   const isRunning = status === "running" || status === "starting";
   const isDisabledToggle = allocation === 0 || status === "error" || status === "kill-switch" || status === "stopping";
@@ -208,6 +213,8 @@ export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
       api.updateModeConfig(mode, { allocation: numVal }).catch((err) => {
         setModeConfig(mode, { allocation: prevAllocation });
         if (prevStatus === "kill-switch") setModeStatus(mode, "kill-switch");
+        const msg = err instanceof Error ? err.message : "Allocation update failed";
+        toast.warning(msg);
         if (import.meta.env.DEV) console.error("[ModeCard] Allocation update failed:", err);
       });
     }
@@ -410,6 +417,7 @@ export function ModeCard({ mode, name, color, barColor }: ModeCardProps) {
             type="text"
             className="h-8 font-mono text-right text-sm"
             value={displayedAllocation}
+            placeholder={`Max ${formatCurrency(availableForMode)}`}
             onFocus={handleAllocationFocus}
             onChange={handleAllocationChange}
             onBlur={handleAllocationCommit}

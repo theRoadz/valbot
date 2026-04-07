@@ -80,9 +80,30 @@ function setupTestDb() {
   )`);
 }
 
+/** Zero out all mode allocations to prevent cross-test total allocation conflicts */
+function resetAllocations(fa: import("./fund-allocator.js").FundAllocator) {
+  for (const mode of ["volumeMax", "profitHunter", "arbitrage"] as const) {
+    try { fa.setAllocation(mode, 0); } catch { /* ignore if not yet initialized */ }
+  }
+}
+
 describe("engine/index", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setupTestDb();
+    // Reset allocations and mode status from previous tests
+    try {
+      const { getEngine, resetKillSwitch, getModeStatus, stopAllModes } = await import("./index.js");
+      const { fundAllocator, positionManager } = getEngine();
+      await stopAllModes();
+      for (const mode of ["volumeMax", "profitHunter", "arbitrage"] as const) {
+        // Clear kill-switch active flag and mode status
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (positionManager as any)._killSwitchActive.delete(mode);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (positionManager as any)._modeStatus.delete(mode);
+      }
+      resetAllocations(fundAllocator);
+    } catch { /* engine not yet initialized — ok */ }
   });
 
   afterEach(() => {
@@ -212,7 +233,9 @@ describe("engine/index", () => {
     fundAllocator.setAllocation("volumeMax", 400_000_000);
     fundAllocator.recordTrade("volumeMax", 100_000_000, -50_000_000);
 
-    // Set kill-switch state
+    // Set kill-switch state (ensure _killSwitchActive is clear — simulates completed close sweep)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (positionManager as any)._killSwitchActive.delete("volumeMax");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (positionManager as any)._modeStatus.set("volumeMax", "kill-switch");
     expect(getModeStatus("volumeMax")).toBe("kill-switch");
@@ -283,5 +306,253 @@ describe("engine/index", () => {
 
     await stopMode("profitHunter");
     expect(getModeStatus("profitHunter")).toBe("stopped");
+  });
+
+  // === Task 1: Parallel mode start/stop validation (Story 4-4) ===
+
+  it("startMode allows starting a second mode while first is running (1.1)", async () => {
+    const { initEngine, getEngine, startMode, getModeStatus, stopMode } = await import("./index.js");
+    await initEngine();
+
+    const { fundAllocator } = getEngine();
+    fundAllocator.setAllocation("volumeMax", 200_000_000);
+    fundAllocator.setAllocation("profitHunter", 200_000_000);
+
+    // Make oracle available for profitHunter
+    const { getOracleClient } = await import("./index.js");
+    const oracle = getOracleClient()!;
+    (oracle.isAvailable as any).mockReturnValue(true);
+
+    await startMode("volumeMax", { pairs: ["SOL/USDC"] });
+    expect(getModeStatus("volumeMax")).toBe("running");
+
+    await startMode("profitHunter", { pairs: ["SOL/USDC"] });
+    expect(getModeStatus("profitHunter")).toBe("running");
+
+    // Both should be running simultaneously
+    expect(getModeStatus("volumeMax")).toBe("running");
+    expect(getModeStatus("profitHunter")).toBe("running");
+
+    await stopMode("volumeMax");
+    await stopMode("profitHunter");
+  });
+
+  it("stopMode only stops the targeted mode, others continue (1.2)", async () => {
+    const { initEngine, getEngine, startMode, stopMode, getModeStatus, getOracleClient } = await import("./index.js");
+    await initEngine();
+
+    const { fundAllocator } = getEngine();
+    fundAllocator.setAllocation("volumeMax", 200_000_000);
+    fundAllocator.setAllocation("profitHunter", 200_000_000);
+
+    const oracle = getOracleClient()!;
+    (oracle.isAvailable as any).mockReturnValue(true);
+
+    await startMode("volumeMax", { pairs: ["SOL/USDC"] });
+    await startMode("profitHunter", { pairs: ["SOL/USDC"] });
+
+    // Stop only volumeMax
+    await stopMode("volumeMax");
+
+    expect(getModeStatus("volumeMax")).toBe("stopped");
+    expect(getModeStatus("profitHunter")).toBe("running");
+
+    await stopMode("profitHunter");
+  });
+
+  it("stopAllModes with Promise.allSettled handles mixed success/failure (1.3)", async () => {
+    const { initEngine, getEngine, startMode, stopAllModes, getModeStatus, getOracleClient } = await import("./index.js");
+    await initEngine();
+
+    const { fundAllocator } = getEngine();
+    fundAllocator.setAllocation("volumeMax", 200_000_000);
+    fundAllocator.setAllocation("profitHunter", 200_000_000);
+
+    const oracle = getOracleClient()!;
+    (oracle.isAvailable as any).mockReturnValue(true);
+
+    await startMode("volumeMax", { pairs: ["SOL/USDC"] });
+    await startMode("profitHunter", { pairs: ["SOL/USDC"] });
+
+    expect(getModeStatus("volumeMax")).toBe("running");
+    expect(getModeStatus("profitHunter")).toBe("running");
+
+    await stopAllModes();
+
+    expect(getModeStatus("volumeMax")).toBe("stopped");
+    expect(getModeStatus("profitHunter")).toBe("stopped");
+  });
+
+  it("mode lock prevents concurrent start/stop on same mode while allowing different modes (1.4)", async () => {
+    const { initEngine, getEngine, startMode, getOracleClient } = await import("./index.js");
+    await initEngine();
+
+    const { fundAllocator } = getEngine();
+    fundAllocator.setAllocation("volumeMax", 200_000_000);
+    fundAllocator.setAllocation("profitHunter", 200_000_000);
+
+    const oracle = getOracleClient()!;
+    (oracle.isAvailable as any).mockReturnValue(true);
+
+    // Start volumeMax — lock kicks in during start
+    const p1 = startMode("volumeMax", { pairs: ["SOL/USDC"] });
+    // Concurrent start of same mode should throw
+    const p2 = startMode("volumeMax", { pairs: ["SOL/USDC"] });
+    // But different mode should succeed concurrently
+    const p3 = startMode("profitHunter", { pairs: ["SOL/USDC"] });
+
+    await expect(p2).rejects.toThrow("transitioning");
+    await expect(p1).resolves.toBeUndefined();
+    await expect(p3).resolves.toBeUndefined();
+
+    const { stopAllModes } = await import("./index.js");
+    await stopAllModes();
+  });
+
+  it("kill-switch on one mode does NOT affect other running modes (1.5)", async () => {
+    const { initEngine, getEngine, getModeStatus, startMode, getOracleClient, stopAllModes } = await import("./index.js");
+    await initEngine();
+
+    const { fundAllocator, positionManager } = getEngine();
+    fundAllocator.setAllocation("volumeMax", 200_000_000);
+    fundAllocator.setAllocation("profitHunter", 200_000_000);
+
+    const oracle = getOracleClient()!;
+    (oracle.isAvailable as any).mockReturnValue(true);
+
+    await startMode("volumeMax", { pairs: ["SOL/USDC"] });
+    await startMode("profitHunter", { pairs: ["SOL/USDC"] });
+
+    // Simulate kill-switch on volumeMax
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (positionManager as any)._modeStatus.set("volumeMax", "kill-switch");
+
+    expect(getModeStatus("volumeMax")).toBe("kill-switch");
+    // profitHunter should be completely unaffected
+    expect(getModeStatus("profitHunter")).toBe("running");
+
+    await stopAllModes();
+  });
+
+  // === Task 8: Full parallel scenario integration tests (Story 4-4) ===
+
+  it("start volumeMax → start profitHunter → both running → stop volumeMax → profitHunter still running (8.1)", async () => {
+    const { initEngine, getEngine, startMode, stopMode, getModeStatus, getOracleClient, stopAllModes } = await import("./index.js");
+    await initEngine();
+
+    const { fundAllocator } = getEngine();
+    fundAllocator.setAllocation("volumeMax", 200_000_000);
+    fundAllocator.setAllocation("profitHunter", 200_000_000);
+
+    const oracle = getOracleClient()!;
+    (oracle.isAvailable as any).mockReturnValue(true);
+
+    // Step 1: Start volumeMax
+    await startMode("volumeMax", { pairs: ["SOL/USDC"] });
+    expect(getModeStatus("volumeMax")).toBe("running");
+
+    // Step 2: Start profitHunter alongside
+    await startMode("profitHunter", { pairs: ["SOL/USDC"] });
+    expect(getModeStatus("volumeMax")).toBe("running");
+    expect(getModeStatus("profitHunter")).toBe("running");
+
+    // Step 3: Stop volumeMax only
+    await stopMode("volumeMax");
+    expect(getModeStatus("volumeMax")).toBe("stopped");
+    expect(getModeStatus("profitHunter")).toBe("running");
+
+    await stopAllModes();
+  });
+
+  it("all three modes started → one hits kill-switch → other two continue unaffected (8.2)", async () => {
+    const { initEngine, getEngine, startMode, getModeStatus, getOracleClient, stopAllModes } = await import("./index.js");
+    await initEngine();
+
+    const { fundAllocator, positionManager } = getEngine();
+    fundAllocator.setAllocation("volumeMax", 150_000_000);
+    fundAllocator.setAllocation("profitHunter", 150_000_000);
+    fundAllocator.setAllocation("arbitrage", 150_000_000);
+
+    const oracle = getOracleClient()!;
+    (oracle.isAvailable as any).mockReturnValue(true);
+    const { getBlockchainClient } = await import("../blockchain/client.js");
+    (getBlockchainClient as any).mockReturnValue({ exchange: {}, info: {} });
+
+    await startMode("volumeMax", { pairs: ["SOL/USDC"] });
+    await startMode("profitHunter", { pairs: ["SOL/USDC"] });
+    await startMode("arbitrage", { pairs: ["SOL/USDC"] });
+
+    expect(getModeStatus("volumeMax")).toBe("running");
+    expect(getModeStatus("profitHunter")).toBe("running");
+    expect(getModeStatus("arbitrage")).toBe("running");
+
+    // Simulate error on arbitrage via kill-switch (since we can't easily trigger a strategy error)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (positionManager as any)._modeStatus.set("arbitrage", "kill-switch");
+
+    expect(getModeStatus("arbitrage")).toBe("kill-switch");
+    expect(getModeStatus("volumeMax")).toBe("running");
+    expect(getModeStatus("profitHunter")).toBe("running");
+
+    // Reset blockchain client mock to prevent side effects
+    (getBlockchainClient as any).mockReturnValue(null);
+    await stopAllModes();
+  });
+
+  it("all three modes → stopAllModes → all stopped (8.3)", async () => {
+    const { initEngine, getEngine, startMode, stopAllModes, getModeStatus, getOracleClient } = await import("./index.js");
+    await initEngine();
+
+    const { fundAllocator } = getEngine();
+    fundAllocator.setAllocation("volumeMax", 150_000_000);
+    fundAllocator.setAllocation("profitHunter", 150_000_000);
+    fundAllocator.setAllocation("arbitrage", 150_000_000);
+
+    const oracle = getOracleClient()!;
+    (oracle.isAvailable as any).mockReturnValue(true);
+    const { getBlockchainClient } = await import("../blockchain/client.js");
+    (getBlockchainClient as any).mockReturnValue({ exchange: {}, info: {} });
+
+    await startMode("volumeMax", { pairs: ["SOL/USDC"] });
+    await startMode("profitHunter", { pairs: ["SOL/USDC"] });
+    await startMode("arbitrage", { pairs: ["SOL/USDC"] });
+
+    expect(getModeStatus("volumeMax")).toBe("running");
+    expect(getModeStatus("profitHunter")).toBe("running");
+    expect(getModeStatus("arbitrage")).toBe("running");
+
+    await stopAllModes();
+
+    expect(getModeStatus("volumeMax")).toBe("stopped");
+    expect(getModeStatus("profitHunter")).toBe("stopped");
+    expect(getModeStatus("arbitrage")).toBe("stopped");
+
+    (getBlockchainClient as any).mockReturnValue(null);
+  });
+
+  it("mode start fails (oracle unavailable) while other modes running — no disruption (8.4)", async () => {
+    const { initEngine, getEngine, startMode, getModeStatus, getOracleClient, stopAllModes } = await import("./index.js");
+    await initEngine();
+
+    const { fundAllocator } = getEngine();
+    fundAllocator.setAllocation("volumeMax", 250_000_000);
+    fundAllocator.setAllocation("profitHunter", 250_000_000);
+
+    // Start volumeMax (no oracle needed)
+    await startMode("volumeMax", { pairs: ["SOL/USDC"] });
+    expect(getModeStatus("volumeMax")).toBe("running");
+
+    // Try to start profitHunter with oracle unavailable
+    const oracle = getOracleClient()!;
+    (oracle.isAvailable as any).mockReturnValue(false);
+
+    await expect(startMode("profitHunter", { pairs: ["SOL/USDC"] }))
+      .rejects.toThrow("requires live oracle price data");
+
+    // volumeMax should be unaffected by profitHunter's failure
+    expect(getModeStatus("volumeMax")).toBe("running");
+    expect(getModeStatus("profitHunter")).toBe("stopped");
+
+    await stopAllModes();
   });
 });

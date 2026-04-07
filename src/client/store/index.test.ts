@@ -1351,4 +1351,321 @@ describe("ValBotStore", () => {
       expect(useStore.getState().alerts[0].mode).toBe("volumeMax");
     });
   });
+
+  // === Tasks 3-6: Multi-mode store validation (Story 4-4) ===
+
+  describe("aggregateSummaryStats multi-mode (Story 4-4)", () => {
+    it("aggregates stats from all running modes (3.1)", () => {
+      // Set stats for all three modes
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pnl: 10, trades: 5, volume: 500, allocated: 200, remaining: 100 },
+      });
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: 1001,
+        data: { mode: "profitHunter", pnl: 20, trades: 3, volume: 300, allocated: 150, remaining: 80 },
+      });
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: 1002,
+        data: { mode: "arbitrage", pnl: -5, trades: 2, volume: 100, allocated: 100, remaining: 50 },
+      });
+
+      const stats = useStore.getState().stats;
+      expect(stats.totalPnl).toBe(25); // 10 + 20 + (-5)
+      expect(stats.totalTrades).toBe(10); // 5 + 3 + 2
+      expect(stats.totalVolume).toBe(900); // 500 + 300 + 100
+    });
+
+    it("updates aggregation when a mode stops — final stats still included (3.2)", () => {
+      // Set stats for two modes
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pnl: 10, trades: 5, volume: 500, allocated: 200, remaining: 100 },
+      });
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: 1001,
+        data: { mode: "profitHunter", pnl: 15, trades: 3, volume: 300, allocated: 150, remaining: 80 },
+      });
+
+      // Stop volumeMax with finalStats
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STOPPED,
+        timestamp: 1002,
+        data: { mode: "volumeMax", finalStats: { pnl: 12, trades: 6, volume: 550, allocated: 200, remaining: 120 } },
+      });
+
+      const stats = useStore.getState().stats;
+      // Stopped mode's final stats are included in aggregation
+      expect(stats.totalPnl).toBe(27); // 12 (volumeMax final) + 15 (profitHunter)
+      expect(stats.totalTrades).toBe(9); // 6 + 3
+    });
+
+    it("stats persist on mode re-start — NOT reset to zero (3.3)", () => {
+      // Set stats
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pnl: 10, trades: 5, volume: 500, allocated: 200, remaining: 100 },
+      });
+
+      // Stop mode
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STOPPED,
+        timestamp: 1001,
+        data: { mode: "volumeMax", finalStats: { pnl: 10, trades: 5, volume: 500, allocated: 200, remaining: 100 } },
+      });
+
+      // Re-start mode — stats should persist (MODE_STARTED does NOT reset stats)
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STARTED,
+        timestamp: 1002,
+        data: { mode: "volumeMax" },
+      });
+
+      const modeState = useStore.getState().modes.volumeMax;
+      expect(modeState.status).toBe("running");
+      expect(modeState.stats.pnl).toBe(10); // preserved, not zero
+      expect(modeState.stats.trades).toBe(5); // preserved
+      expect(modeState.stats.volume).toBe(500); // preserved
+    });
+
+    it("handles partial mode states (1 running, 1 stopped, 1 error) (3.4)", () => {
+      // volumeMax: running with stats
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STARTED,
+        timestamp: 1000,
+        data: { mode: "volumeMax" },
+      });
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: 1001,
+        data: { mode: "volumeMax", pnl: 10, trades: 5, volume: 500, allocated: 200, remaining: 100 },
+      });
+
+      // profitHunter: stopped with final stats
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: 1002,
+        data: { mode: "profitHunter", pnl: 8, trades: 2, volume: 200, allocated: 150, remaining: 80 },
+      });
+
+      // arbitrage: error state
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: 1003,
+        data: { mode: "arbitrage", pnl: -3, trades: 1, volume: 50, allocated: 100, remaining: 50 },
+      });
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_ERROR,
+        timestamp: 1004,
+        data: { mode: "arbitrage", error: { code: "TEST", message: "test error", details: null } },
+      });
+
+      const stats = useStore.getState().stats;
+      // All modes' stats included regardless of running/stopped/error status
+      expect(stats.totalPnl).toBe(15); // 10 + 8 + (-3)
+      expect(stats.totalTrades).toBe(8); // 5 + 2 + 1
+      expect(stats.totalVolume).toBe(750); // 500 + 200 + 50
+    });
+  });
+
+  // Task 4: Trade log interleaving and mode tagging
+  describe("trade log multi-mode interleaving (Story 4-4)", () => {
+    it("TRADE_EXECUTED from different modes appear in chronological order with correct mode tags (4.1, 4.2)", () => {
+      const trades = [
+        { mode: "volumeMax", pair: "SOL/USDC", side: "Long", size: 100, price: 50, pnl: 5, fees: 0.1 },
+        { mode: "profitHunter", pair: "ETH/USDC", side: "Short", size: 200, price: 3000, pnl: -10, fees: 0.2 },
+        { mode: "arbitrage", pair: "BTC/USDC", side: "Long", size: 50, price: 60000, pnl: 15, fees: 0.3 },
+        { mode: "volumeMax", pair: "SOL/USDC", side: "Short", size: 100, price: 51, pnl: 2, fees: 0.1 },
+      ];
+
+      trades.forEach((t, i) => {
+        useStore.getState().handleWsMessage({
+          event: EVENTS.TRADE_EXECUTED,
+          timestamp: 1000 + i,
+          data: t,
+        });
+      });
+
+      const storedTrades = useStore.getState().trades;
+      expect(storedTrades).toHaveLength(4);
+
+      // Chronological order preserved
+      expect(storedTrades[0].timestamp).toBe(1000);
+      expect(storedTrades[3].timestamp).toBe(1003);
+
+      // Mode tags present on each trade
+      expect(storedTrades[0].mode).toBe("volumeMax");
+      expect(storedTrades[1].mode).toBe("profitHunter");
+      expect(storedTrades[2].mode).toBe("arbitrage");
+      expect(storedTrades[3].mode).toBe("volumeMax");
+    });
+
+    it("trade log respects 500 entry limit with multi-mode trades (4.3)", () => {
+      // Fill 500 trades from multiple modes
+      for (let i = 0; i < 510; i++) {
+        const modes = ["volumeMax", "profitHunter", "arbitrage"] as const;
+        useStore.getState().handleWsMessage({
+          event: EVENTS.TRADE_EXECUTED,
+          timestamp: 1000 + i,
+          data: { mode: modes[i % 3], pair: "SOL/USDC", side: "Long", size: 10, price: 50, pnl: 1, fees: 0.01 },
+        });
+      }
+
+      const storedTrades = useStore.getState().trades;
+      expect(storedTrades.length).toBeLessThanOrEqual(500);
+      // Most recent trades preserved
+      expect(storedTrades[storedTrades.length - 1].timestamp).toBe(1509);
+    });
+  });
+
+  // Task 5: PositionsTable multi-mode display
+  describe("positions multi-mode display (Story 4-4)", () => {
+    it("positions from all modes appear with correct mode tag (5.1)", () => {
+      const positions = [
+        { mode: "volumeMax", pair: "SOL/USDC", side: "Long", size: 100, entryPrice: 50, stopLoss: 45 },
+        { mode: "profitHunter", pair: "ETH/USDC", side: "Short", size: 200, entryPrice: 3000, stopLoss: 3200 },
+        { mode: "arbitrage", pair: "BTC/USDC", side: "Long", size: 50, entryPrice: 60000, stopLoss: 55000 },
+      ];
+
+      positions.forEach((p, i) => {
+        useStore.getState().handleWsMessage({
+          event: EVENTS.POSITION_OPENED,
+          timestamp: 1000 + i,
+          data: p,
+        });
+      });
+
+      const storedPositions = useStore.getState().positions;
+      expect(storedPositions).toHaveLength(3);
+      expect(storedPositions[0].mode).toBe("volumeMax");
+      expect(storedPositions[1].mode).toBe("profitHunter");
+      expect(storedPositions[2].mode).toBe("arbitrage");
+    });
+
+    it("closing position from one mode doesn't affect positions from other modes (5.2)", () => {
+      // Open positions for two modes
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_OPENED,
+        timestamp: 1000,
+        data: { mode: "volumeMax", pair: "SOL/USDC", side: "Long", size: 100, entryPrice: 50, stopLoss: 45 },
+      });
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_OPENED,
+        timestamp: 1001,
+        data: { mode: "profitHunter", pair: "ETH/USDC", side: "Short", size: 200, entryPrice: 3000, stopLoss: 3200 },
+      });
+
+      expect(useStore.getState().positions).toHaveLength(2);
+
+      // Close the volumeMax position
+      useStore.getState().handleWsMessage({
+        event: EVENTS.POSITION_CLOSED,
+        timestamp: 1002,
+        data: { mode: "volumeMax", pair: "SOL/USDC", side: "Long", size: 100, exitPrice: 52, pnl: 4 },
+      });
+
+      // profitHunter position still present (volumeMax enters closingPositions animation)
+      const positions = useStore.getState().positions;
+      const profitHunterPos = positions.find((p) => p.mode === "profitHunter");
+      expect(profitHunterPos).toBeDefined();
+      expect(profitHunterPos!.pair).toBe("ETH/USDC");
+      // volumeMax position removed (or in closingPositions), total count should reflect the close
+      const activeNonClosing = positions.filter((p) => p.mode !== "volumeMax");
+      expect(activeNonClosing).toHaveLength(1);
+    });
+  });
+
+  // Task 6: ModeCard independent state management
+  describe("ModeCard independent state isolation (Story 4-4)", () => {
+    it("toggling mode A does not change mode B's badge, stats, or controls (6.1)", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STARTED,
+        timestamp: 1000,
+        data: { mode: "volumeMax" },
+      });
+
+      expect(useStore.getState().modes.volumeMax.status).toBe("running");
+      expect(useStore.getState().modes.profitHunter.status).toBe("stopped");
+      expect(useStore.getState().modes.arbitrage.status).toBe("stopped");
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STOPPED,
+        timestamp: 1001,
+        data: { mode: "volumeMax" },
+      });
+
+      expect(useStore.getState().modes.volumeMax.status).toBe("stopped");
+      expect(useStore.getState().modes.profitHunter.status).toBe("stopped");
+      expect(useStore.getState().modes.arbitrage.status).toBe("stopped");
+    });
+
+    it("error state in mode A does not disable controls in mode B (6.2)", () => {
+      // Start both modes
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STARTED,
+        timestamp: 1000,
+        data: { mode: "volumeMax" },
+      });
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STARTED,
+        timestamp: 1001,
+        data: { mode: "profitHunter" },
+      });
+
+      // Error on volumeMax
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_ERROR,
+        timestamp: 1002,
+        data: { mode: "volumeMax", error: { code: "TEST_ERROR", message: "test", details: null } },
+      });
+
+      expect(useStore.getState().modes.volumeMax.status).toBe("error");
+      expect(useStore.getState().modes.volumeMax.errorDetail).toBeTruthy();
+      // profitHunter completely unaffected
+      expect(useStore.getState().modes.profitHunter.status).toBe("running");
+      expect(useStore.getState().modes.profitHunter.errorDetail).toBeNull();
+    });
+
+    it("kill-switch in mode A shows kill-switch only on mode A, others remain unaffected (6.3)", () => {
+      // Start all three modes
+      useStore.getState().handleWsMessage({ event: EVENTS.MODE_STARTED, timestamp: 1000, data: { mode: "volumeMax" } });
+      useStore.getState().handleWsMessage({ event: EVENTS.MODE_STARTED, timestamp: 1001, data: { mode: "profitHunter" } });
+      useStore.getState().handleWsMessage({ event: EVENTS.MODE_STARTED, timestamp: 1002, data: { mode: "arbitrage" } });
+
+      // Kill-switch on volumeMax
+      useStore.getState().handleWsMessage({
+        event: EVENTS.ALERT_TRIGGERED,
+        timestamp: 1003,
+        data: {
+          severity: "critical",
+          code: "KILL_SWITCH_TRIGGERED",
+          message: "Kill switch triggered on volumeMax",
+          details: "mode: volumeMax",
+          resolution: "Re-allocate funds",
+          mode: "volumeMax",
+          positionsClosed: 2,
+          lossAmount: 50,
+        },
+      });
+
+      // MODE_STOPPED from forceStop — should be IGNORED because kill-switch is already set
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STOPPED,
+        timestamp: 1004,
+        data: { mode: "volumeMax" },
+      });
+
+      expect(useStore.getState().modes.volumeMax.status).toBe("kill-switch");
+      expect(useStore.getState().modes.volumeMax.killSwitchDetail).toEqual({ positionsClosed: 2, lossAmount: 50 });
+      // Others remain running
+      expect(useStore.getState().modes.profitHunter.status).toBe("running");
+      expect(useStore.getState().modes.arbitrage.status).toBe("running");
+    });
+  });
 });

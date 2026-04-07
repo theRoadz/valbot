@@ -160,6 +160,13 @@
 
 - `positionSize` updated while strategy is running not reflected until restart [engine/index.ts:88] — strategies snapshot config at construction; live config re-read is a broader architecture change
 
+## Deferred from: code review of story 4-4-parallel-mode-execution-and-independent-control (2026-04-07)
+
+- [ ] `loadFromDb` bypasses cross-mode total allocation validation — could restore over-allocated state after maxAllocation reduction [src/server/engine/fund-allocator.ts:148-181]
+- [ ] `setMaxAllocation` doesn't clamp or warn when existing allocations already exceed new max [src/server/engine/fund-allocator.ts:199-225]
+- [ ] `setAllocation(mode, 0)` with open positions leaves stale accounting — remaining capped at 0, released funds lost from accounting [src/server/engine/fund-allocator.ts]
+- [ ] No negative allocation guard on server `setAllocation` — API schema validates but direct engine calls don't [src/server/engine/fund-allocator.ts]
+
 ## Deferred from: code review of story 4-3-arbitrage-strategy (2026-04-06)
 
 - ~~No staleness guard on oracle `publishTime` after SSE reconnection~~ — resolved: added `publish_time` freshness check in `updatePrice()` — rejects prices where `receiveTime - publishTime > 30s` before creating/updating priceMap entry
