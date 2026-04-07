@@ -89,7 +89,7 @@ export function TradeHistoryTable() {
                 type="button"
                 onClick={goToPrevPage}
                 disabled={currentPage === 0}
-                className="text-xs px-2 py-1 rounded bg-surface-elevated text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="text-xs px-2 py-1 rounded bg-surface-elevated text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 Previous
               </button>
@@ -100,7 +100,7 @@ export function TradeHistoryTable() {
                 type="button"
                 onClick={goToNextPage}
                 disabled={currentPage >= totalPages - 1}
-                className="text-xs px-2 py-1 rounded bg-surface-elevated text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="text-xs px-2 py-1 rounded bg-surface-elevated text-text-secondary hover:text-text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 Next
               </button>

@@ -60,6 +60,13 @@ describe('App (Dashboard Layout)', () => {
     expect(root?.className).toContain('h-screen');
   });
 
+  it('wraps content area in a <main> landmark element', () => {
+    const { container } = render(<App />);
+    const mainEl = container.querySelector('main');
+    expect(mainEl).not.toBeNull();
+    expect(mainEl?.tagName).toBe('MAIN');
+  });
+
   it('mounts the Toaster component', () => {
     const { container } = render(<App />);
     // Sonner Toaster renders an <ol> or section within the root — verify it does not throw

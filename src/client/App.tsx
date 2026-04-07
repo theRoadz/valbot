@@ -36,7 +36,7 @@ function App() {
       <Toaster />
       <AlertBanner alerts={bannerAlerts} onDismiss={dismissAlert} />
 
-      <div className="grid grid-rows-[auto_auto_1fr] flex-1 min-h-0 gap-4 p-4">
+      <main className="grid grid-rows-[auto_auto_1fr] flex-1 min-h-0 gap-4 p-4">
         {/* Top Bar */}
         <TopBar />
 
@@ -58,7 +58,7 @@ function App() {
           </div>
           <TradeLog />
         </div>
-      </div>
+      </main>
     </div>
   );
 }

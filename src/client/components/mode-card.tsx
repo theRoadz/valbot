@@ -119,6 +119,8 @@ export function ModeCard({ mode, name, description, color, barColor }: ModeCardP
   const abortRef = useRef<AbortController | null>(null);
   const togglingRef = useRef(false);
   const [pairDropdownOpen, setPairDropdownOpen] = useState(false);
+  const pairTriggerRef = useRef<HTMLButtonElement>(null);
+  const pairDropdownRef = useRef<HTMLDivElement>(null);
   const [allocationInput, setAllocationInput] = useState("");
   const [allocationFocused, setAllocationFocused] = useState(false);
   const [slippageInput, setSlippageInput] = useState("");
@@ -308,6 +310,29 @@ export function ModeCard({ mode, name, description, color, barColor }: ModeCardP
     if (e.key === "Enter") (e.target as HTMLInputElement).blur();
   };
 
+  // Focus first checkbox when pair dropdown opens
+  useEffect(() => {
+    if (pairDropdownOpen && pairDropdownRef.current) {
+      const firstCheckbox = pairDropdownRef.current.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      firstCheckbox?.focus();
+    }
+  }, [pairDropdownOpen]);
+
+  // Close pair dropdown on click outside
+  useEffect(() => {
+    if (!pairDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        pairDropdownRef.current && !pairDropdownRef.current.contains(e.target as Node) &&
+        pairTriggerRef.current && !pairTriggerRef.current.contains(e.target as Node)
+      ) {
+        setPairDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [pairDropdownOpen]);
+
   // Pair selector handlers
   const pairTogglingRef = useRef(false);
   const handlePairToggle = (pair: string) => {
@@ -435,19 +460,37 @@ export function ModeCard({ mode, name, description, color, barColor }: ModeCardP
         {/* Pair Selector */}
         <div className="mt-3 relative">
           <button
+            ref={pairTriggerRef}
             type="button"
             className={cn(
-              "w-full h-8 px-3 text-left text-sm rounded-md border border-input bg-background",
+              "w-full h-8 px-3 text-left text-sm rounded-md border border-input bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               isControlsDisabled && "opacity-50 cursor-not-allowed",
             )}
             onClick={() => !isControlsDisabled && setPairDropdownOpen(!pairDropdownOpen)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && pairDropdownOpen) {
+                setPairDropdownOpen(false);
+              }
+            }}
             disabled={isControlsDisabled}
+            aria-expanded={pairDropdownOpen}
             aria-label={`Select trading pairs for ${name}`}
           >
             {pairs.length > 0 ? pairs.join(", ") : "Select pairs..."}
           </button>
           {pairDropdownOpen && !isControlsDisabled && (
-            <div className="absolute z-10 mt-1 w-full rounded-md border border-input bg-background shadow-lg">
+            <div
+              ref={pairDropdownRef}
+              role="group"
+              aria-label="Trading pairs"
+              className="absolute z-10 mt-1 w-full rounded-md border border-input bg-background shadow-lg"
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setPairDropdownOpen(false);
+                  pairTriggerRef.current?.focus();
+                }
+              }}
+            >
               {AVAILABLE_PAIRS.map((pair) => (
                 <label
                   key={pair}
@@ -483,6 +526,7 @@ export function ModeCard({ mode, name, description, color, barColor }: ModeCardP
             onBlur={handleSlippageCommit}
             onKeyDown={handleSlippageKeyDown}
             disabled={isControlsDisabled}
+            aria-label={`Slippage for ${name}`}
           />
         </div>
 

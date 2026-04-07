@@ -444,6 +444,30 @@ describe("ModeCard", () => {
       expect(liveElements.length).toBeGreaterThanOrEqual(4);
     });
 
+    it("has aria-expanded on pair dropdown trigger", async () => {
+      const user = userEvent.setup();
+      render(<ModeCard {...defaultProps} />);
+      const btn = screen.getByLabelText("Select trading pairs for Volume Max");
+      expect(btn).toHaveAttribute("aria-expanded", "false");
+      await user.click(btn);
+      expect(btn).toHaveAttribute("aria-expanded", "true");
+    });
+
+    it("pair dropdown has role group and aria-label", async () => {
+      const user = userEvent.setup();
+      render(<ModeCard {...defaultProps} />);
+      const btn = screen.getByLabelText("Select trading pairs for Volume Max");
+      await user.click(btn);
+      const group = document.querySelector('[role="group"]');
+      expect(group).not.toBeNull();
+      expect(group).toHaveAttribute("aria-label", "Trading pairs");
+    });
+
+    it("has aria-label on slippage input", () => {
+      render(<ModeCard {...defaultProps} />);
+      expect(screen.getByLabelText("Slippage for Volume Max")).toBeInTheDocument();
+    });
+
     it("has aria-live assertive on error section", () => {
       useStore.setState((s) => ({
         modes: {

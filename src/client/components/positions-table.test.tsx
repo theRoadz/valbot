@@ -153,6 +153,15 @@ describe('PositionsTable', () => {
     expect(screen.queryByText('No open positions')).not.toBeInTheDocument();
   });
 
+  it('table header cells have scope="col" attribute', () => {
+    render(<PositionsTable />);
+    const thElements = document.querySelectorAll('th');
+    expect(thElements.length).toBeGreaterThan(0);
+    for (const th of thElements) {
+      expect(th).toHaveAttribute('scope', 'col');
+    }
+  });
+
   it('number header cells have text-right alignment', () => {
     render(<PositionsTable />);
 

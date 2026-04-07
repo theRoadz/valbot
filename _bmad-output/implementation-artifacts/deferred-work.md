@@ -190,3 +190,7 @@
 - ~~Unsanitized ModeType strings interpolated into API URL paths [src/client/lib/api.ts:64,84,103]~~ — resolved: added `encodeURIComponent(mode)` to all API URL path interpolations and query parameters
 - ~~WS events silently dropped before `loadInitialStatus` completes [src/client/store/index.ts]~~ — resolved: added `initialized` flag to store; WebSocket hook now defers connection until after `loadInitialStatus` sets `initialized: true`
 - [ ] No WS event for runtime strategy registration [src/client/store/index.ts] — strategies only loaded at startup via HTTP; runtime hot-registration not supported (requires new server-side WS event)
+
+## Deferred from: code review of story 7-1-accessibility-baseline-audit-and-fixes (2026-04-07)
+
+- ~~No click-outside-to-close handler on pair dropdown [src/client/components/mode-card.tsx]~~ — resolved: added mousedown listener that closes dropdown when clicking outside trigger and dropdown container

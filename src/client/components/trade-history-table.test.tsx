@@ -227,6 +227,32 @@ describe("TradeHistoryTable", () => {
     expect(screen.queryByText("No trade history")).not.toBeInTheDocument();
   });
 
+  it("pagination buttons have focus-visible ring classes", () => {
+    useStore.setState({
+      tradeHistory: {
+        trades: Array.from({ length: 50 }, (_, i) => makeTrade({ id: i + 1 })),
+        total: 100,
+        page: 0,
+        loading: false,
+      },
+    });
+
+    render(<TradeHistoryTable />);
+    const prevBtn = screen.getByText("Previous");
+    const nextBtn = screen.getByText("Next");
+    expect(prevBtn.className).toContain("focus-visible:ring-2");
+    expect(nextBtn.className).toContain("focus-visible:ring-2");
+  });
+
+  it('table header cells have scope="col" attribute', () => {
+    render(<TradeHistoryTable />);
+    const thElements = document.querySelectorAll("th");
+    expect(thElements.length).toBeGreaterThan(0);
+    for (const th of thElements) {
+      expect(th).toHaveAttribute("scope", "col");
+    }
+  });
+
   it("number header cells have text-right alignment", () => {
     render(<TradeHistoryTable />);
 

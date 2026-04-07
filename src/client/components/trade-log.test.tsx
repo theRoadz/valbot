@@ -122,4 +122,10 @@ describe("TradeLog", () => {
     render(<TradeLog />);
     expect(screen.getByText("Live Trade Log")).toBeInTheDocument();
   });
+
+  it("CardTitle renders as h2 element", () => {
+    render(<TradeLog />);
+    const heading = screen.getByText("Live Trade Log");
+    expect(heading.tagName).toBe("H2");
+  });
 });

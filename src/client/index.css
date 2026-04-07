@@ -13,7 +13,7 @@
   --secondary: #1a1a26;
   --secondary-foreground: #f1f5f9;
   --muted: #1a1a26;
-  --muted-foreground: #64748b;
+  --muted-foreground: #8b95a5;
   --accent: #1a1a26;
   --accent-foreground: #f1f5f9;
   --destructive: #ef4444;
@@ -34,7 +34,7 @@
   --accent-blue: #3b82f6;
   --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-muted: #8b95a5;
   --mode-volume: #8b5cf6;
   --mode-profit: #22c55e;
   --mode-arb: #06b6d4;
@@ -86,7 +86,7 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
   body {
     @apply bg-background text-foreground;
