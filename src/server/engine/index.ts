@@ -10,6 +10,7 @@ import { OracleClient } from "../blockchain/oracle.js";
 import { getMidPrice } from "../blockchain/contracts.js";
 import { getBlockchainClient } from "../blockchain/client.js";
 import { broadcast } from "../ws/broadcaster.js";
+import { SessionManager } from "./session-manager.js";
 import { logger } from "../lib/logger.js";
 import {
   engineNotInitializedError,
@@ -21,8 +22,10 @@ import {
 
 let fundAllocator: FundAllocator | null = null;
 let positionManager: PositionManager | null = null;
+let sessionManager: SessionManager | null = null;
 let oracleClient: OracleClient | null = null;
 let modeRunners: Map<ModeType, ModeRunner> = new Map();
+const activeSessions: Map<ModeType, number> = new Map();
 const modeLocks: Set<ModeType> = new Set();
 
 export async function initEngine(): Promise<void> {
@@ -32,19 +35,40 @@ export async function initEngine(): Promise<void> {
   }
 
   fundAllocator = new FundAllocator();
-  positionManager = new PositionManager(fundAllocator, broadcast, (mode) => {
-    const runner = modeRunners.get(mode);
-    if (!runner) return;
-    // Guard: if kill-switch was reset and a new runner started between closeAllForMode
-    // completing and this callback firing, the mode status would no longer be "kill-switch".
-    // Only stop the runner if the mode is still in kill-switch state.
-    if (positionManager!.getModeStatus(mode) !== "kill-switch") return;
-    runner.forceStop();
-    modeRunners.delete(mode);
-  });
+  sessionManager = new SessionManager();
+  positionManager = new PositionManager(
+    fundAllocator,
+    broadcast,
+    (mode) => {
+      const runner = modeRunners.get(mode);
+      if (!runner) return;
+      // Guard: if kill-switch was reset and a new runner started between closeAllForMode
+      // completing and this callback firing, the mode status would no longer be "kill-switch".
+      // Only stop the runner if the mode is still in kill-switch state.
+      if (positionManager!.getModeStatus(mode) !== "kill-switch") return;
+      runner.forceStop();
+      modeRunners.delete(mode);
+
+      // Finalize the killed mode's session
+      const sessionId = activeSessions.get(mode);
+      if (sessionId != null && sessionManager) {
+        sessionManager.finalizeSession(sessionId);
+        activeSessions.delete(mode);
+      }
+    },
+    (mode, size, pnl) => {
+      const sessionId = activeSessions.get(mode);
+      if (sessionId != null && sessionManager) {
+        sessionManager.updateSession(sessionId, size, pnl);
+      }
+    },
+  );
 
   await fundAllocator.loadFromDb();
   await positionManager.loadFromDb();
+
+  // Finalize any orphaned sessions from a previous crash (before reconciliation)
+  sessionManager.finalizeOrphanedSessions();
 
   // Reconcile: subtract open position sizes from fund allocator remaining
   const openPositions = positionManager.getInternalPositions();
@@ -129,6 +153,18 @@ export async function startMode(
 
     await runner.start();
     modeRunners.set(mode, runner);
+
+    // Start session tracking for this mode
+    if (sessionManager) {
+      // Finalize any existing session for this mode (guard against double-start orphaning)
+      const existingSessionId = activeSessions.get(mode);
+      if (existingSessionId != null) {
+        sessionManager.finalizeSession(existingSessionId);
+        activeSessions.delete(mode);
+      }
+      const sessionId = sessionManager.startSession(mode);
+      activeSessions.set(mode, sessionId);
+    }
   } finally {
     modeLocks.delete(mode);
   }
@@ -148,6 +184,13 @@ export async function stopMode(mode: ModeType): Promise<void> {
   try {
     await runner.stop();
     modeRunners.delete(mode);
+
+    // Finalize session for this mode
+    const sessionId = activeSessions.get(mode);
+    if (sessionId != null && sessionManager) {
+      sessionManager.finalizeSession(sessionId);
+      activeSessions.delete(mode);
+    }
   } finally {
     modeLocks.delete(mode);
   }
@@ -186,14 +229,29 @@ export async function stopAllModes(): Promise<void> {
   }
 
   modeRunners.clear();
+
+  // Finalize all active sessions after all runners have stopped
+  // Snapshot and clear first to prevent conflicts with kill-switch callback
+  if (sessionManager) {
+    const sessionsToFinalize = [...activeSessions.entries()];
+    activeSessions.clear();
+    for (const [mode, sessionId] of sessionsToFinalize) {
+      try {
+        sessionManager.finalizeSession(sessionId);
+      } catch (err) {
+        logger.error({ err, mode, sessionId }, "Failed to finalize session during stopAllModes");
+      }
+    }
+  }
 }
 
 export function getEngine(): {
   fundAllocator: FundAllocator;
   positionManager: PositionManager;
+  sessionManager: SessionManager;
 } {
-  if (!fundAllocator || !positionManager) {
+  if (!fundAllocator || !positionManager || !sessionManager) {
     throw engineNotInitializedError();
   }
-  return { fundAllocator, positionManager };
+  return { fundAllocator, positionManager, sessionManager };
 }

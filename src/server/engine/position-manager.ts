@@ -71,11 +71,18 @@ export class PositionManager {
   private fundAllocator: FundAllocator;
   private broadcast: BroadcastFn;
   private readonly _onKillSwitch?: (mode: ModeType) => void;
+  private readonly _onTradeRecorded?: (mode: ModeType, size: number, pnl: number) => void;
 
-  constructor(fundAllocator: FundAllocator, broadcast: BroadcastFn, onKillSwitch?: (mode: ModeType) => void) {
+  constructor(
+    fundAllocator: FundAllocator,
+    broadcast: BroadcastFn,
+    onKillSwitch?: (mode: ModeType) => void,
+    onTradeRecorded?: (mode: ModeType, size: number, pnl: number) => void,
+  ) {
     this.fundAllocator = fundAllocator;
     this.broadcast = broadcast;
     this._onKillSwitch = onKillSwitch;
+    this._onTradeRecorded = onTradeRecorded;
   }
 
   /** Signal that shutdown is in progress — blocks new openPosition calls. */
@@ -469,6 +476,9 @@ export class PositionManager {
 
     // Step 8: Record trade stats
     this.fundAllocator.recordTrade(pos.mode, pos.size, computedPnl);
+
+    // Step 8b: Notify session manager of trade
+    this._onTradeRecorded?.(pos.mode, pos.size, computedPnl);
 
     // Step 9: Broadcast events
     this.broadcast(EVENTS.POSITION_CLOSED, {

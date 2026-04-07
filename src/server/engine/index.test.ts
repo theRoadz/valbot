@@ -555,4 +555,78 @@ describe("engine/index", () => {
 
     await stopAllModes();
   });
+
+  describe("session tracking integration", () => {
+    it("creates a session on startMode and finalizes on stopMode", async () => {
+      const { initEngine, startMode, stopMode, getEngine } = await import("./index.js");
+      const { sessions } = await import("../db/schema.js");
+      await initEngine();
+      const engine = getEngine();
+      engine.fundAllocator.setAllocation("volumeMax", 100_000_000);
+
+      await startMode("volumeMax", { pairs: ["SOL/USDC"] });
+
+      // Session should exist with endTime null
+      const db = getDb();
+      let rows = db.select().from(sessions).all();
+      const activeSession = rows.find((r) => r.mode === "volumeMax" && r.endTime === null);
+      expect(activeSession).toBeDefined();
+      expect(activeSession!.trades).toBe(0);
+
+      await stopMode("volumeMax");
+
+      // Session should be finalized (endTime set)
+      rows = db.select().from(sessions).all();
+      const finalized = rows.find((r) => r.id === activeSession!.id);
+      expect(finalized).toBeDefined();
+      expect(finalized!.endTime).not.toBeNull();
+      expect(finalized!.endTime).toBeGreaterThan(0);
+    });
+
+    it("finalizes all active sessions on stopAllModes", async () => {
+      const { initEngine, startMode, stopAllModes, getEngine } = await import("./index.js");
+      const { sessions } = await import("../db/schema.js");
+      await initEngine();
+      const engine = getEngine();
+      engine.fundAllocator.setAllocation("volumeMax", 100_000_000);
+
+      // Only start volumeMax — profitHunter requires oracle which is mocked unavailable
+      await startMode("volumeMax", { pairs: ["SOL/USDC"] });
+
+      const db = getDb();
+      let activeSessions = db.select().from(sessions).all().filter((r) => r.endTime === null);
+      expect(activeSessions.length).toBeGreaterThanOrEqual(1);
+
+      await stopAllModes();
+
+      activeSessions = db.select().from(sessions).all().filter((r) => r.endTime === null);
+      expect(activeSessions).toHaveLength(0);
+    });
+
+    it("finalizes orphaned sessions via SessionManager directly", async () => {
+      const { sessions } = await import("../db/schema.js");
+      const { SessionManager } = await import("./session-manager.js");
+      // Insert orphaned session directly into DB
+      const db = getDb();
+      db.insert(sessions).values({
+        startTime: Date.now() - 60000,
+        mode: "volumeMax",
+        trades: 5,
+        volume: 500_000_000,
+        pnl: 10_000_000,
+      }).run();
+
+      // Verify orphaned session exists
+      let orphans = db.select().from(sessions).all().filter((r) => r.endTime === null);
+      expect(orphans).toHaveLength(1);
+
+      // SessionManager.finalizeOrphanedSessions should finalize it
+      const sm = new SessionManager();
+      const count = sm.finalizeOrphanedSessions();
+      expect(count).toBe(1);
+
+      orphans = db.select().from(sessions).all().filter((r) => r.endTime === null);
+      expect(orphans).toHaveLength(0);
+    });
+  });
 });

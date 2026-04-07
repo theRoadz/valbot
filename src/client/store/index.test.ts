@@ -7,6 +7,7 @@ describe("ValBotStore", () => {
   beforeEach(() => {
     useStore.setState({
       connection: { status: "disconnected", equity: 0, available: 0 },
+      historicalPnlBase: 0,
       stats: {
         equity: 0,
         available: 0,
@@ -1666,6 +1667,142 @@ describe("ValBotStore", () => {
       // Others remain running
       expect(useStore.getState().modes.profitHunter.status).toBe("running");
       expect(useStore.getState().modes.arbitrage.status).toBe("running");
+    });
+  });
+
+  describe("historical PnL differentiation (Story 5.1)", () => {
+    it("loadInitialStatus with stats differentiates totalPnl from sessionPnl", () => {
+      useStore.getState().loadInitialStatus({
+        modes: {
+          volumeMax: {
+            mode: "volumeMax",
+            status: "running",
+            allocation: 500,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 100, trades: 5, volume: 3000, allocated: 500, remaining: 400 },
+          },
+          profitHunter: {
+            mode: "profitHunter",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+          arbitrage: {
+            mode: "arbitrage",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+        },
+        positions: [],
+        trades: [],
+        connection: { status: "connected", equity: 5000, available: 0 },
+        stats: { totalPnl: 600, sessionPnl: 100 },
+      });
+
+      const state = useStore.getState();
+      // historicalPnlBase = totalPnl - sessionPnl = 600 - 100 = 500
+      expect(state.historicalPnlBase).toBe(500);
+      // sessionPnl = sum of mode pnl = 100
+      expect(state.stats.sessionPnl).toBe(100);
+      // totalPnl = historicalPnlBase + sessionPnl = 500 + 100 = 600
+      expect(state.stats.totalPnl).toBe(600);
+    });
+
+    it("STATS_UPDATED preserves historical base in totalPnl", () => {
+      // Set historicalPnlBase via loadInitialStatus
+      useStore.getState().loadInitialStatus({
+        modes: {
+          volumeMax: {
+            mode: "volumeMax",
+            status: "running",
+            allocation: 500,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 50, trades: 2, volume: 1000, allocated: 500, remaining: 450 },
+          },
+          profitHunter: {
+            mode: "profitHunter",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+          arbitrage: {
+            mode: "arbitrage",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+        },
+        positions: [],
+        trades: [],
+        connection: { status: "connected", equity: 5000, available: 0 },
+        stats: { totalPnl: 350, sessionPnl: 50 },
+      });
+
+      expect(useStore.getState().historicalPnlBase).toBe(300);
+      expect(useStore.getState().stats.totalPnl).toBe(350);
+      expect(useStore.getState().stats.sessionPnl).toBe(50);
+
+      // Now a STATS_UPDATED event comes in — pnl increases
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax", pnl: 80, trades: 4, volume: 2000, allocated: 500, remaining: 420 },
+      });
+
+      const stats = useStore.getState().stats;
+      // sessionPnl = mode sum = 80 (volumeMax) + 0 (others) = 80
+      expect(stats.sessionPnl).toBe(80);
+      // totalPnl = historicalPnlBase(300) + sessionPnl(80) = 380
+      expect(stats.totalPnl).toBe(380);
+    });
+
+    it("loadInitialStatus without stats field defaults historicalPnlBase to 0", () => {
+      useStore.getState().loadInitialStatus({
+        modes: {
+          volumeMax: {
+            mode: "volumeMax",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+          profitHunter: {
+            mode: "profitHunter",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+          arbitrage: {
+            mode: "arbitrage",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+        },
+        positions: [],
+        trades: [],
+        connection: { status: "disconnected", equity: 0, available: 0 },
+      });
+
+      expect(useStore.getState().historicalPnlBase).toBe(0);
+      expect(useStore.getState().stats.totalPnl).toBe(0);
+      expect(useStore.getState().stats.sessionPnl).toBe(0);
     });
   });
 });

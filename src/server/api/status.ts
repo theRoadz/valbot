@@ -51,6 +51,24 @@ async function getConnectionData() {
   return { status: "disconnected" as const, equity: 0, available: 0 };
 }
 
+function getStats(): { totalPnl: number; sessionPnl: number } {
+  try {
+    const { fundAllocator, sessionManager } = getEngine();
+
+    // sessionPnl = sum of in-memory pnl across all active modes (display-unit from getStats)
+    const modes: ModeType[] = ["volumeMax", "profitHunter", "arbitrage"];
+    const sessionPnl = modes.reduce((sum, mode) => sum + fundAllocator.getStats(mode).pnl, 0);
+
+    // historicalPnl = sum of finalized sessions pnl (smallest-unit from DB, convert to display)
+    const historical = sessionManager.getHistoricalStats();
+    const totalPnl = fromSmallestUnit(historical.totalPnl) + sessionPnl;
+
+    return { totalPnl, sessionPnl };
+  } catch {
+    return { totalPnl: 0, sessionPnl: 0 };
+  }
+}
+
 export default async function statusRoutes(fastify: FastifyInstance) {
   fastify.get("/api/status", async () => {
     let positions: unknown[] = [];
@@ -70,6 +88,7 @@ export default async function statusRoutes(fastify: FastifyInstance) {
       positions,
       trades: [],
       connection: await getConnectionData(),
+      stats: getStats(),
     };
   });
 }

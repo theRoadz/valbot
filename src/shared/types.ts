@@ -139,4 +139,5 @@ export interface StatusResponse {
   positions: Position[];
   trades: Trade[];
   connection: ConnectionState;
+  stats?: { totalPnl: number; sessionPnl: number };
 }

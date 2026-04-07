@@ -28,13 +28,14 @@ function isValidPosition(p: unknown): p is Position {
   );
 }
 
-function aggregateSummaryStats(modes: ValBotStore["modes"], equity: number, available: number): SummaryStats {
+function aggregateSummaryStats(modes: ValBotStore["modes"], equity: number, available: number, historicalPnlBase: number): SummaryStats {
   const allModes = Object.values(modes);
+  const sessionPnl = allModes.reduce((sum, m) => sum + m.stats.pnl, 0);
   return {
     equity,
     available,
-    totalPnl: allModes.reduce((sum, m) => sum + m.stats.pnl, 0),
-    sessionPnl: allModes.reduce((sum, m) => sum + m.stats.pnl, 0),
+    totalPnl: historicalPnlBase + sessionPnl,
+    sessionPnl,
     totalTrades: allModes.reduce((sum, m) => sum + m.stats.trades, 0),
     totalVolume: allModes.reduce((sum, m) => sum + m.stats.volume, 0),
   };
@@ -65,6 +66,7 @@ interface ValBotStore {
     equity: number;
     available: number;
   };
+  historicalPnlBase: number;
   stats: SummaryStats;
   alerts: Alert[];
   trades: Trade[];
@@ -94,6 +96,7 @@ const useStore = create<ValBotStore>()((set) => ({
     equity: 0,
     available: 0,
   },
+  historicalPnlBase: 0,
   stats: {
     equity: 0,
     available: 0,
@@ -152,7 +155,7 @@ const useStore = create<ValBotStore>()((set) => ({
       };
       return {
         modes,
-        stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available),
+        stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available, state.historicalPnlBase),
       };
     }),
   setModeConfig: (mode, config) =>
@@ -169,7 +172,7 @@ const useStore = create<ValBotStore>()((set) => ({
       };
       return {
         modes,
-        stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available),
+        stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available, state.historicalPnlBase),
       };
     }),
   loadInitialStatus: (data) =>
@@ -200,8 +203,12 @@ const useStore = create<ValBotStore>()((set) => ({
       // Clear any pending close timers from previous session
       for (const timer of pendingCloseTimers.values()) clearTimeout(timer);
       pendingCloseTimers.clear();
+      // Extract historical PnL base from server stats (totalPnl - sessionPnl = historical base)
+      const serverStats = data.stats;
+      const historicalPnlBase = serverStats ? serverStats.totalPnl - serverStats.sessionPnl : 0;
       return {
         modes,
+        historicalPnlBase,
         trades: loadedTrades,
         positions: loadedPositions,
         closingPositions: [],
@@ -210,7 +217,7 @@ const useStore = create<ValBotStore>()((set) => ({
           equity: data.connection.equity,
           available: data.connection.available,
         },
-        stats: aggregateSummaryStats(modes, data.connection.equity, data.connection.available),
+        stats: aggregateSummaryStats(modes, data.connection.equity, data.connection.available, historicalPnlBase),
       };
     }),
   handleWsMessage: (message) => {
@@ -358,7 +365,7 @@ const useStore = create<ValBotStore>()((set) => ({
           };
           return {
             modes,
-            stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available),
+            stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available, state.historicalPnlBase),
           };
         });
       }
@@ -410,7 +417,7 @@ const useStore = create<ValBotStore>()((set) => ({
           };
           return {
             modes,
-            stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available),
+            stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available, state.historicalPnlBase),
           };
         });
       }
