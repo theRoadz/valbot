@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { ModeConfig, ModeType } from "../../shared/types.js";
 import { fromSmallestUnit } from "../../shared/types.js";
 import { getEngine, getModeStatus } from "../engine/index.js";
+import { logger } from "../lib/logger.js";
 import { getConnectionStatus } from "../blockchain/client.js";
 import { getRecentTrades } from "./trades.js";
 
@@ -52,21 +53,33 @@ async function getConnectionData() {
   return { status: "disconnected" as const, equity: 0, available: 0 };
 }
 
-function getStats(): { totalPnl: number; sessionPnl: number } {
+function getStats(): { totalPnl: number; sessionPnl: number; totalTrades: number; totalVolume: number } {
   try {
     const { fundAllocator, sessionManager } = getEngine();
 
-    // sessionPnl = sum of in-memory pnl across all active modes (display-unit from getStats)
     const modes: ModeType[] = ["volumeMax", "profitHunter", "arbitrage"];
-    const sessionPnl = modes.reduce((sum, mode) => sum + fundAllocator.getStats(mode).pnl, 0);
+    let sessionPnl = 0;
+    let sessionTrades = 0;
+    let sessionVolume = 0;
 
-    // historicalPnl = sum of finalized sessions pnl (smallest-unit from DB, convert to display)
+    for (const mode of modes) {
+      const modeStats = fundAllocator.getStats(mode);
+      sessionPnl += modeStats.pnl;
+      sessionTrades += modeStats.trades;
+      sessionVolume += modeStats.volume;
+    }
+
+    // historical values from DB are smallest-unit integers — convert pnl and volume
+    // totalTrades is a plain count — no conversion needed
     const historical = sessionManager.getHistoricalStats();
     const totalPnl = fromSmallestUnit(historical.totalPnl) + sessionPnl;
+    const totalTrades = historical.totalTrades + sessionTrades;
+    const totalVolume = fromSmallestUnit(historical.totalVolume) + sessionVolume;
 
-    return { totalPnl, sessionPnl };
-  } catch {
-    return { totalPnl: 0, sessionPnl: 0 };
+    return { totalPnl, sessionPnl, totalTrades, totalVolume };
+  } catch (err) {
+    logger.warn({ err }, "getStats failed, returning zeros");
+    return { totalPnl: 0, sessionPnl: 0, totalTrades: 0, totalVolume: 0 };
   }
 }
 

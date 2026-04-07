@@ -192,4 +192,24 @@ describe("TopBar", () => {
     render(<TopBar />);
     expect(screen.getByText("1,234")).toBeInTheDocument();
   });
+
+  it("displays combined stats correctly when store has multi-mode aggregated values", () => {
+    useStore.setState({
+      stats: {
+        equity: 5000000000, // smallest-unit: 5000 USDC
+        available: 3000000000,
+        totalPnl: 125, // display-unit: historical + session PnL
+        sessionPnl: 25,
+        totalTrades: 60, // historical(50) + session(10)
+        totalVolume: 5350, // historical(5000) + session(350)
+      },
+    });
+    render(<TopBar />);
+    expect(screen.getByText("$5,000.00")).toBeInTheDocument(); // equity
+    expect(screen.getByText("$3,000.00")).toBeInTheDocument(); // available
+    expect(screen.getByText("+$125.00")).toBeInTheDocument(); // totalPnl
+    expect(screen.getByText("+$25.00")).toBeInTheDocument(); // sessionPnl
+    expect(screen.getByText("60")).toBeInTheDocument(); // totalTrades
+    expect(screen.getByText("$5,350.00")).toBeInTheDocument(); // totalVolume
+  });
 });

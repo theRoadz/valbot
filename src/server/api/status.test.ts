@@ -170,4 +170,126 @@ describe("status route", () => {
     const body = res.json();
     expect(body.connection).toEqual({ status: "disconnected", equity: 0, available: 0 });
   });
+
+  describe("stats field — combined cross-mode statistics", () => {
+    it("returns zero stats when engine is not initialized", async () => {
+      const res = await app.inject({ method: "GET", url: "/api/status" });
+      const body = res.json();
+      expect(body.stats).toEqual({ totalPnl: 0, sessionPnl: 0, totalTrades: 0, totalVolume: 0 });
+    });
+
+    it("returns correct combined stats across all modes plus historical", async () => {
+      const mockFundAllocator = {
+        getAllocation: vi.fn(() => ({ allocation: 0, remaining: 0 })),
+        getStats: vi.fn((mode: string) => {
+          if (mode === "volumeMax") return { pnl: 10, trades: 5, volume: 100, allocated: 0, remaining: 0 };
+          if (mode === "profitHunter") return { pnl: 20, trades: 3, volume: 200, allocated: 0, remaining: 0 };
+          if (mode === "arbitrage") return { pnl: -5, trades: 2, volume: 50, allocated: 0, remaining: 0 };
+          return { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 };
+        }),
+        getPositionSize: vi.fn(() => null),
+        getMaxAllocation: vi.fn(() => 500_000_000),
+      };
+      const mockSessionManager = {
+        getHistoricalStats: vi.fn(() => ({
+          totalPnl: 100_000_000, // 100 USDC in smallest-unit
+          totalTrades: 50,
+          totalVolume: 5000_000_000, // 5000 USDC in smallest-unit
+        })),
+      };
+      const mockPositionManager = {
+        getPositions: vi.fn(() => []),
+        getModeStatus: vi.fn(() => undefined),
+      };
+
+      (_setMockEngine as (e: unknown) => void)({
+        fundAllocator: mockFundAllocator,
+        positionManager: mockPositionManager,
+        sessionManager: mockSessionManager,
+      });
+
+      const res = await app.inject({ method: "GET", url: "/api/status" });
+      const body = res.json();
+
+      // sessionPnl = 10 + 20 + (-5) = 25
+      expect(body.stats.sessionPnl).toBe(25);
+      // totalPnl = fromSmallestUnit(100_000_000) + 25 = 100 + 25 = 125
+      expect(body.stats.totalPnl).toBe(125);
+      // totalTrades = 50 + (5 + 3 + 2) = 60
+      expect(body.stats.totalTrades).toBe(60);
+      // totalVolume = fromSmallestUnit(5000_000_000) + (100 + 200 + 50) = 5000 + 350 = 5350
+      expect(body.stats.totalVolume).toBe(5350);
+    });
+
+    it("returns only session stats when historical values are zero", async () => {
+      const mockFundAllocator = {
+        getAllocation: vi.fn(() => ({ allocation: 0, remaining: 0 })),
+        getStats: vi.fn((mode: string) => {
+          if (mode === "volumeMax") return { pnl: 7, trades: 2, volume: 80, allocated: 0, remaining: 0 };
+          return { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 };
+        }),
+        getPositionSize: vi.fn(() => null),
+        getMaxAllocation: vi.fn(() => 500_000_000),
+      };
+      const mockSessionManager = {
+        getHistoricalStats: vi.fn(() => ({
+          totalPnl: 0,
+          totalTrades: 0,
+          totalVolume: 0,
+        })),
+      };
+      const mockPositionManager = {
+        getPositions: vi.fn(() => []),
+        getModeStatus: vi.fn(() => undefined),
+      };
+
+      (_setMockEngine as (e: unknown) => void)({
+        fundAllocator: mockFundAllocator,
+        positionManager: mockPositionManager,
+        sessionManager: mockSessionManager,
+      });
+
+      const res = await app.inject({ method: "GET", url: "/api/status" });
+      const body = res.json();
+
+      expect(body.stats.sessionPnl).toBe(7);
+      expect(body.stats.totalPnl).toBe(7);
+      expect(body.stats.totalTrades).toBe(2);
+      expect(body.stats.totalVolume).toBe(80);
+    });
+
+    it("applies fromSmallestUnit conversion correctly on historical pnl and volume but not trades", async () => {
+      const mockFundAllocator = {
+        getAllocation: vi.fn(() => ({ allocation: 0, remaining: 0 })),
+        getStats: vi.fn(() => ({ pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 })),
+        getPositionSize: vi.fn(() => null),
+        getMaxAllocation: vi.fn(() => 500_000_000),
+      };
+      const mockSessionManager = {
+        getHistoricalStats: vi.fn(() => ({
+          totalPnl: 1_500_000, // 1.5 USDC
+          totalTrades: 7, // plain count — no conversion
+          totalVolume: 2_500_000, // 2.5 USDC
+        })),
+      };
+      const mockPositionManager = {
+        getPositions: vi.fn(() => []),
+        getModeStatus: vi.fn(() => undefined),
+      };
+
+      (_setMockEngine as (e: unknown) => void)({
+        fundAllocator: mockFundAllocator,
+        positionManager: mockPositionManager,
+        sessionManager: mockSessionManager,
+      });
+
+      const res = await app.inject({ method: "GET", url: "/api/status" });
+      const body = res.json();
+
+      expect(body.stats.totalPnl).toBe(1.5);
+      expect(body.stats.totalTrades).toBe(7);
+      expect(body.stats.totalVolume).toBe(2.5);
+      expect(body.stats.sessionPnl).toBe(0);
+    });
+  });
 });

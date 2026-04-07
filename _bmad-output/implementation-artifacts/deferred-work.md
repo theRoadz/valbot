@@ -174,3 +174,7 @@
 ## Deferred from: code review of story 4-3-arbitrage-strategy (2026-04-06)
 
 - ~~No staleness guard on oracle `publishTime` after SSE reconnection~~ — resolved: added `publish_time` freshness check in `updatePrice()` — rejects prices where `receiveTime - publishTime > 30s` before creating/updating priceMap entry
+
+## Deferred from: code review of story 5-3-combined-cross-mode-statistics (2026-04-07)
+
+- ~~Server `getStats()` catch block swallows errors silently~~ — resolved: added `logger.warn` with error context [src/server/api/status.ts:80]

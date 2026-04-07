@@ -28,7 +28,7 @@ function isValidPosition(p: unknown): p is Position {
   );
 }
 
-function aggregateSummaryStats(modes: ValBotStore["modes"], equity: number, available: number, historicalPnlBase: number): SummaryStats {
+function aggregateSummaryStats(modes: ValBotStore["modes"], equity: number, available: number, historicalPnlBase: number, historicalTradesBase: number, historicalVolumeBase: number): SummaryStats {
   const allModes = Object.values(modes);
   const sessionPnl = allModes.reduce((sum, m) => sum + m.stats.pnl, 0);
   return {
@@ -36,8 +36,8 @@ function aggregateSummaryStats(modes: ValBotStore["modes"], equity: number, avai
     available,
     totalPnl: historicalPnlBase + sessionPnl,
     sessionPnl,
-    totalTrades: allModes.reduce((sum, m) => sum + m.stats.trades, 0),
-    totalVolume: allModes.reduce((sum, m) => sum + m.stats.volume, 0),
+    totalTrades: historicalTradesBase + allModes.reduce((sum, m) => sum + m.stats.trades, 0),
+    totalVolume: historicalVolumeBase + allModes.reduce((sum, m) => sum + m.stats.volume, 0),
   };
 }
 
@@ -67,6 +67,8 @@ interface ValBotStore {
     available: number;
   };
   historicalPnlBase: number;
+  historicalTradesBase: number;
+  historicalVolumeBase: number;
   stats: SummaryStats;
   alerts: Alert[];
   trades: Trade[];
@@ -106,6 +108,8 @@ const useStore = create<ValBotStore>()((set) => ({
     available: 0,
   },
   historicalPnlBase: 0,
+  historicalTradesBase: 0,
+  historicalVolumeBase: 0,
   stats: {
     equity: 0,
     available: 0,
@@ -170,7 +174,7 @@ const useStore = create<ValBotStore>()((set) => ({
       };
       return {
         modes,
-        stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available, state.historicalPnlBase),
+        stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available, state.historicalPnlBase, state.historicalTradesBase, state.historicalVolumeBase),
       };
     }),
   setModeConfig: (mode, config) =>
@@ -187,7 +191,7 @@ const useStore = create<ValBotStore>()((set) => ({
       };
       return {
         modes,
-        stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available, state.historicalPnlBase),
+        stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available, state.historicalPnlBase, state.historicalTradesBase, state.historicalVolumeBase),
       };
     }),
   setTradeHistory: (data, page) =>
@@ -235,12 +239,17 @@ const useStore = create<ValBotStore>()((set) => ({
       // Clear any pending close timers from previous session
       for (const timer of pendingCloseTimers.values()) clearTimeout(timer);
       pendingCloseTimers.clear();
-      // Extract historical PnL base from server stats (totalPnl - sessionPnl = historical base)
+      // Extract historical baselines from server stats (total - session current = historical base)
       const serverStats = data.stats;
       const historicalPnlBase = serverStats ? serverStats.totalPnl - serverStats.sessionPnl : 0;
+      const modesArray = Object.values(modes);
+      const historicalTradesBase = serverStats ? Math.max(0, (serverStats.totalTrades ?? 0) - modesArray.reduce((s, m) => s + m.stats.trades, 0)) : 0;
+      const historicalVolumeBase = serverStats ? Math.max(0, (serverStats.totalVolume ?? 0) - modesArray.reduce((s, m) => s + m.stats.volume, 0)) : 0;
       return {
         modes,
         historicalPnlBase,
+        historicalTradesBase,
+        historicalVolumeBase,
         trades: loadedTrades,
         positions: loadedPositions,
         closingPositions: [],
@@ -249,7 +258,7 @@ const useStore = create<ValBotStore>()((set) => ({
           equity: data.connection.equity,
           available: data.connection.available,
         },
-        stats: aggregateSummaryStats(modes, data.connection.equity, data.connection.available, historicalPnlBase),
+        stats: aggregateSummaryStats(modes, data.connection.equity, data.connection.available, historicalPnlBase, historicalTradesBase, historicalVolumeBase),
         tradeHistory: {
           trades: loadedTrades.slice(0, 50),
           total: loadedTrades.length,
@@ -403,7 +412,7 @@ const useStore = create<ValBotStore>()((set) => ({
           };
           return {
             modes,
-            stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available, state.historicalPnlBase),
+            stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available, state.historicalPnlBase, state.historicalTradesBase, state.historicalVolumeBase),
           };
         });
       }
@@ -455,7 +464,7 @@ const useStore = create<ValBotStore>()((set) => ({
           };
           return {
             modes,
-            stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available, state.historicalPnlBase),
+            stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available, state.historicalPnlBase, state.historicalTradesBase, state.historicalVolumeBase),
           };
         });
       }

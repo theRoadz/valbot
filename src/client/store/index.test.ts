@@ -1810,6 +1810,185 @@ describe("ValBotStore", () => {
       expect(useStore.getState().stats.totalPnl).toBe(0);
       expect(useStore.getState().stats.sessionPnl).toBe(0);
     });
+
+    it("loadInitialStatus with stats populates historicalTradesBase and historicalVolumeBase", () => {
+      useStore.getState().loadInitialStatus({
+        modes: {
+          volumeMax: {
+            mode: "volumeMax",
+            status: "running",
+            allocation: 500,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 100, trades: 5, volume: 3000, allocated: 500, remaining: 400 },
+          },
+          profitHunter: {
+            mode: "profitHunter",
+            status: "running",
+            allocation: 300,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 50, trades: 3, volume: 1000, allocated: 300, remaining: 250 },
+          },
+          arbitrage: {
+            mode: "arbitrage",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+        },
+        positions: [],
+        trades: [],
+        connection: { status: "connected", equity: 5000, available: 0 },
+        stats: { totalPnl: 600, sessionPnl: 150, totalTrades: 58, totalVolume: 9000 },
+      });
+
+      const state = useStore.getState();
+      // historicalTradesBase = totalTrades - (5 + 3 + 0) = 58 - 8 = 50
+      expect(state.historicalTradesBase).toBe(50);
+      // historicalVolumeBase = totalVolume - (3000 + 1000 + 0) = 9000 - 4000 = 5000
+      expect(state.historicalVolumeBase).toBe(5000);
+      // combined stats include historical baselines
+      expect(state.stats.totalTrades).toBe(58); // 50 + 8
+      expect(state.stats.totalVolume).toBe(9000); // 5000 + 4000
+    });
+
+    it("STATS_UPDATED preserves historical trades and volume baselines", () => {
+      // Set historical baselines via loadInitialStatus
+      useStore.getState().loadInitialStatus({
+        modes: {
+          volumeMax: {
+            mode: "volumeMax",
+            status: "running",
+            allocation: 500,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 50, trades: 2, volume: 1000, allocated: 500, remaining: 450 },
+          },
+          profitHunter: {
+            mode: "profitHunter",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+          arbitrage: {
+            mode: "arbitrage",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+        },
+        positions: [],
+        trades: [],
+        connection: { status: "connected", equity: 5000, available: 0 },
+        stats: { totalPnl: 350, sessionPnl: 50, totalTrades: 42, totalVolume: 6000 },
+      });
+
+      expect(useStore.getState().historicalTradesBase).toBe(40); // 42 - 2
+      expect(useStore.getState().historicalVolumeBase).toBe(5000); // 6000 - 1000
+
+      // STATS_UPDATED event — trades and volume increase
+      useStore.getState().handleWsMessage({
+        event: EVENTS.STATS_UPDATED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax", pnl: 80, trades: 4, volume: 2000, allocated: 500, remaining: 420 },
+      });
+
+      const stats = useStore.getState().stats;
+      // totalTrades = historicalTradesBase(40) + mode sum(4) = 44
+      expect(stats.totalTrades).toBe(44);
+      // totalVolume = historicalVolumeBase(5000) + mode sum(2000) = 7000
+      expect(stats.totalVolume).toBe(7000);
+    });
+
+    it("loadInitialStatus without stats field defaults historical trades and volume baselines to 0", () => {
+      useStore.getState().loadInitialStatus({
+        modes: {
+          volumeMax: {
+            mode: "volumeMax",
+            status: "running",
+            allocation: 500,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 3, volume: 500, allocated: 500, remaining: 500 },
+          },
+          profitHunter: {
+            mode: "profitHunter",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+          arbitrage: {
+            mode: "arbitrage",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+        },
+        positions: [],
+        trades: [],
+        connection: { status: "disconnected", equity: 0, available: 0 },
+      });
+
+      expect(useStore.getState().historicalTradesBase).toBe(0);
+      expect(useStore.getState().historicalVolumeBase).toBe(0);
+      // totalTrades = 0 + 3 = 3 (only current session mode trades)
+      expect(useStore.getState().stats.totalTrades).toBe(3);
+      expect(useStore.getState().stats.totalVolume).toBe(500);
+    });
+
+    it("clamps historicalTradesBase and historicalVolumeBase to zero when mode stats exceed server totals", () => {
+      useStore.getState().loadInitialStatus({
+        modes: {
+          volumeMax: {
+            mode: "volumeMax",
+            status: "running",
+            allocation: 500,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 10, volume: 2000, allocated: 500, remaining: 500 },
+          },
+          profitHunter: {
+            mode: "profitHunter",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+          arbitrage: {
+            mode: "arbitrage",
+            status: "stopped",
+            allocation: 0,
+            pairs: ["SOL/USDC"],
+            slippage: 0.5,
+            stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
+          },
+        },
+        positions: [],
+        trades: [],
+        connection: { status: "connected", equity: 5000, available: 0 },
+        stats: { totalPnl: 0, sessionPnl: 0, totalTrades: 5, totalVolume: 500 },
+      });
+
+      // mode trades (10) > server totalTrades (5) — would be -5 without clamp
+      expect(useStore.getState().historicalTradesBase).toBe(0);
+      // mode volume (2000) > server totalVolume (500) — would be -1500 without clamp
+      expect(useStore.getState().historicalVolumeBase).toBe(0);
+      // totalTrades = 0 + 10 = 10 (only current mode trades, no negative historical)
+      expect(useStore.getState().stats.totalTrades).toBe(10);
+      expect(useStore.getState().stats.totalVolume).toBe(2000);
+    });
   });
 
   describe("tradeHistory", () => {
