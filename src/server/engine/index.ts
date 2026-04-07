@@ -2,10 +2,12 @@ import type { ModeType, ModeStatus } from "../../shared/types.js";
 import { PYTH_FEED_IDS } from "../../shared/types.js";
 import { FundAllocator } from "./fund-allocator.js";
 import { PositionManager } from "./position-manager.js";
-import { ModeRunner } from "./mode-runner.js";
-import { VolumeMaxStrategy } from "./strategies/volume-max.js";
-import { ProfitHunterStrategy } from "./strategies/profit-hunter.js";
-import { ArbitrageStrategy } from "./strategies/arbitrage.js";
+import type { ModeRunner } from "./mode-runner.js";
+import { strategyRegistry } from "./strategy-registry.js";
+// Import strategy files to trigger self-registration
+import "./strategies/volume-max.js";
+import "./strategies/profit-hunter.js";
+import "./strategies/arbitrage.js";
 import { OracleClient } from "../blockchain/oracle.js";
 import { getMidPrice } from "../blockchain/contracts.js";
 import { getBlockchainClient } from "../blockchain/client.js";
@@ -105,54 +107,46 @@ export async function startMode(
   try {
     const engine = getEngine();
 
-    // Oracle gate: Profit Hunter and Arbitrage require live price data
-    if (mode === "profitHunter" || mode === "arbitrage") {
+    // Registry lookup
+    const registration = strategyRegistry.getRegistration(mode);
+    if (!registration) {
+      throw unsupportedModeError(mode, strategyRegistry.getRegisteredModeTypes());
+    }
+
+    // Generic dependency gate checks based on strategy's `requires` declaration
+    if (registration.requires.oracle) {
       if (!oracleClient || !oracleClient.isAvailable()) {
         throw oracleFeedUnavailableError(mode);
       }
     }
-
-    // Arbitrage additionally requires Hyperliquid connectivity for mid-prices
-    if (mode === "arbitrage") {
+    if (registration.requires.blockchain) {
       if (!getBlockchainClient()) {
         throw arbitrageNoBlockchainClientError();
       }
     }
 
-    let runner: ModeRunner;
     const storedPositionSize = engine.fundAllocator.getPositionSize(mode) ?? undefined;
+    const bcClient = getBlockchainClient();
+    const getMidPriceFn = bcClient ? (coin: string) => getMidPrice(bcClient.info, coin) : undefined;
 
-    switch (mode) {
-      case "volumeMax":
-        runner = new VolumeMaxStrategy(
-          engine.fundAllocator,
-          engine.positionManager,
-          broadcast,
-          { pairs: config.pairs, slippage: config.slippage, positionSize: storedPositionSize },
-        );
-        break;
-      case "profitHunter":
-        runner = new ProfitHunterStrategy(
-          engine.fundAllocator, engine.positionManager, broadcast,
-          oracleClient!, { pairs: config.pairs, slippage: config.slippage, positionSize: storedPositionSize },
-        );
-        break;
-      case "arbitrage": {
-        const bcClient = getBlockchainClient()!;
-        const getMidPriceFn = (coin: string) => getMidPrice(bcClient.info, coin);
-        runner = new ArbitrageStrategy(
-          engine.fundAllocator, engine.positionManager, broadcast,
-          oracleClient!, getMidPriceFn,
-          { pairs: config.pairs, slippage: config.slippage, positionSize: storedPositionSize },
-        );
-        break;
-      }
-      default:
-        throw unsupportedModeError(mode);
-    }
+    const runner: ModeRunner = registration.factory({
+      fundAllocator: engine.fundAllocator,
+      positionManager: engine.positionManager,
+      broadcast,
+      oracleClient: oracleClient ?? undefined,
+      getMidPrice: getMidPriceFn,
+      config: { pairs: config.pairs, slippage: config.slippage, positionSize: storedPositionSize },
+    });
 
-    await runner.start();
+    // Set runner in map BEFORE start() so kill-switch callback can find it
+    // during the run loop that fires immediately after start()
     modeRunners.set(mode, runner);
+    try {
+      await runner.start();
+    } catch (err) {
+      modeRunners.delete(mode);
+      throw err;
+    }
 
     // Start session tracking for this mode
     if (sessionManager) {
@@ -215,20 +209,32 @@ export function resetKillSwitch(mode: ModeType): void {
 
 export async function stopAllModes(): Promise<void> {
   const entries = [...modeRunners.entries()];
-  const results = await Promise.allSettled(
-    entries.map(([, runner]) => runner.stop()),
-  );
 
-  for (let i = 0; i < results.length; i++) {
-    if (results[i].status === "rejected") {
-      logger.error(
-        { err: (results[i] as PromiseRejectedResult).reason, mode: entries[i][0] },
-        "Failed to stop mode during stopAllModes",
-      );
-    }
+  // Acquire locks to prevent concurrent startMode during shutdown
+  for (const [mode] of entries) {
+    modeLocks.add(mode);
   }
 
-  modeRunners.clear();
+  try {
+    const results = await Promise.allSettled(
+      entries.map(([, runner]) => runner.stop()),
+    );
+
+    for (let i = 0; i < results.length; i++) {
+      if (results[i].status === "rejected") {
+        logger.error(
+          { err: (results[i] as PromiseRejectedResult).reason, mode: entries[i][0] },
+          "Failed to stop mode during stopAllModes",
+        );
+      }
+    }
+
+    modeRunners.clear();
+  } finally {
+    for (const [mode] of entries) {
+      modeLocks.delete(mode);
+    }
+  }
 
   // Finalize all active sessions after all runners have stopped
   // Snapshot and clear first to prevent conflicts with kill-switch callback

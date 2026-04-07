@@ -153,12 +153,13 @@ export function modeTransitioningError(mode: string): AppError {
   });
 }
 
-export function unsupportedModeError(mode: string): AppError {
+export function unsupportedModeError(mode: string, availableModes?: string[]): AppError {
+  const modeList = availableModes?.length ? availableModes.join(", ") : "check registered strategies";
   return new AppError({
     severity: "warning",
     code: "UNSUPPORTED_MODE",
     message: `Unsupported mode type: ${mode}`,
-    resolution: "Check mode name. Supported modes: volumeMax, profitHunter, arbitrage.",
+    resolution: `Check mode name. Supported modes: ${modeList}.`,
   });
 }
 

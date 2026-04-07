@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { ModeConfig, ModeType } from "../../shared/types.js";
 import { fromSmallestUnit } from "../../shared/types.js";
 import { getEngine, getModeStatus } from "../engine/index.js";
+import { strategyRegistry } from "../engine/strategy-registry.js";
 import { logger } from "../lib/logger.js";
 import { getConnectionStatus } from "../blockchain/client.js";
 import { getRecentTrades } from "./trades.js";
@@ -57,7 +58,7 @@ function getStats(): { totalPnl: number; sessionPnl: number; totalTrades: number
   try {
     const { fundAllocator, sessionManager } = getEngine();
 
-    const modes: ModeType[] = ["volumeMax", "profitHunter", "arbitrage"];
+    const modes: ModeType[] = strategyRegistry.getRegisteredModeTypes();
     let sessionPnl = 0;
     let sessionTrades = 0;
     let sessionVolume = 0;
@@ -93,12 +94,13 @@ export default async function statusRoutes(fastify: FastifyInstance) {
       // Engine not initialized — fall back to empty
     }
 
+    const modesRecord: Record<ModeType, ModeConfig> = {};
+    for (const modeType of strategyRegistry.getRegisteredModeTypes()) {
+      modesRecord[modeType] = getModeConfig(modeType);
+    }
+
     return {
-      modes: {
-        volumeMax: getModeConfig("volumeMax"),
-        profitHunter: getModeConfig("profitHunter"),
-        arbitrage: getModeConfig("arbitrage"),
-      },
+      modes: modesRecord,
       positions,
       trades: (() => {
         try {
@@ -109,6 +111,7 @@ export default async function statusRoutes(fastify: FastifyInstance) {
       })(),
       connection: await getConnectionData(),
       stats: getStats(),
+      strategies: strategyRegistry.getAvailableStrategies(getModeStatus),
     };
   });
 }

@@ -1,10 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { FundAllocator } from "./fund-allocator.js";
 import { getDb, closeDb, _resetDbState } from "../db/index.js";
 import { config } from "../db/schema.js";
 import { sql } from "drizzle-orm";
 import path from "path";
 import fs from "fs";
+
+// Mock strategy registry so loadFromDb can filter registered modes
+vi.mock("./strategy-registry.js", () => ({
+  strategyRegistry: {
+    getRegisteredModeTypes: vi.fn(() => ["volumeMax", "profitHunter", "arbitrage"]),
+  },
+}));
 
 const TEST_DB_PATH = path.resolve(process.cwd(), "test-fund-allocator.db");
 

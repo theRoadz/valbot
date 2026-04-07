@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi, afterEach } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import statusRoutes from "./status.js";
 
@@ -23,6 +23,19 @@ vi.mock("../engine/index.js", () => {
   };
 });
 
+// Mock strategy registry
+vi.mock("../engine/strategy-registry.js", () => {
+  const registry = {
+    getRegisteredModeTypes: vi.fn(() => ["volumeMax", "profitHunter", "arbitrage"]),
+    getAvailableStrategies: vi.fn((getStatus: (mode: string) => string) => [
+      { name: "Volume Max", description: "Volume strategy", modeType: "volumeMax", urlSlug: "volume-max", modeColor: "#3b82f6", status: getStatus("volumeMax") },
+      { name: "Profit Hunter", description: "Profit strategy", modeType: "profitHunter", urlSlug: "profit-hunter", modeColor: "#22c55e", status: getStatus("profitHunter") },
+      { name: "Arbitrage", description: "Arb strategy", modeType: "arbitrage", urlSlug: "arbitrage", modeColor: "#a855f7", status: getStatus("arbitrage") },
+    ]),
+  };
+  return { strategyRegistry: registry };
+});
+
 // Mock trades module
 vi.mock("./trades.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("./trades.js")>();
@@ -32,7 +45,7 @@ vi.mock("./trades.js", async (importOriginal) => {
   };
 });
 
-import { getEngine, _setMockEngine } from "../engine/index.js";
+import { _setMockEngine } from "../engine/index.js";
 import { getRecentTrades } from "./trades.js";
 
 describe("status route", () => {
@@ -61,6 +74,7 @@ describe("status route", () => {
     expect(body).toHaveProperty("positions");
     expect(body).toHaveProperty("trades");
     expect(body).toHaveProperty("connection");
+    expect(body).toHaveProperty("strategies");
 
     expect(body.modes).toHaveProperty("volumeMax");
     expect(body.modes).toHaveProperty("profitHunter");
@@ -80,6 +94,7 @@ describe("status route", () => {
     expect(body.positions).toEqual([]);
     expect(body.trades).toEqual([]);
     expect(body.connection).toEqual({ status: "disconnected", equity: 0, available: 0 });
+    expect(body.strategies).toHaveLength(3);
   });
 
   it("GET /api/status returns live data from engine when initialized", async () => {

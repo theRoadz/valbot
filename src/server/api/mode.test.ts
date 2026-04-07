@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import modeRoutes from "./mode.js";
+import { errorHandler } from "../lib/error-handler.js";
 
 const mockStartMode = vi.fn();
 const mockStopMode = vi.fn();
@@ -31,6 +32,32 @@ vi.mock("../engine/index.js", () => {
   };
 });
 
+// Mock strategy registry
+vi.mock("../engine/strategy-registry.js", () => {
+  const registry = {
+    getModeTypeFromSlug: vi.fn((slug: string) => {
+      const map: Record<string, string> = {
+        "volume-max": "volumeMax",
+        "profit-hunter": "profitHunter",
+        "arbitrage": "arbitrage",
+      };
+      return map[slug];
+    }),
+    getRegistration: vi.fn((modeType: string) => {
+      const valid = ["volumeMax", "profitHunter", "arbitrage"];
+      if (valid.includes(modeType)) return { modeType };
+      return undefined;
+    }),
+    getAvailableStrategies: vi.fn(() => [
+      { urlSlug: "volume-max" },
+      { urlSlug: "profit-hunter" },
+      { urlSlug: "arbitrage" },
+    ]),
+    getRegisteredModeTypes: vi.fn(() => ["volumeMax", "profitHunter", "arbitrage"]),
+  };
+  return { strategyRegistry: registry };
+});
+
 import { _getMockFundAllocator } from "../engine/index.js";
 import { broadcast } from "../ws/broadcaster.js";
 
@@ -39,6 +66,7 @@ describe("mode routes", () => {
 
   beforeAll(async () => {
     app = Fastify();
+    app.setErrorHandler(errorHandler);
     await app.register(modeRoutes);
     await app.ready();
   });

@@ -3,8 +3,10 @@ import type { FundAllocator } from "../fund-allocator.js";
 import type { PositionManager } from "../position-manager.js";
 import type { OracleClient } from "../../blockchain/oracle.js";
 import { ModeRunner, type BroadcastFn } from "../mode-runner.js";
+import { strategyRegistry, type StrategyDeps } from "../strategy-registry.js";
 import { logger } from "../../lib/logger.js";
 import {
+  AppError,
   invalidStrategyConfigError,
   profitHunterStaleOracleError,
 } from "../../lib/errors.js";
@@ -29,6 +31,12 @@ export class ProfitHunterStrategy extends ModeRunner {
   private readonly config: ProfitHunterConfig;
   private readonly oracleClient: OracleClient;
   private readonly dynamicPositionSize: boolean;
+
+  get strategyName() { return "Profit Hunter"; }
+  get strategyDescription() { return "Mean-reversion strategy using Pyth oracle price vs moving average deviation signals."; }
+  get defaultConfig(): Record<string, unknown> { return { deviationThreshold: DEFAULT_DEVIATION_THRESHOLD, closeThreshold: DEFAULT_CLOSE_THRESHOLD, iterationIntervalMs: DEFAULT_ITERATION_INTERVAL_MS, slippage: DEFAULT_SLIPPAGE }; }
+  get modeColor() { return "#22c55e"; }
+  get urlSlug() { return "profit-hunter"; }
 
   constructor(
     fundAllocator: FundAllocator,
@@ -214,3 +222,30 @@ export class ProfitHunterStrategy extends ModeRunner {
     return [...pairs];
   }
 }
+
+// Self-registration
+strategyRegistry.registerStrategy({
+  name: "Profit Hunter",
+  description: "Mean-reversion strategy using Pyth oracle price vs moving average deviation signals.",
+  modeType: "profitHunter",
+  urlSlug: "profit-hunter",
+  modeColor: "#22c55e",
+  requires: { oracle: true },
+  factory: (deps: StrategyDeps) => {
+    if (!deps.oracleClient) {
+      throw new AppError({
+        severity: "critical",
+        code: "MISSING_DEPENDENCY",
+        message: "Profit Hunter strategy requires oracleClient dependency",
+        resolution: "Ensure oracle is available before starting Profit Hunter.",
+      });
+    }
+    return new ProfitHunterStrategy(
+      deps.fundAllocator,
+      deps.positionManager,
+      deps.broadcast,
+      deps.oracleClient,
+      { pairs: deps.config.pairs, slippage: deps.config.slippage, positionSize: deps.config.positionSize },
+    );
+  },
+});

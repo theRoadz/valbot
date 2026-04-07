@@ -178,3 +178,9 @@
 ## Deferred from: code review of story 5-3-combined-cross-mode-statistics (2026-04-07)
 
 - ~~Server `getStats()` catch block swallows errors silently~~ — resolved: added `logger.warn` with error context [src/server/api/status.ts:80]
+
+## Deferred from: code review of story 6-1-strategy-plugin-interface-and-registration (2026-04-07)
+
+- ~~Race condition: runner added to modeRunners map after `start()` already fires run loop~~ — resolved: set runner in map before `start()`, delete on failure [engine/index.ts]
+- ~~`stopAllModes` doesn't acquire `modeLocks`, allowing concurrent `startMode` during shutdown~~ — resolved: acquires modeLocks for all modes during shutdown [engine/index.ts]
+- ~~`loadFromDb` doesn't handle malformed JSON in config rows~~ — resolved: wrapped JSON.parse in try/catch with logger.warn [fund-allocator.ts]

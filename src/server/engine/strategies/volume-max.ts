@@ -2,6 +2,7 @@ import type { ModeType } from "../../../shared/types.js";
 import type { FundAllocator } from "../fund-allocator.js";
 import type { PositionManager } from "../position-manager.js";
 import { ModeRunner, type BroadcastFn } from "../mode-runner.js";
+import { strategyRegistry, type StrategyDeps } from "../strategy-registry.js";
 import { logger } from "../../lib/logger.js";
 import { invalidStrategyConfigError } from "../../lib/errors.js";
 
@@ -22,6 +23,12 @@ const MIN_POSITION_SIZE = 10_000_000; // $10 in smallest-unit — Hyperliquid mi
 export class VolumeMaxStrategy extends ModeRunner {
   private readonly config: VolumeMaxConfig;
   private _pairIndex = 0;
+
+  get strategyName() { return "Volume Max"; }
+  get strategyDescription() { return "Maximizes trading volume through rapid round-trip trades across configured pairs."; }
+  get defaultConfig(): Record<string, unknown> { return { cycleIntervalMs: DEFAULT_CYCLE_INTERVAL_MS, slippage: DEFAULT_SLIPPAGE }; }
+  get modeColor() { return "#3b82f6"; }
+  get urlSlug() { return "volume-max"; }
 
   constructor(
     fundAllocator: FundAllocator,
@@ -117,3 +124,19 @@ export class VolumeMaxStrategy extends ModeRunner {
     return [...pairs];
   }
 }
+
+// Self-registration
+strategyRegistry.registerStrategy({
+  name: "Volume Max",
+  description: "Maximizes trading volume through rapid round-trip trades across configured pairs.",
+  modeType: "volumeMax",
+  urlSlug: "volume-max",
+  modeColor: "#3b82f6",
+  requires: {},
+  factory: (deps: StrategyDeps) => new VolumeMaxStrategy(
+    deps.fundAllocator,
+    deps.positionManager,
+    deps.broadcast,
+    { pairs: deps.config.pairs, slippage: deps.config.slippage, positionSize: deps.config.positionSize },
+  ),
+});

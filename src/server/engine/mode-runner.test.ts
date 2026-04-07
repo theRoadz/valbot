@@ -13,6 +13,12 @@ class TestModeRunner extends ModeRunner {
   iterationFn = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
   intervalMs = 1000;
 
+  get strategyName() { return "Test Strategy"; }
+  get strategyDescription() { return "A test strategy"; }
+  get defaultConfig() { return {}; }
+  get modeColor() { return "#000000"; }
+  get urlSlug() { return "test"; }
+
   async executeIteration(): Promise<void> {
     await this.iterationFn();
   }

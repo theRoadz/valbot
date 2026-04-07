@@ -1,20 +1,40 @@
 import type { FastifyInstance } from "fastify";
-import { urlModeToModeType, toSmallestUnit } from "../../shared/types.js";
+import { toSmallestUnit } from "../../shared/types.js";
 import { EVENTS } from "../../shared/events.js";
 import { AppError } from "../lib/errors.js";
 import { getEngine, startMode, stopMode, resetKillSwitch, getModeStatus } from "../engine/index.js";
+import { strategyRegistry } from "../engine/strategy-registry.js";
 import { broadcast } from "../ws/broadcaster.js";
 
-const modeEnum = ["volume-max", "profit-hunter", "arbitrage"] as const;
 const VALID_PAIRS = ["SOL/USDC", "ETH/USDC", "BTC/USDC"];
 
 const modeParamSchema = {
   type: "object" as const,
   properties: {
-    mode: { type: "string" as const, enum: [...modeEnum] },
+    mode: { type: "string" as const, maxLength: 64, pattern: "^[a-zA-Z0-9-]+$" },
   },
   required: ["mode"] as const,
 };
+
+function resolveMode(slugOrMode: string): string {
+  // Try slug lookup first
+  const fromSlug = strategyRegistry.getModeTypeFromSlug(slugOrMode);
+  if (fromSlug) return fromSlug;
+
+  // Try direct mode type lookup
+  const reg = strategyRegistry.getRegistration(slugOrMode);
+  if (reg) return slugOrMode;
+
+  const available = strategyRegistry.getAvailableStrategies(() => "stopped")
+    .map((s) => s.urlSlug)
+    .join(", ");
+  throw new AppError({
+    severity: "warning",
+    code: "INVALID_MODE",
+    message: `Invalid mode: ${slugOrMode}`,
+    resolution: `Use one of: ${available}`,
+  });
+}
 
 export default async function modeRoutes(fastify: FastifyInstance) {
   fastify.post<{ Params: { mode: string }; Body: { pairs?: string[]; slippage?: number } }>("/api/mode/:mode/start", {
@@ -30,15 +50,7 @@ export default async function modeRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (request) => {
-    const modeType = urlModeToModeType(request.params.mode);
-    if (!modeType) {
-      throw new AppError({
-        severity: "warning",
-        code: "INVALID_MODE",
-        message: `Invalid mode: ${request.params.mode}`,
-        resolution: "Use one of: volume-max, profit-hunter, arbitrage",
-      });
-    }
+    const modeType = resolveMode(request.params.mode);
 
     const pairs = request.body?.pairs ?? ["SOL/USDC"];
     const slippage = request.body?.slippage;
@@ -50,15 +62,7 @@ export default async function modeRoutes(fastify: FastifyInstance) {
   fastify.post<{ Params: { mode: string } }>("/api/mode/:mode/stop", {
     schema: { params: modeParamSchema },
   }, async (request) => {
-    const modeType = urlModeToModeType(request.params.mode);
-    if (!modeType) {
-      throw new AppError({
-        severity: "warning",
-        code: "INVALID_MODE",
-        message: `Invalid mode: ${request.params.mode}`,
-        resolution: "Use one of: volume-max, profit-hunter, arbitrage",
-      });
-    }
+    const modeType = resolveMode(request.params.mode);
 
     await stopMode(modeType);
     return { status: "stopped", mode: modeType };
@@ -80,15 +84,7 @@ export default async function modeRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (request) => {
-    const modeType = urlModeToModeType(request.params.mode);
-    if (!modeType) {
-      throw new AppError({
-        severity: "warning",
-        code: "INVALID_MODE",
-        message: `Invalid mode: ${request.params.mode}`,
-        resolution: "Use one of: volume-max, profit-hunter, arbitrage",
-      });
-    }
+    const modeType = resolveMode(request.params.mode);
     try {
       const { fundAllocator } = getEngine();
 

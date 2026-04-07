@@ -3,8 +3,10 @@ import type { FundAllocator } from "../fund-allocator.js";
 import type { PositionManager } from "../position-manager.js";
 import type { OracleClient } from "../../blockchain/oracle.js";
 import { ModeRunner, type BroadcastFn } from "../mode-runner.js";
+import { strategyRegistry, type StrategyDeps } from "../strategy-registry.js";
 import { logger } from "../../lib/logger.js";
 import {
+  AppError,
   invalidStrategyConfigError,
   arbitrageMidPriceError,
 } from "../../lib/errors.js";
@@ -31,6 +33,12 @@ export class ArbitrageStrategy extends ModeRunner {
   private readonly oracleClient: OracleClient;
   private readonly getMidPriceFn: (coin: string) => Promise<number>;
   private readonly dynamicPositionSize: boolean;
+
+  get strategyName() { return "Arbitrage"; }
+  get strategyDescription() { return "Cross-market spread strategy exploiting Pyth oracle vs Hyperliquid mid-price divergence."; }
+  get defaultConfig(): Record<string, unknown> { return { spreadThreshold: DEFAULT_SPREAD_THRESHOLD, closeSpreadThreshold: DEFAULT_CLOSE_SPREAD_THRESHOLD, iterationIntervalMs: DEFAULT_ITERATION_INTERVAL_MS, slippage: DEFAULT_SLIPPAGE }; }
+  get modeColor() { return "#a855f7"; }
+  get urlSlug() { return "arbitrage"; }
 
   constructor(
     fundAllocator: FundAllocator,
@@ -250,3 +258,39 @@ export class ArbitrageStrategy extends ModeRunner {
     return pair.split("/")[0] ?? pair;
   }
 }
+
+// Self-registration
+strategyRegistry.registerStrategy({
+  name: "Arbitrage",
+  description: "Cross-market spread strategy exploiting Pyth oracle vs Hyperliquid mid-price divergence.",
+  modeType: "arbitrage",
+  urlSlug: "arbitrage",
+  modeColor: "#a855f7",
+  requires: { oracle: true, blockchain: true },
+  factory: (deps: StrategyDeps) => {
+    if (!deps.oracleClient) {
+      throw new AppError({
+        severity: "critical",
+        code: "MISSING_DEPENDENCY",
+        message: "Arbitrage strategy requires oracleClient dependency",
+        resolution: "Ensure oracle is available before starting Arbitrage.",
+      });
+    }
+    if (!deps.getMidPrice) {
+      throw new AppError({
+        severity: "critical",
+        code: "MISSING_DEPENDENCY",
+        message: "Arbitrage strategy requires getMidPrice dependency",
+        resolution: "Ensure blockchain client is available before starting Arbitrage.",
+      });
+    }
+    return new ArbitrageStrategy(
+      deps.fundAllocator,
+      deps.positionManager,
+      deps.broadcast,
+      deps.oracleClient,
+      deps.getMidPrice,
+      { pairs: deps.config.pairs, slippage: deps.config.slippage, positionSize: deps.config.positionSize },
+    );
+  },
+});

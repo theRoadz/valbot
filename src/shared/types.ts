@@ -17,7 +17,7 @@ export interface SummaryStats {
   totalVolume: number;
 }
 
-export type ModeType = "volumeMax" | "profitHunter" | "arbitrage";
+export type ModeType = string;
 
 export interface Alert {
   id: number;
@@ -90,24 +90,27 @@ export function toSmallestUnit(value: number): number {
   return Math.round(value * USDC_SCALE);
 }
 
-const MODE_URL_MAP: Record<string, ModeType> = {
+// Legacy slug maps — kept for frontend compatibility (Story 6.2 will migrate frontend to registry)
+const MODE_URL_MAP: Record<string, string> = {
   "volume-max": "volumeMax",
   "profit-hunter": "profitHunter",
   "arbitrage": "arbitrage",
 };
 
+/** @deprecated Use strategy registry getModeTypeFromSlug() on server side */
 export function urlModeToModeType(urlMode: string): ModeType | undefined {
   return MODE_URL_MAP[urlMode];
 }
 
-const MODE_SLUG_MAP: Record<ModeType, string> = {
+const MODE_SLUG_MAP: Record<string, string> = {
   volumeMax: "volume-max",
   profitHunter: "profit-hunter",
   arbitrage: "arbitrage",
 };
 
+/** @deprecated Use strategy registry on server side */
 export function modeTypeToSlug(mode: ModeType): string {
-  return MODE_SLUG_MAP[mode];
+  return MODE_SLUG_MAP[mode] ?? mode;
 }
 
 // --- Pyth Oracle types ---
@@ -139,10 +142,20 @@ export interface TradeHistoryResponse {
   total: number;
 }
 
+export interface StrategyInfo {
+  name: string;
+  description: string;
+  modeType: ModeType;
+  urlSlug: string;
+  modeColor: string;
+  status: ModeStatus;
+}
+
 export interface StatusResponse {
   modes: Record<ModeType, ModeConfig>;
   positions: Position[];
   trades: Trade[];
   connection: ConnectionState;
   stats?: { totalPnl: number; sessionPnl: number; totalTrades: number; totalVolume: number };
+  strategies: StrategyInfo[];
 }

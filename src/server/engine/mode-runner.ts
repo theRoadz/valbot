@@ -41,6 +41,22 @@ export abstract class ModeRunner {
   abstract executeIteration(): Promise<void>;
   abstract getIntervalMs(): number;
 
+  /** Human-readable strategy name (e.g., "Volume Max") */
+  abstract get strategyName(): string;
+  /** Short description of what the strategy does */
+  abstract get strategyDescription(): string;
+  /** Default configuration for this strategy */
+  abstract get defaultConfig(): Record<string, unknown>;
+  /** CSS color for mode identity (e.g., "#3b82f6") */
+  abstract get modeColor(): string;
+  /** URL slug for API routing (e.g., "volume-max") */
+  abstract get urlSlug(): string;
+
+  /** Optional lifecycle hook called at the end of start() */
+  protected onStart(): void {}
+  /** Optional lifecycle hook called at the end of stop() */
+  protected onStop(): void {}
+
   async start(): Promise<void> {
     if (this._running) {
       throw modeAlreadyRunningError(this.mode);
@@ -55,6 +71,7 @@ export abstract class ModeRunner {
     }
 
     this._running = true;
+    this.onStart();
     this.broadcast(EVENTS.MODE_STARTED, { mode: this.mode });
     logger.info({ mode: this.mode }, "Mode started");
 
@@ -82,6 +99,7 @@ export abstract class ModeRunner {
       logger.error({ err, mode: this.mode }, "Error closing positions during stop");
     }
 
+    this.onStop();
     const finalStats = this.fundAllocator.getStats(this.mode);
     this.broadcast(EVENTS.MODE_STOPPED, { mode: this.mode, finalStats });
     logger.info({ mode: this.mode }, "Mode stopped");

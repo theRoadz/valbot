@@ -1,9 +1,11 @@
-import { eq } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import type { ModeType, ModeStats } from "../../shared/types.js";
 import { fromSmallestUnit } from "../../shared/types.js";
 import { getDb } from "../db/index.js";
 import { config, assertSafeInteger } from "../db/schema.js";
 import { AppError, insufficientFundsError } from "../lib/errors.js";
+import { logger } from "../lib/logger.js";
+import { strategyRegistry } from "./strategy-registry.js";
 
 const KILL_SWITCH_THRESHOLD = 0.9;
 
@@ -147,26 +149,36 @@ export class FundAllocator {
 
   async loadFromDb(): Promise<void> {
     const db = getDb();
-    const modes: ModeType[] = ["volumeMax", "profitHunter", "arbitrage"];
-    for (const mode of modes) {
-      const key = `allocation:${mode}`;
-      const rows = db.select().from(config).where(eq(config.key, key)).all();
-      if (rows.length > 0) {
-        const parsed = JSON.parse(rows[0].value) as { amount: number };
+
+    // Discover all modes with persisted allocations (registry-driven, not hardcoded)
+    const registeredModes = new Set(strategyRegistry.getRegisteredModeTypes());
+    const allocationRows = db.select().from(config).where(like(config.key, "allocation:%")).all();
+    for (const row of allocationRows) {
+      const mode = row.key.replace("allocation:", "") as ModeType;
+      if (!registeredModes.has(mode)) continue;
+      try {
+        const parsed = JSON.parse(row.value) as { amount: number };
         if (typeof parsed.amount === "number" && Number.isFinite(parsed.amount) && Number.isSafeInteger(parsed.amount)) {
           const entry = this.getOrCreate(mode);
           entry.allocation = parsed.amount;
           entry.remaining = parsed.amount;
         }
+      } catch {
+        logger.warn({ key: row.key }, "Skipping config row with malformed JSON");
       }
+    }
 
-      const psKey = `positionSize:${mode}`;
-      const psRows = db.select().from(config).where(eq(config.key, psKey)).all();
-      if (psRows.length > 0) {
-        const parsed = JSON.parse(psRows[0].value) as { amount: number };
+    const positionSizeRows = db.select().from(config).where(like(config.key, "positionSize:%")).all();
+    for (const row of positionSizeRows) {
+      const mode = row.key.replace("positionSize:", "") as ModeType;
+      if (!registeredModes.has(mode)) continue;
+      try {
+        const parsed = JSON.parse(row.value) as { amount: number };
         if (typeof parsed.amount === "number" && Number.isFinite(parsed.amount) && Number.isSafeInteger(parsed.amount)) {
           this.positionSizes.set(mode, parsed.amount);
         }
+      } catch {
+        logger.warn({ key: row.key }, "Skipping config row with malformed JSON");
       }
     }
 
