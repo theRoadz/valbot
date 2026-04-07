@@ -194,3 +194,7 @@
 ## Deferred from: code review of story 7-1-accessibility-baseline-audit-and-fixes (2026-04-07)
 
 - ~~No click-outside-to-close handler on pair dropdown [src/client/components/mode-card.tsx]~~ — resolved: added mousedown listener that closes dropdown when clicking outside trigger and dropdown container
+
+## Deferred from: code review of story 7-2-transition-and-animation-polish (2026-04-07)
+
+- ~~Toast slide direction is vertical (Sonner library default), not horizontal "from right" per AC #5~~ — resolved: added CSS `translate` override for right-positioned toasts in index.css

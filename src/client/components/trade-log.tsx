@@ -134,7 +134,7 @@ export function TradeLog() {
               type="button"
               onClick={handleIndicatorClick}
               aria-label="Scroll to latest trades"
-              className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-card-foreground/10 backdrop-blur-sm text-text-muted text-xs font-mono px-3 py-1 rounded-full cursor-pointer hover:bg-card-foreground/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-card-foreground/10 backdrop-blur-sm text-text-muted text-xs font-mono px-3 py-1 rounded-full cursor-pointer hover:bg-card-foreground/20 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               New trades below ↓
             </button>

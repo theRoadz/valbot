@@ -377,8 +377,9 @@ export function ModeCard({ mode, name, description, color, barColor }: ModeCardP
             <span className="text-lg font-semibold" style={{ color }}>{name}</span>
             <Badge
               className={cn(
-                "transition-colors duration-200",
                 badge.className,
+                status === "kill-switch" ? "transition-none" : "transition-colors duration-200",
+                "min-w-[80px] text-center",
               )}
             >
               {badge.label}

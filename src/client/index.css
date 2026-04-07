@@ -93,11 +93,26 @@
   }
 }
 
-/* Sonner toast animation overrides (AC #6: 200ms slide-in, 150ms fade-out) */
+/* Sonner toast animation overrides (AC #5: 200ms slide-in from right, 150ms fade-out) */
 [data-sonner-toaster] [data-sonner-toast] {
   --toast-enter-duration: 200ms;
   transition-timing-function: ease-out;
 }
 [data-sonner-toaster] [data-sonner-toast][data-removed="true"] {
   --toast-exit-duration: 150ms;
+}
+/* Slide-in from right: override Sonner's default vertical slide */
+[data-sonner-toaster][data-x-position="right"] [data-sonner-toast] {
+  translate: 100% 0;
+  transition: translate 200ms ease-out, transform 400ms, opacity 400ms, height 400ms, box-shadow 200ms;
+}
+[data-sonner-toaster][data-x-position="right"] [data-sonner-toast][data-mounted="true"] {
+  translate: 0 0;
+}
+[data-sonner-toaster][data-x-position="right"] [data-sonner-toast][data-removed="true"] {
+  translate: 100% 0;
+  transition: translate 150ms ease-out, transform 400ms, opacity 400ms, height 400ms, box-shadow 200ms;
+}
+[data-sonner-toast] {
+  will-change: transform, opacity;
 }

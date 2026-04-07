@@ -43,7 +43,7 @@ describe("TopBar", () => {
     expect(dot?.className).toContain("bg-profit");
   });
 
-  it('shows "Reconnecting..." with pulsing yellow dot', () => {
+  it('shows "Reconnecting..." with pulsing yellow dot and will-change hint', () => {
     useStore.setState({
       connection: { status: "reconnecting", equity: 0, available: 0 },
     });
@@ -52,6 +52,7 @@ describe("TopBar", () => {
     const dot = screen.getByText("Reconnecting...").previousElementSibling;
     expect(dot?.className).toContain("bg-warning");
     expect(dot?.className).toContain("animate-pulse");
+    expect(dot?.className).toContain("will-change-[opacity]");
   });
 
   it("renders all stat placeholders with zero values", () => {

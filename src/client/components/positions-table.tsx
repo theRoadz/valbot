@@ -18,7 +18,7 @@ function PositionRow({ position, isClosing }: { position: Position; isClosing: b
 
   return (
     <TableRow
-      className={`hover:bg-surface-elevated ${isClosing ? "bg-warning/20 transition-colors duration-200" : "transition-colors duration-200"}`}
+      className={`hover:bg-surface-elevated ${isClosing ? "bg-warning/20" : ""}`}
     >
       <TableCell className="text-xs">
         <span style={{ color: tag.color }}>{tag.label}</span>

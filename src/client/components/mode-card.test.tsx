@@ -484,6 +484,40 @@ describe("ModeCard", () => {
     });
   });
 
+  describe("transition and animation polish", () => {
+    it("status badge has transition-colors when NOT kill-switch", () => {
+      useStore.setState((s) => ({
+        modes: { ...s.modes, volumeMax: { ...s.modes.volumeMax, status: "running" as ModeStatus } },
+      }));
+      render(<ModeCard {...defaultProps} />);
+      const badge = screen.getByText("Running").closest("div");
+      expect(badge?.className).toContain("transition-colors");
+      expect(badge?.className).toContain("duration-200");
+    });
+
+    it("status badge uses transition-none when kill-switch (instant appearance)", () => {
+      useStore.setState((s) => ({
+        modes: {
+          ...s.modes,
+          volumeMax: {
+            ...s.modes.volumeMax,
+            status: "kill-switch" as ModeStatus,
+            killSwitchDetail: { positionsClosed: 1, lossAmount: 50 },
+          },
+        },
+      }));
+      render(<ModeCard {...defaultProps} />);
+      const badge = screen.getByText("Kill Switch").closest("div");
+      expect(badge?.className).toContain("transition-none");
+    });
+
+    it("status badge has min-w-[80px] to prevent layout shift", () => {
+      render(<ModeCard {...defaultProps} />);
+      const badge = screen.getByText("Stopped").closest("div");
+      expect(badge?.className).toContain("min-w-[80px]");
+    });
+  });
+
   it("renders all three mode variants", () => {
     const modes = [
       { mode: "volumeMax" as const, name: "Volume Max", description: "Volume maximization", color: "#8b5cf6", barColor: "#8b5cf6" },

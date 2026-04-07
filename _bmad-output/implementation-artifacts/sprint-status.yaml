@@ -41,6 +41,8 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-07
+# last review: 2026-04-07 code review of story 7-2, all patches applied
+# last story created: 2026-04-07 story 7-2
 # last review: 2026-04-07 code review of story 7-1, all patches applied
 # last story created: 2026-04-07 story 7-1
 # last review: 2026-04-07 code review of story 6-2, all patches applied
@@ -177,7 +179,7 @@ development_status:
   # Epic 7: Accessibility & UX Polish
   epic-7: in-progress
   7-1-accessibility-baseline-audit-and-fixes: done
-  7-2-transition-and-animation-polish: backlog
+  7-2-transition-and-animation-polish: done
   epic-7-retrospective: optional
 
   # Epic 8: Hotfixes & Bug Fixes

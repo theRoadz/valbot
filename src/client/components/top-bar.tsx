@@ -75,6 +75,7 @@ export function TopBar() {
               <span
                 className={cn(
                   "inline-block h-2 w-2 rounded-full",
+                  config.dotClass.includes("animate-pulse") && "will-change-[opacity]",
                   config.dotClass,
                 )}
               />

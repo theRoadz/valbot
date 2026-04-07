@@ -162,6 +162,40 @@ describe('PositionsTable', () => {
     }
   });
 
+  it('closing position row has bg-warning/20 highlight and transition from base TableRow', () => {
+    useStore.setState({
+      positions: [
+        { id: 1, mode: 'volumeMax', pair: 'SOL-PERP', side: 'Long', size: 100, entryPrice: 150, stopLoss: 140, timestamp: 1000 },
+      ],
+      closingPositions: [1],
+    });
+
+    render(<PositionsTable />);
+
+    const volTag = screen.getByText('VOL');
+    const closingRow = volTag.closest('tr');
+    expect(closingRow?.className).toContain('bg-warning/20');
+    expect(closingRow?.className).toContain('transition-colors');
+    expect(closingRow?.className).toContain('duration-200');
+  });
+
+  it('non-closing position row has transition-colors from base TableRow', () => {
+    useStore.setState({
+      positions: [
+        { id: 1, mode: 'volumeMax', pair: 'SOL-PERP', side: 'Long', size: 100, entryPrice: 150, stopLoss: 140, timestamp: 1000 },
+      ],
+      closingPositions: [],
+    });
+
+    render(<PositionsTable />);
+
+    const volTag = screen.getByText('VOL');
+    const row = volTag.closest('tr');
+    expect(row?.className).toContain('transition-colors');
+    expect(row?.className).toContain('duration-200');
+    expect(row?.className).not.toContain('bg-warning/20');
+  });
+
   it('number header cells have text-right alignment', () => {
     render(<PositionsTable />);
 
