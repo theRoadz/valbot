@@ -72,3 +72,11 @@ Three compounding CSS layout issues in `App.tsx` and child components:
 - `src/client/components/trade-history-table.tsx`
 - `src/client/components/trade-log.tsx`
 - `_bmad-output/implementation-artifacts/8-8-fix-dashboard-bottom-section-clipping.md`
+
+### Follow-up Fix (2026-04-08)
+
+**Problem:** When Open Positions has no rows, the `grid-rows-2` layout still allocates 50% of the bottom section height to the empty positions table, creating a large visual gap before Trade History.
+
+**Changes:**
+- `App.tsx:55` — Changed `grid-rows-2` to `grid-rows-[auto_1fr]` so Open Positions shrinks to content when empty and Trade History fills remaining space
+- `positions-table.tsx:67` — Changed empty state cell from `h-32` (128px) to `h-16` (64px) for a more compact empty state

@@ -64,7 +64,7 @@ export function PositionsTable() {
           <TableBody>
             {positions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-32 text-center">
+                <TableCell colSpan={8} className="h-16 text-center">
                   <span className="text-sm text-text-muted">No open positions</span>
                 </TableCell>
               </TableRow>

@@ -52,7 +52,7 @@ function App() {
 
         {/* Bottom Split: Positions + Trade History (3fr) + Trade Log (2fr) */}
         <div className="grid grid-cols-[3fr_2fr] gap-4 min-h-[400px]">
-          <div className="grid grid-rows-2 gap-4 min-h-0">
+          <div className="grid grid-rows-[auto_1fr] gap-4 min-h-0">
             <PositionsTable />
             <TradeHistoryTable />
           </div>
