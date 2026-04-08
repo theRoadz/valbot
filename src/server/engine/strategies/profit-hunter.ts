@@ -10,6 +10,7 @@ import {
   invalidStrategyConfigError,
   profitHunterStaleOracleError,
 } from "../../lib/errors.js";
+import { EVENTS, type ActivityPairEntry } from "../../../shared/events.js";
 
 export interface ProfitHunterConfig {
   pairs: string[];
@@ -31,6 +32,7 @@ export class ProfitHunterStrategy extends ModeRunner {
   private readonly config: ProfitHunterConfig;
   private readonly oracleClient: OracleClient;
   private readonly dynamicPositionSize: boolean;
+  private iterationCount = 0;
 
   get strategyName() { return "Profit Hunter"; }
   get strategyDescription() { return "Mean-reversion strategy using Pyth oracle price vs moving average deviation signals."; }
@@ -92,12 +94,18 @@ export class ProfitHunterStrategy extends ModeRunner {
   }
 
   async executeIteration(): Promise<void> {
+    this.iterationCount++;
+    const activity: ActivityPairEntry[] = [];
+    const reportedPairs = new Set<string>();
+
     // Step 1: Check existing positions for close signals
     const openPositions = this.positionManager.getPositions(this.mode);
 
     for (const position of openPositions) {
       const oracleKey = this.pairToOracleKey(position.pair);
       if (!this.oracleClient.isAvailable(oracleKey)) {
+        activity.push({ pair: position.pair, deviationPct: null, oracleStatus: "stale", outcome: "held", size: null, side: position.side });
+        reportedPairs.add(position.pair);
         continue;
       }
 
@@ -105,10 +113,13 @@ export class ProfitHunterStrategy extends ModeRunner {
       const ma = this.oracleClient.getMovingAverage(oracleKey);
 
       if (price === null || price === 0 || ma === null || ma === 0) {
+        activity.push({ pair: position.pair, deviationPct: null, oracleStatus: "warming-up", outcome: "held", size: null, side: position.side });
+        reportedPairs.add(position.pair);
         continue;
       }
 
       const deviation = (price - ma) / ma;
+      const deviationPct = deviation * 100;
 
       if (Math.abs(deviation) <= this.config.closeThreshold) {
         try {
@@ -117,13 +128,18 @@ export class ProfitHunterStrategy extends ModeRunner {
             { mode: this.mode, pair: position.pair, deviation },
             "Closed position — price reverted to MA",
           );
+          activity.push({ pair: position.pair, deviationPct, oracleStatus: "ok", outcome: "closed-reverted", size: position.size, side: position.side });
         } catch (err) {
           logger.error(
             { err, mode: this.mode, positionId: position.id },
             "Failed to close reverted position",
           );
+          activity.push({ pair: position.pair, deviationPct, oracleStatus: "ok", outcome: "close-failed", size: null, side: position.side });
         }
+      } else {
+        activity.push({ pair: position.pair, deviationPct, oracleStatus: "ok", outcome: "held", size: null, side: position.side });
       }
+      reportedPairs.add(position.pair);
     }
 
     // Step 2: Scan for new entry signals
@@ -134,6 +150,9 @@ export class ProfitHunterStrategy extends ModeRunner {
     for (const pair of this.config.pairs) {
       // Skip if position already open on this pair
       if (openPairs.has(pair)) {
+        if (!reportedPairs.has(pair)) {
+          activity.push({ pair, deviationPct: null, oracleStatus: "ok", outcome: "skipped-has-position", size: null, side: null });
+        }
         continue;
       }
 
@@ -142,6 +161,9 @@ export class ProfitHunterStrategy extends ModeRunner {
       if (!this.oracleClient.isAvailable(oracleKey)) {
         const err = profitHunterStaleOracleError(pair);
         logger.info({ mode: this.mode, pair, code: err.code }, err.message);
+        if (!reportedPairs.has(pair)) {
+          activity.push({ pair, deviationPct: null, oracleStatus: "stale", outcome: "skipped-stale", size: null, side: null });
+        }
         continue;
       }
 
@@ -150,17 +172,21 @@ export class ProfitHunterStrategy extends ModeRunner {
 
       if (price === null || ma === null) {
         // MA requires ~30s of data after connect — normal warm-up, not an error
+        activity.push({ pair, deviationPct: null, oracleStatus: "warming-up", outcome: "skipped-warming", size: null, side: null });
         continue;
       }
 
       if (price === 0 || ma === 0) {
+        activity.push({ pair, deviationPct: null, oracleStatus: "warming-up", outcome: "skipped-warming", size: null, side: null });
         continue;
       }
 
       const deviation = (price - ma) / ma;
+      const deviationPct = deviation * 100;
 
       // No signal if within threshold
       if (Math.abs(deviation) <= this.config.deviationThreshold) {
+        activity.push({ pair, deviationPct, oracleStatus: "ok", outcome: "no-signal", size: null, side: null });
         continue;
       }
 
@@ -171,6 +197,7 @@ export class ProfitHunterStrategy extends ModeRunner {
       // Fund check before every open
       if (!this.fundAllocator.canAllocate(this.mode, size)) {
         logger.info({ mode: this.mode, pair }, "Insufficient funds, skipping");
+        activity.push({ pair, deviationPct, oracleStatus: "ok", outcome: "skipped-no-funds", size: null, side });
         continue;
       }
 
@@ -192,12 +219,23 @@ export class ProfitHunterStrategy extends ModeRunner {
           { mode: this.mode, pair, side, deviation },
           "Opened position on deviation signal",
         );
+        activity.push({ pair, deviationPct, oracleStatus: "ok", outcome: side === "Long" ? "opened-long" : "opened-short", size, side });
       } catch (err) {
         logger.error(
           { err, mode: this.mode, pair, side },
           "Failed to open position",
         );
+        activity.push({ pair, deviationPct, oracleStatus: "ok", outcome: "open-failed", size: null, side });
       }
+    }
+
+    // Broadcast iteration activity summary (skip if no pairs processed)
+    if (activity.length > 0) {
+      this.broadcast(EVENTS.MODE_ACTIVITY, {
+        mode: this.mode,
+        iteration: this.iterationCount,
+        pairs: activity,
+      });
     }
   }
 

@@ -5,6 +5,7 @@ import { MaxAllocationControl } from "./components/max-allocation-control";
 import { PositionsTable } from "./components/positions-table";
 import { TradeHistoryTable } from "./components/trade-history-table";
 import { TradeLog } from "./components/trade-log";
+import { ActivityLog } from "./components/activity-log";
 import { AlertBanner } from "./components/alert-banner";
 import { Toaster } from "./components/ui/sonner";
 import { useAlertToast } from "./hooks/use-alert-toast";
@@ -19,6 +20,10 @@ function App() {
   const dismissAlert = useStore((s) => s.dismissAlert);
   const loadInitialStatus = useStore((s) => s.loadInitialStatus);
   const strategies = useStore((s) => s.strategies);
+  const phActive = useStore((s) => {
+    const status = s.modes["profitHunter"]?.status;
+    return status === "running" || status === "error";
+  });
 
   useEffect(() => {
     fetchStatus()
@@ -52,8 +57,9 @@ function App() {
 
         {/* Bottom Split: Positions + Trade History (3fr) + Trade Log (2fr) */}
         <div className="grid grid-cols-[3fr_2fr] gap-4 min-h-[400px]">
-          <div className="grid grid-rows-[auto_1fr] gap-4 min-h-0">
+          <div className="grid grid-rows-[auto_auto_1fr] gap-4 min-h-0">
             <PositionsTable />
+            {phActive && <ActivityLog />}
             <TradeHistoryTable />
           </div>
           <TradeLog />

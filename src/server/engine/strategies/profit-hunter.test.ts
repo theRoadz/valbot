@@ -553,6 +553,163 @@ describe("ProfitHunterStrategy", () => {
     });
   });
 
+  // --- Iteration activity broadcast ---
+
+  describe("iteration activity broadcast", () => {
+    function getActivityCall(broadcast: ReturnType<typeof vi.fn>) {
+      const calls = broadcast.mock.calls as [string, unknown][];
+      return calls.find(([event]) => event === "mode.activity");
+    }
+
+    it("broadcasts MODE_ACTIVITY with correct structure after iteration", async () => {
+      mocks.oracleClient.getPrice.mockReturnValue(100_500_000);
+      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      const call = getActivityCall(mocks.broadcast as unknown as ReturnType<typeof vi.fn>);
+      expect(call).toBeDefined();
+      const [, payload] = call!;
+      expect(payload).toEqual(expect.objectContaining({
+        mode: "profitHunter",
+        iteration: 1,
+        pairs: expect.arrayContaining([
+          expect.objectContaining({ pair: "SOL/USDC", outcome: "no-signal" }),
+        ]),
+      }));
+    });
+
+    it("reports opened-long when deviation triggers Long", async () => {
+      mocks.oracleClient.getPrice.mockReturnValue(98_000_000);
+      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      const call = getActivityCall(mocks.broadcast as unknown as ReturnType<typeof vi.fn>);
+      const payload = call![1] as any;
+      expect(payload.pairs[0]).toEqual(expect.objectContaining({
+        pair: "SOL/USDC",
+        outcome: "opened-long",
+        side: "Long",
+        oracleStatus: "ok",
+      }));
+      expect(payload.pairs[0].deviationPct).toBeCloseTo(-2.0, 1);
+      expect(payload.pairs[0].size).toBe(50_000_000);
+    });
+
+    it("reports skipped-stale when oracle unavailable", async () => {
+      mocks.oracleClient.isAvailable.mockReturnValue(false);
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      const call = getActivityCall(mocks.broadcast as unknown as ReturnType<typeof vi.fn>);
+      const payload = call![1] as any;
+      expect(payload.pairs[0]).toEqual(expect.objectContaining({
+        pair: "SOL/USDC",
+        outcome: "skipped-stale",
+        oracleStatus: "stale",
+        deviationPct: null,
+      }));
+    });
+
+    it("reports closed-reverted when position closes", async () => {
+      mocks.positionManager.getPositions.mockReturnValue([
+        { id: 42, mode: "profitHunter", pair: "SOL/USDC", side: "Long", size: 50_000_000, entryPrice: 98, stopLoss: 95, timestamp: Date.now() },
+      ]);
+      mocks.oracleClient.getPrice.mockReturnValue(100_100_000);
+      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      const call = getActivityCall(mocks.broadcast as unknown as ReturnType<typeof vi.fn>);
+      const payload = call![1] as any;
+      expect(payload.pairs[0]).toEqual(expect.objectContaining({
+        pair: "SOL/USDC",
+        outcome: "closed-reverted",
+        side: "Long",
+        size: 50_000_000,
+      }));
+    });
+
+    it("reports skipped-no-funds when canAllocate returns false", async () => {
+      mocks.fundAllocator.canAllocate.mockReturnValue(false);
+      mocks.oracleClient.getPrice.mockReturnValue(98_000_000);
+      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      const call = getActivityCall(mocks.broadcast as unknown as ReturnType<typeof vi.fn>);
+      const payload = call![1] as any;
+      expect(payload.pairs[0]).toEqual(expect.objectContaining({
+        pair: "SOL/USDC",
+        outcome: "skipped-no-funds",
+        side: "Long",
+      }));
+    });
+
+    it("increments iteration counter across calls", async () => {
+      mocks.oracleClient.getPrice.mockReturnValue(100_500_000);
+      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+      await strategy.executeIteration();
+
+      const broadcastFn = mocks.broadcast as unknown as ReturnType<typeof vi.fn>;
+      const activityCalls = broadcastFn.mock.calls.filter(([e]: [string]) => e === "mode.activity");
+      expect(activityCalls).toHaveLength(2);
+      expect((activityCalls[0][1] as any).iteration).toBe(1);
+      expect((activityCalls[1][1] as any).iteration).toBe(2);
+    });
+  });
+
   // --- Dynamic position sizing ---
 
   describe("dynamic position sizing", () => {

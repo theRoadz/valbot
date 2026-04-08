@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { ConnectionStatus, SummaryStats, Alert, ModeType, ModeStatus, ModeConfig, ModeStats, StatusResponse, Trade, Position, TradeHistoryResponse, StrategyInfo } from "@shared/types";
-import { EVENTS, type ConnectionStatusPayload, type PositionOpenedPayload, type PositionClosedPayload, type WsMessage } from "@shared/events";
+import { EVENTS, type ConnectionStatusPayload, type PositionOpenedPayload, type PositionClosedPayload, type ModeActivityPayload, type WsMessage } from "@shared/events";
 
 let alertIdCounter = Date.now();
 let tradeIdCounter = -1;
@@ -73,6 +73,7 @@ interface ValBotStore {
   trades: Trade[];
   positions: Position[];
   closingPositions: number[];
+  activityLog: (ModeActivityPayload & { timestamp: number })[];
   strategies: StrategyInfo[];
   modes: Record<ModeType, ModeStoreEntry>;
   setConnectionStatus: (status: ConnectionStatus) => void;
@@ -127,6 +128,7 @@ const useStore = create<ValBotStore>()((set) => ({
   initialized: false,
   toastQueue: [],
   closingPositions: [],
+  activityLog: [],
   strategies: [],
   modes: {},
   setConnectionStatus: (status) =>
@@ -404,8 +406,10 @@ const useStore = create<ValBotStore>()((set) => ({
       if (mode) {
         set((state) => {
           if (!state.modes[mode]) return state;
+          // Clear activity log for profitHunter regardless of stop reason (normal stop or kill-switch)
+          const clearActivity = mode === "profitHunter" ? [] : state.activityLog;
           // Preserve kill-switch status — MODE_STOPPED from forceStop() must not overwrite it
-          if (state.modes[mode].status === "kill-switch") return state;
+          if (state.modes[mode].status === "kill-switch") return { ...state, activityLog: clearActivity };
           const finalStats = data.finalStats as ModeStats | undefined;
           const modes = {
             ...state.modes,
@@ -419,6 +423,7 @@ const useStore = create<ValBotStore>()((set) => ({
           return {
             modes,
             stats: aggregateSummaryStats(modes, state.stats.equity, state.stats.available, state.historicalPnlBase, state.historicalTradesBase, state.historicalVolumeBase),
+            activityLog: clearActivity,
           };
         });
       }
@@ -576,6 +581,14 @@ const useStore = create<ValBotStore>()((set) => ({
           }, 300);
           pendingCloseTimers.set(idToRemove, timer);
         }
+      }
+    } else if (message.event === EVENTS.MODE_ACTIVITY) {
+      const data = message.data as ModeActivityPayload;
+      if (data?.mode && Array.isArray(data.pairs) && typeof data.iteration === "number" && typeof message.timestamp === "number") {
+        const entry = { ...data, timestamp: message.timestamp };
+        set((state) => ({
+          activityLog: [...state.activityLog, entry].slice(-100),
+        }));
       }
     } else if (import.meta.env.DEV) {
       console.log(`[WS] Unhandled event: ${message.event}`);

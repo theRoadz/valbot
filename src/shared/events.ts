@@ -13,6 +13,7 @@ export const EVENTS = {
   ALERT_TRIGGERED: "alert.triggered",
   CONNECTION_STATUS: "connection.status",
   PRICE_UPDATED: "price.updated",
+  MODE_ACTIVITY: "mode.activity",
 } as const;
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
@@ -103,6 +104,32 @@ export interface PriceUpdatedPayload {
   timestamp: number;
 }
 
+export interface ActivityPairEntry {
+  pair: string;
+  deviationPct: number | null;
+  oracleStatus: "ok" | "stale" | "warming-up";
+  outcome:
+    | "no-signal"
+    | "opened-long"
+    | "opened-short"
+    | "closed-reverted"
+    | "held"
+    | "skipped-stale"
+    | "skipped-warming"
+    | "skipped-no-funds"
+    | "skipped-has-position"
+    | "open-failed"
+    | "close-failed";
+  size: number | null;
+  side: "Long" | "Short" | null;
+}
+
+export interface ModeActivityPayload {
+  mode: ModeType;
+  iteration: number;
+  pairs: ActivityPairEntry[];
+}
+
 export interface EventPayloadMap {
   "trade.executed": TradeExecutedPayload;
   "stats.updated": StatsUpdatedPayload;
@@ -114,4 +141,5 @@ export interface EventPayloadMap {
   "alert.triggered": AlertTriggeredPayload;
   "connection.status": ConnectionStatusPayload;
   "price.updated": PriceUpdatedPayload;
+  "mode.activity": ModeActivityPayload;
 }

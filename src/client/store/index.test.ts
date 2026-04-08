@@ -31,6 +31,7 @@ describe("ValBotStore", () => {
       trades: [],
       positions: [],
       closingPositions: [],
+      activityLog: [],
       tradeHistory: {
         trades: [],
         total: 0,
@@ -2220,6 +2221,130 @@ describe("ValBotStore", () => {
       });
 
       expect(useStore.getState().trades).toHaveLength(1);
+    });
+  });
+
+  describe("MODE_ACTIVITY handler", () => {
+    it("appends activity entry with timestamp from WS message", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_ACTIVITY,
+        timestamp: 1700000000000,
+        data: {
+          mode: "profitHunter",
+          iteration: 1,
+          pairs: [{ pair: "SOL/USDC", deviationPct: 1.5, oracleStatus: "ok", outcome: "no-signal", size: null, side: null }],
+        },
+      });
+
+      const log = useStore.getState().activityLog;
+      expect(log).toHaveLength(1);
+      expect(log[0].mode).toBe("profitHunter");
+      expect(log[0].iteration).toBe(1);
+      expect(log[0].timestamp).toBe(1700000000000);
+      expect(log[0].pairs).toHaveLength(1);
+    });
+
+    it("caps activityLog at 100 entries", () => {
+      // Pre-fill with 99 entries
+      const existing = Array.from({ length: 99 }, (_, i) => ({
+        mode: "profitHunter" as const,
+        iteration: i + 1,
+        pairs: [],
+        timestamp: 1700000000000 + i,
+      }));
+      useStore.setState({ activityLog: existing });
+
+      // Add 2 more to exceed cap
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_ACTIVITY,
+        timestamp: 1700000000100,
+        data: { mode: "profitHunter", iteration: 100, pairs: [] },
+      });
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_ACTIVITY,
+        timestamp: 1700000000101,
+        data: { mode: "profitHunter", iteration: 101, pairs: [] },
+      });
+
+      const log = useStore.getState().activityLog;
+      expect(log).toHaveLength(100);
+      expect(log[0].iteration).toBe(2); // first entry evicted
+      expect(log[99].iteration).toBe(101);
+    });
+
+    it("rejects message when timestamp is missing", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_ACTIVITY,
+        timestamp: undefined as unknown as number,
+        data: { mode: "profitHunter", iteration: 1, pairs: [] },
+      });
+
+      expect(useStore.getState().activityLog).toHaveLength(0);
+    });
+
+    it("rejects message when iteration is not a number", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_ACTIVITY,
+        timestamp: Date.now(),
+        data: { mode: "profitHunter", iteration: "bad", pairs: [] },
+      });
+
+      expect(useStore.getState().activityLog).toHaveLength(0);
+    });
+
+    it("rejects message when pairs is not an array", () => {
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_ACTIVITY,
+        timestamp: Date.now(),
+        data: { mode: "profitHunter", iteration: 1, pairs: "bad" },
+      });
+
+      expect(useStore.getState().activityLog).toHaveLength(0);
+    });
+
+    it("clears activityLog when profitHunter MODE_STOPPED fires", () => {
+      useStore.setState({
+        activityLog: [{ mode: "profitHunter", iteration: 1, pairs: [], timestamp: Date.now() }],
+        modes: { ...useStore.getState().modes, profitHunter: { ...useStore.getState().modes.profitHunter, status: "running" } },
+      });
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STOPPED,
+        timestamp: Date.now(),
+        data: { mode: "profitHunter" },
+      });
+
+      expect(useStore.getState().activityLog).toHaveLength(0);
+    });
+
+    it("clears activityLog when profitHunter MODE_STOPPED fires during kill-switch", () => {
+      useStore.setState({
+        activityLog: [{ mode: "profitHunter", iteration: 1, pairs: [], timestamp: Date.now() }],
+        modes: { ...useStore.getState().modes, profitHunter: { ...useStore.getState().modes.profitHunter, status: "kill-switch" } },
+      });
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STOPPED,
+        timestamp: Date.now(),
+        data: { mode: "profitHunter" },
+      });
+
+      expect(useStore.getState().activityLog).toHaveLength(0);
+    });
+
+    it("does not clear activityLog when a non-profitHunter mode stops", () => {
+      useStore.setState({
+        activityLog: [{ mode: "profitHunter", iteration: 1, pairs: [], timestamp: Date.now() }],
+        modes: { ...useStore.getState().modes, volumeMax: { ...useStore.getState().modes.volumeMax, status: "running" } },
+      });
+
+      useStore.getState().handleWsMessage({
+        event: EVENTS.MODE_STOPPED,
+        timestamp: Date.now(),
+        data: { mode: "volumeMax" },
+      });
+
+      expect(useStore.getState().activityLog).toHaveLength(1);
     });
   });
 });

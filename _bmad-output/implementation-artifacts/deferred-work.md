@@ -217,3 +217,8 @@
 - ~~Concurrent allocation updates not atomic~~ — dismissed: Node.js single-threaded, setAllocation is synchronous, no race possible [src/server/engine/fund-allocator.ts:57-68]
 - ~~Position size not cleared when allocation set to zero~~ — resolved: removed `amount > 0` guard [src/server/engine/fund-allocator.ts:78]
 - ~~No cross-field validation that positionSize <= maxAllocation~~ — dismissed: backend already enforces positionSize <= allocation in setPositionSize [src/server/engine/fund-allocator.ts:257]
+
+## Deferred from: code review of story 8-10-profit-hunter-activity-log (2026-04-08)
+
+- ~~No client-side tests for ActivityLog component or store MODE_ACTIVITY handler~~ — resolved: added activity-log.test.tsx (10 tests) and 8 store handler tests for MODE_ACTIVITY
+- ~~Touch devices: mouseenter/mouseleave may not fire, permanently freezing ActivityLog auto-scroll~~ — resolved: replaced with onPointerEnter/onPointerLeave with pointerType === "mouse" guard, touch events pass through without pausing auto-scroll
