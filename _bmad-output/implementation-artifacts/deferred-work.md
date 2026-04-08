@@ -227,3 +227,8 @@
 
 - ~~Custom StrategySelector dropdown lacks arrow-key navigation~~ — resolved: added full WCAG listbox keyboard nav (Arrow Up/Down, Home, End, Enter/Space, Escape) with roving tabindex and focusedIndex state
 - ~~`key={idx}` on ModeCard instead of stable identity~~ — resolved: changed to `key={slotMode ?? \`empty-${idx}\`}` to force remount on strategy swap
+
+## Deferred from: code review of 8-11-funding-rate-arbitrage (2026-04-08)
+
+- ~~No caching on `getPredictedFundings` calls~~ — resolved: added 10s TTL cache matching `getConnectionStatus` pattern [src/server/blockchain/client.ts:323]
+- ~~Strategy stopped mid-iteration leaves pending async calls~~ — resolved: added `_stopped` flag set via `onStop()` hook, checked at Phase 1→2 boundary and before position opens [src/server/engine/strategies/arbitrage.ts]

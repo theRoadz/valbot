@@ -320,6 +320,50 @@ export interface ConnectionStatusData {
 const STATUS_CACHE_TTL_MS = 5000;
 let cachedStatus: { data: ConnectionStatusData; expiry: number } | null = null;
 
+const FUNDING_CACHE_TTL_MS = 10_000;
+let cachedFundings: { data: Map<string, { rate: number; nextFundingTime: number }>; expiry: number } | null = null;
+
+export async function getPredictedFundings(
+  info: InfoClient,
+): Promise<Map<string, { rate: number; nextFundingTime: number }>> {
+  if (cachedFundings && Date.now() < cachedFundings.expiry) {
+    return cachedFundings.data;
+  }
+
+  const raw = await withRetry(
+    () => info.predictedFundings(),
+    "getPredictedFundings",
+  );
+
+  const result = new Map<string, { rate: number; nextFundingTime: number }>();
+
+  if (!Array.isArray(raw)) {
+    logger.warn({ mode: "arbitrage" }, "predictedFundings returned non-array response");
+    return result;
+  }
+
+  for (const entry of raw) {
+    if (!Array.isArray(entry) || entry.length < 2) continue;
+    const [asset, exchanges] = entry as [string, [string, { fundingRate: string; nextFundingTime: number; fundingIntervalHours?: number } | null][]];
+    if (typeof asset !== "string" || !Array.isArray(exchanges)) continue;
+
+    for (const [exchange, data] of exchanges) {
+      if (exchange === "Hyperliquid" && data !== null) {
+        const rate = parseFloat(data.fundingRate);
+        if (!Number.isFinite(rate)) continue;
+        result.set(asset, {
+          rate,
+          nextFundingTime: data.nextFundingTime,
+        });
+        break;
+      }
+    }
+  }
+
+  cachedFundings = { data: result, expiry: Date.now() + FUNDING_CACHE_TTL_MS };
+  return result;
+}
+
 export async function getConnectionStatus(): Promise<ConnectionStatusData | null> {
   if (!client) return null;
   if (cachedStatus && Date.now() < cachedStatus.expiry) {

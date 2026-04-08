@@ -1,42 +1,43 @@
 import type { ModeType } from "../../../shared/types.js";
 import type { FundAllocator } from "../fund-allocator.js";
 import type { PositionManager } from "../position-manager.js";
-import type { OracleClient } from "../../blockchain/oracle.js";
 import { ModeRunner, type BroadcastFn } from "../mode-runner.js";
 import { strategyRegistry, type StrategyDeps } from "../strategy-registry.js";
 import { logger } from "../../lib/logger.js";
 import {
   AppError,
   invalidStrategyConfigError,
-  arbitrageMidPriceError,
 } from "../../lib/errors.js";
 
-export interface ArbitrageConfig {
+export interface FundingArbitrageConfig {
   pairs: string[];
   slippage: number;
-  spreadThreshold: number;
-  closeSpreadThreshold: number;
+  rateThreshold: number;
+  closeRateThreshold: number;
+  minHoldTimeMs: number;
   iterationIntervalMs: number;
   positionSize: number; // smallest-unit per position
 }
 
-const DEFAULT_SPREAD_THRESHOLD = 0.005; // 0.5% spread to open
-const DEFAULT_CLOSE_SPREAD_THRESHOLD = 0.001; // 0.1% spread to close
-const DEFAULT_ITERATION_INTERVAL_MS = 3_000; // 3s — arb windows close quickly
+const DEFAULT_RATE_THRESHOLD = 0.0001; // 0.01% funding rate to open
+const DEFAULT_CLOSE_RATE_THRESHOLD = 0.00005; // 0.005% to close
+const DEFAULT_MIN_HOLD_TIME_MS = 3_600_000; // 1 hour — at least one funding payment
+const DEFAULT_ITERATION_INTERVAL_MS = 30_000; // 30s — rates change slowly
 const DEFAULT_SLIPPAGE = 0.5;
-const STOP_LOSS_FACTOR = 0.03; // 3% stop-loss distance
+const STOP_LOSS_FACTOR = 0.02; // 2% stop-loss distance
 const MIN_POSITION_SIZE = 10_000_000; // $10 in smallest-unit
-const TAKER_FEE_RATE = 0.00025; // 0.025% Hyperliquid taker fee
 
 export class ArbitrageStrategy extends ModeRunner {
-  private readonly config: ArbitrageConfig;
-  private readonly oracleClient: OracleClient;
-  private readonly getMidPriceFn: (coin: string) => Promise<number>;
+  private readonly config: FundingArbitrageConfig;
+  private readonly getPredictedFundingsFn: () => Promise<Map<string, { rate: number; nextFundingTime: number }>>;
+  private readonly getMidPriceFn?: (coin: string) => Promise<number>;
   private readonly dynamicPositionSize: boolean;
+  private readonly positionOpenTimes = new Map<string, number>(); // pair → timestamp
+  private _stopped = false;
 
-  get strategyName() { return "Arbitrage"; }
-  get strategyDescription() { return "Cross-market spread strategy exploiting Pyth oracle vs Hyperliquid mid-price divergence."; }
-  get defaultConfig(): Record<string, unknown> { return { spreadThreshold: DEFAULT_SPREAD_THRESHOLD, closeSpreadThreshold: DEFAULT_CLOSE_SPREAD_THRESHOLD, iterationIntervalMs: DEFAULT_ITERATION_INTERVAL_MS, slippage: DEFAULT_SLIPPAGE }; }
+  get strategyName() { return "Funding Rate Arbitrage"; }
+  get strategyDescription() { return "Collects hourly funding payments by positioning on the receiving side of Hyperliquid perpetuals."; }
+  get defaultConfig(): Record<string, unknown> { return { rateThreshold: DEFAULT_RATE_THRESHOLD, closeRateThreshold: DEFAULT_CLOSE_RATE_THRESHOLD, minHoldTimeMs: DEFAULT_MIN_HOLD_TIME_MS, iterationIntervalMs: DEFAULT_ITERATION_INTERVAL_MS, slippage: DEFAULT_SLIPPAGE }; }
   get modeColor() { return "#a855f7"; }
   get urlSlug() { return "arbitrage"; }
 
@@ -44,9 +45,9 @@ export class ArbitrageStrategy extends ModeRunner {
     fundAllocator: FundAllocator,
     positionManager: PositionManager,
     broadcast: BroadcastFn,
-    oracleClient: OracleClient,
-    getMidPrice: (coin: string) => Promise<number>,
-    config: Partial<ArbitrageConfig> & { pairs: string[] },
+    getPredictedFundings: () => Promise<Map<string, { rate: number; nextFundingTime: number }>>,
+    config: Partial<FundingArbitrageConfig> & { pairs: string[] },
+    getMidPrice?: (coin: string) => Promise<number>,
   ) {
     const mode: ModeType = "arbitrage";
     super(mode, fundAllocator, positionManager, broadcast);
@@ -55,12 +56,12 @@ export class ArbitrageStrategy extends ModeRunner {
       throw invalidStrategyConfigError(mode, "requires at least one trading pair");
     }
 
-    if (config.spreadThreshold !== undefined && (!(config.spreadThreshold > 0))) {
-      throw invalidStrategyConfigError(mode, "spreadThreshold must be a positive number");
+    if (config.rateThreshold !== undefined && (!(config.rateThreshold > 0))) {
+      throw invalidStrategyConfigError(mode, "rateThreshold must be a positive number");
     }
 
-    if (config.closeSpreadThreshold !== undefined && (!(config.closeSpreadThreshold > 0))) {
-      throw invalidStrategyConfigError(mode, "closeSpreadThreshold must be a positive number");
+    if (config.closeRateThreshold !== undefined && (!(config.closeRateThreshold > 0))) {
+      throw invalidStrategyConfigError(mode, "closeRateThreshold must be a positive number");
     }
 
     if (config.slippage !== undefined && (!(config.slippage >= 0))) {
@@ -71,24 +72,16 @@ export class ArbitrageStrategy extends ModeRunner {
       throw invalidStrategyConfigError(mode, `positionSize must be at least ${MIN_POSITION_SIZE} ($$10)`);
     }
 
-    const effectiveSpread = config.spreadThreshold ?? DEFAULT_SPREAD_THRESHOLD;
-    const effectiveClose = config.closeSpreadThreshold ?? DEFAULT_CLOSE_SPREAD_THRESHOLD;
-    if (effectiveClose >= effectiveSpread) {
+    const effectiveRate = config.rateThreshold ?? DEFAULT_RATE_THRESHOLD;
+    const effectiveClose = config.closeRateThreshold ?? DEFAULT_CLOSE_RATE_THRESHOLD;
+    if (effectiveClose >= effectiveRate) {
       throw invalidStrategyConfigError(
         mode,
-        "closeSpreadThreshold must be less than spreadThreshold to avoid open-then-close churn",
+        "closeRateThreshold must be less than rateThreshold to avoid open-then-close churn",
       );
     }
 
-    const minProfitableSpread = 2 * TAKER_FEE_RATE;
-    if (effectiveSpread < minProfitableSpread) {
-      throw invalidStrategyConfigError(
-        mode,
-        `spreadThreshold (${effectiveSpread}) must be >= 2x taker fee (${minProfitableSpread}) for profitable trades`,
-      );
-    }
-
-    this.oracleClient = oracleClient;
+    this.getPredictedFundingsFn = getPredictedFundings;
     this.getMidPriceFn = getMidPrice;
     this.dynamicPositionSize = config.positionSize === undefined;
 
@@ -100,11 +93,16 @@ export class ArbitrageStrategy extends ModeRunner {
     this.config = {
       pairs: [...config.pairs],
       slippage: config.slippage ?? DEFAULT_SLIPPAGE,
-      spreadThreshold: effectiveSpread,
-      closeSpreadThreshold: effectiveClose,
+      rateThreshold: effectiveRate,
+      closeRateThreshold: effectiveClose,
+      minHoldTimeMs: config.minHoldTimeMs ?? DEFAULT_MIN_HOLD_TIME_MS,
       iterationIntervalMs: config.iterationIntervalMs ?? DEFAULT_ITERATION_INTERVAL_MS,
       positionSize: config.positionSize ?? Math.max(MIN_POSITION_SIZE, Math.floor(allocation / 20)),
     };
+  }
+
+  protected override onStop(): void {
+    this._stopped = true;
   }
 
   getIntervalMs(): number {
@@ -112,108 +110,128 @@ export class ArbitrageStrategy extends ModeRunner {
   }
 
   async executeIteration(): Promise<void> {
-    // Step 1: Check existing positions for close signals (spread convergence)
+    // Fetch predicted funding rates
+    let fundingRates: Map<string, { rate: number; nextFundingTime: number }>;
+    try {
+      fundingRates = await this.getPredictedFundingsFn();
+    } catch (err) {
+      logger.warn({ err, mode: this.mode }, "Failed to fetch predicted funding rates");
+      return;
+    }
+
+    if (fundingRates.size === 0) {
+      logger.warn({ mode: this.mode }, "Predicted funding rates empty — no data from API");
+    }
+
+    // Phase 1: Check existing positions for close signals (rate flip or drop)
     const openPositions = this.positionManager.getPositions(this.mode);
 
+    // Clean up positionOpenTimes for positions closed externally (stop-loss, liquidation, kill switch)
+    const openPairSet = new Set(openPositions.map((p) => p.pair));
+    for (const pair of this.positionOpenTimes.keys()) {
+      if (!openPairSet.has(pair)) {
+        this.positionOpenTimes.delete(pair);
+      }
+    }
+
     for (const position of openPositions) {
-      const oracleKey = this.pairToOracleKey(position.pair);
-      if (!this.oracleClient.isAvailable(oracleKey)) {
-        continue; // Don't close on stale data
+      const coin = this.pairToCoin(position.pair);
+      const funding = fundingRates.get(coin);
+
+      if (!funding) {
+        continue; // No rate data — keep position
       }
 
-      const oraclePrice = this.oracleClient.getPrice(oracleKey);
-      if (oraclePrice === null || oraclePrice === 0) {
+      const now = Date.now();
+      const openTime = this.positionOpenTimes.get(position.pair) ?? position.timestamp;
+
+      // Respect minimum hold time — wait for at least one funding payment
+      if (now - openTime < this.config.minHoldTimeMs) {
         continue;
       }
 
-      let midPriceSmallest: number;
-      try {
-        const midFloat = await this.getMidPriceFn(this.pairToCoin(position.pair));
-        midPriceSmallest = Math.round(midFloat * 1_000_000);
-      } catch {
-        continue; // Skip close check if mid-price unavailable
-      }
+      // Close if rate flipped sign (Long should have negative rate, Short should have positive rate)
+      const rateFlipped = (position.side === "Short" && funding.rate < 0) ||
+                          (position.side === "Long" && funding.rate > 0);
 
-      if (midPriceSmallest === 0) {
-        continue;
-      }
+      // Close if rate dropped below close threshold
+      const rateTooLow = Math.abs(funding.rate) < this.config.closeRateThreshold;
 
-      const spread = (oraclePrice - midPriceSmallest) / midPriceSmallest;
-
-      if (Math.abs(spread) <= this.config.closeSpreadThreshold) {
+      if (rateFlipped || rateTooLow) {
         try {
           await this.positionManager.closePosition(position.id);
+          this.positionOpenTimes.delete(position.pair);
           logger.info(
-            { mode: this.mode, pair: position.pair, spread },
-            "Closed position — spread converged",
+            { mode: this.mode, pair: position.pair, rate: funding.rate, rateFlipped, rateTooLow },
+            "Closed position — funding rate signal expired",
           );
         } catch (err) {
           logger.error(
             { err, mode: this.mode, positionId: position.id },
-            "Failed to close converged position",
+            "Failed to close position",
           );
         }
       }
     }
 
-    // Step 2: Scan for new entry signals
+    // Bail if stopped during Phase 1
+    if (this._stopped) return;
+
+    // Phase 2: Scan for new entry signals
     const currentPositions = this.positionManager.getPositions(this.mode);
     const openPairs = new Set(currentPositions.map((p) => p.pair));
 
     for (const pair of this.config.pairs) {
-      // Skip if position already open on this pair
       if (openPairs.has(pair)) {
         continue;
       }
 
-      const oracleKey = this.pairToOracleKey(pair);
-      if (!this.oracleClient.isAvailable(oracleKey)) {
-        logger.info({ mode: this.mode, pair }, `Oracle unavailable for ${pair}, skipping`);
+      const coin = this.pairToCoin(pair);
+      const funding = fundingRates.get(coin);
+
+      if (!funding) {
         continue;
       }
 
-      const oraclePrice = this.oracleClient.getPrice(oracleKey);
-      if (oraclePrice === null || oraclePrice === 0) {
+      const absRate = Math.abs(funding.rate);
+      if (absRate < this.config.rateThreshold) {
         continue;
       }
 
-      // Fetch Hyperliquid mid-price (async REST call)
-      let midPriceSmallest: number;
-      try {
-        const midFloat = await this.getMidPriceFn(this.pairToCoin(pair));
-        midPriceSmallest = Math.round(midFloat * 1_000_000);
-      } catch (err) {
-        const appErr = arbitrageMidPriceError(pair);
-        logger.warn({ mode: this.mode, pair, code: appErr.code, err }, appErr.message);
-        continue;
-      }
-
-      if (midPriceSmallest === 0) {
-        continue;
-      }
-
-      const spread = (oraclePrice - midPriceSmallest) / midPriceSmallest;
-
-      // No signal if within threshold
-      if (Math.abs(spread) <= this.config.spreadThreshold) {
-        continue;
-      }
-
-      // Arbitrage direction: oracle > mid → Long (perp underpriced, expect rise)
-      // oracle < mid → Short (perp overpriced, expect fall)
-      const side = oraclePrice > midPriceSmallest ? "Long" : "Short";
+      // Positive rate: longs pay shorts → go Short to collect
+      // Negative rate: shorts pay longs → go Long to collect
+      const side = funding.rate > 0 ? "Short" : "Long";
       const size = this.getPositionSize();
 
-      // Fund check before every open
       if (!this.fundAllocator.canAllocate(this.mode, size)) {
         logger.info({ mode: this.mode, pair }, "Insufficient funds, skipping");
         continue;
       }
 
-      // Calculate stop-loss based on mid-price (execution reference)
-      const stopLossPrice = side === "Long"
-        ? Math.floor(midPriceSmallest * (1 - STOP_LOSS_FACTOR))
-        : Math.floor(midPriceSmallest * (1 + STOP_LOSS_FACTOR));
+      // Bail if stopped during iteration
+      if (this._stopped) return;
+
+      // Calculate stop-loss using mid-price as reference (2% distance)
+      let stopLossPrice: number;
+      if (this.getMidPriceFn) {
+        try {
+          const midFloat = await this.getMidPriceFn(coin);
+          if (!Number.isFinite(midFloat) || midFloat <= 0) {
+            logger.warn({ mode: this.mode, pair, midFloat }, "Invalid mid-price for stop-loss, skipping");
+            continue;
+          }
+          const midSmallest = Math.round(midFloat * 1_000_000);
+          stopLossPrice = side === "Long"
+            ? Math.floor(midSmallest * (1 - STOP_LOSS_FACTOR))
+            : Math.floor(midSmallest * (1 + STOP_LOSS_FACTOR));
+        } catch (err) {
+          logger.warn({ err, mode: this.mode, pair }, "Mid-price unavailable for stop-loss, skipping");
+          continue;
+        }
+      } else {
+        logger.warn({ mode: this.mode, pair }, "No mid-price function for stop-loss, skipping");
+        continue;
+      }
 
       try {
         await this.positionManager.openPosition({
@@ -224,9 +242,10 @@ export class ArbitrageStrategy extends ModeRunner {
           slippage: this.config.slippage,
           stopLossPrice,
         });
+        this.positionOpenTimes.set(pair, Date.now());
         logger.info(
-          { mode: this.mode, pair, side, spread },
-          "Opened position on arbitrage spread signal",
+          { mode: this.mode, pair, side, rate: funding.rate },
+          "Opened position on funding rate signal",
         );
       } catch (err) {
         logger.error(
@@ -245,15 +264,6 @@ export class ArbitrageStrategy extends ModeRunner {
     return Math.max(MIN_POSITION_SIZE, Math.floor(allocation / 20));
   }
 
-  private pairToOracleKey(pair: string): string {
-    const parts = pair.split("/");
-    if (parts.length < 2 || !parts[0]) {
-      logger.warn({ mode: this.mode, pair }, "Malformed pair format — expected 'COIN/QUOTE'");
-      return pair;
-    }
-    return `${parts[0]}-PERP`;
-  }
-
   private pairToCoin(pair: string): string {
     return pair.split("/")[0] ?? pair;
   }
@@ -261,36 +271,28 @@ export class ArbitrageStrategy extends ModeRunner {
 
 // Self-registration
 strategyRegistry.registerStrategy({
-  name: "Arbitrage",
-  description: "Cross-market spread strategy exploiting Pyth oracle vs Hyperliquid mid-price divergence.",
+  name: "Funding Rate Arbitrage",
+  description: "Collects hourly funding payments by positioning on the receiving side of Hyperliquid perpetuals.",
   modeType: "arbitrage",
   urlSlug: "arbitrage",
   modeColor: "#a855f7",
-  requires: { oracle: true, blockchain: true },
+  requires: { oracle: false, blockchain: true },
   factory: (deps: StrategyDeps) => {
-    if (!deps.oracleClient) {
+    if (!deps.getPredictedFundings) {
       throw new AppError({
         severity: "critical",
         code: "MISSING_DEPENDENCY",
-        message: "Arbitrage strategy requires oracleClient dependency",
-        resolution: "Ensure oracle is available before starting Arbitrage.",
-      });
-    }
-    if (!deps.getMidPrice) {
-      throw new AppError({
-        severity: "critical",
-        code: "MISSING_DEPENDENCY",
-        message: "Arbitrage strategy requires getMidPrice dependency",
-        resolution: "Ensure blockchain client is available before starting Arbitrage.",
+        message: "Funding Rate Arbitrage strategy requires getPredictedFundings dependency",
+        resolution: "Ensure blockchain client is available before starting Funding Rate Arbitrage.",
       });
     }
     return new ArbitrageStrategy(
       deps.fundAllocator,
       deps.positionManager,
       deps.broadcast,
-      deps.oracleClient,
-      deps.getMidPrice,
+      deps.getPredictedFundings,
       { pairs: deps.config.pairs, slippage: deps.config.slippage, positionSize: deps.config.positionSize },
+      deps.getMidPrice,
     );
   },
 });

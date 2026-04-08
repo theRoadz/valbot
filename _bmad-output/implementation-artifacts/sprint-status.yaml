@@ -41,6 +41,8 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-08
+# last review: 2026-04-08 code review of story 8-11, all patches applied
+# last dev: 2026-04-08 story 8-11 implementation complete
 # last review: 2026-04-08 code review of story 8-15, all patches applied
 # last review: 2026-04-08 code review of story 8-10, all patches applied
 # last dev: 2026-04-07 story 8-9 implementation complete
@@ -198,4 +200,5 @@ development_status:
   8-8-fix-dashboard-bottom-section-clipping: done
   8-9-sqlite-wal-persistence-fix: done
   8-10-profit-hunter-activity-log: done
+  8-11-funding-rate-arbitrage: done
   8-15-strategy-slot-ui: done

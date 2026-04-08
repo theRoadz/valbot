@@ -10,7 +10,7 @@ import "./strategies/profit-hunter.js";
 import "./strategies/arbitrage.js";
 import { OracleClient } from "../blockchain/oracle.js";
 import { getMidPrice } from "../blockchain/contracts.js";
-import { getBlockchainClient } from "../blockchain/client.js";
+import { getBlockchainClient, getPredictedFundings } from "../blockchain/client.js";
 import { broadcast } from "../ws/broadcaster.js";
 import { SessionManager } from "./session-manager.js";
 import { logger } from "../lib/logger.js";
@@ -128,6 +128,7 @@ export async function startMode(
     const storedPositionSize = engine.fundAllocator.getPositionSize(mode) ?? undefined;
     const bcClient = getBlockchainClient();
     const getMidPriceFn = bcClient ? (coin: string) => getMidPrice(bcClient.info, coin) : undefined;
+    const getPredictedFundingsFn = bcClient ? () => getPredictedFundings(bcClient.info) : undefined;
 
     const runner: ModeRunner = registration.factory({
       fundAllocator: engine.fundAllocator,
@@ -135,6 +136,7 @@ export async function startMode(
       broadcast,
       oracleClient: oracleClient ?? undefined,
       getMidPrice: getMidPriceFn,
+      getPredictedFundings: getPredictedFundingsFn,
       config: { pairs: config.pairs, slippage: config.slippage, positionSize: storedPositionSize },
     });
 

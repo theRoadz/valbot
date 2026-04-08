@@ -11,6 +11,7 @@ export interface StrategyDeps {
   broadcast: BroadcastFn;
   oracleClient?: OracleClient;
   getMidPrice?: (coin: string) => Promise<number>;
+  getPredictedFundings?: () => Promise<Map<string, { rate: number; nextFundingTime: number }>>;
   config: { pairs: string[]; slippage?: number; positionSize?: number };
 }
 

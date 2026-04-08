@@ -159,6 +159,6 @@ describe("Singleton strategyRegistry (integration)", () => {
     expect(ph?.requires).toEqual({ oracle: true });
 
     const arb = strategyRegistry.getRegistration("arbitrage");
-    expect(arb?.requires).toEqual({ oracle: true, blockchain: true });
+    expect(arb?.requires).toEqual({ oracle: false, blockchain: true });
   });
 });

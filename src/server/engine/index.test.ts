@@ -17,6 +17,7 @@ vi.mock("../blockchain/client.js", () => ({
   getBlockchainClient: vi.fn(() => null),
   getConnectionStatus: vi.fn().mockResolvedValue(null),
   isApiHealthy: vi.fn(() => true),
+  getPredictedFundings: vi.fn().mockResolvedValue(new Map()),
 }));
 
 // Mock oracle client
@@ -251,26 +252,13 @@ describe("engine/index", () => {
     expect(fundAllocator.getStats("volumeMax").remaining).toBe(400);
   });
 
-  it("startMode throws when starting arbitrage with oracle unavailable", async () => {
-    const { initEngine, startMode } = await import("./index.js");
-    await initEngine();
-
-    await expect(startMode("arbitrage", { pairs: ["SOL/USDC"] }))
-      .rejects.toThrow(AppError);
-    await expect(startMode("arbitrage", { pairs: ["SOL/USDC"] }))
-      .rejects.toThrow("requires live oracle price data");
-  });
-
-  it("startMode throws arbitrageNoBlockchainClientError when blockchain client unavailable", async () => {
-    const { initEngine, getEngine, startMode, getOracleClient } = await import("./index.js");
+  it("startMode throws when starting arbitrage with blockchain client unavailable", async () => {
+    const { initEngine, getEngine, startMode } = await import("./index.js");
     await initEngine();
 
     getEngine().fundAllocator.setAllocation("arbitrage", 400_000_000);
 
-    // Make oracle available but blockchain client is already mocked to null
-    const oracle = getOracleClient()!;
-    (oracle.isAvailable as any).mockReturnValue(true);
-
+    // Blockchain client is mocked to null — should throw
     await expect(startMode("arbitrage", { pairs: ["SOL/USDC"] }))
       .rejects.toThrow(AppError);
     await expect(startMode("arbitrage", { pairs: ["SOL/USDC"] }))

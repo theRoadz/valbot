@@ -21,6 +21,8 @@ const mockSpotClearinghouseState = vi.fn().mockResolvedValue({
   ],
 });
 
+const mockPredictedFundings = vi.fn().mockResolvedValue([]);
+
 class MockHttpRequestError extends Error {
   constructor(message: string) {
     super(message);
@@ -37,6 +39,7 @@ vi.mock("@nktkas/hyperliquid", () => {
     InfoClient: class MockInfoClient {
       clearinghouseState = mockClearinghouseState;
       spotClearinghouseState = mockSpotClearinghouseState;
+      predictedFundings = mockPredictedFundings;
       constructor() {}
     },
     HttpRequestError: MockHttpRequestError,
@@ -615,6 +618,79 @@ describe("withRetry concurrency guard", () => {
 
     // Fast fn only called once (initial try), then fails fast
     expect(fastFn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("getPredictedFundings", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    mockPredictedFundings.mockReset();
+  });
+
+  it("filters for Hyperliquid exchange and parses fundingRate string to number", async () => {
+    mockPredictedFundings.mockResolvedValue([
+      ["ETH", [
+        ["Binance", { fundingRate: "0.0005", nextFundingTime: 1700000000000 }],
+        ["Hyperliquid", { fundingRate: "0.00012", nextFundingTime: 1700000000000 }],
+        ["Bybit", { fundingRate: "0.0003", nextFundingTime: 1700000000000 }],
+      ]],
+      ["BTC", [
+        ["Binance", { fundingRate: "0.0001", nextFundingTime: 1700003600000 }],
+        ["Hyperliquid", { fundingRate: "-0.00005", nextFundingTime: 1700003600000 }],
+      ]],
+    ]);
+
+    const { getPredictedFundings } = await import("./client.js");
+    const mockInfo = { predictedFundings: mockPredictedFundings } as never;
+    const result = await getPredictedFundings(mockInfo);
+
+    expect(result.size).toBe(2);
+    expect(result.get("ETH")).toEqual({ rate: 0.00012, nextFundingTime: 1700000000000 });
+    expect(result.get("BTC")).toEqual({ rate: -0.00005, nextFundingTime: 1700003600000 });
+  });
+
+  it("skips assets where Hyperliquid data is null", async () => {
+    mockPredictedFundings.mockResolvedValue([
+      ["SOL", [
+        ["Hyperliquid", null],
+        ["Binance", { fundingRate: "0.0001", nextFundingTime: 1700000000000 }],
+      ]],
+      ["ETH", [
+        ["Hyperliquid", { fundingRate: "0.0002", nextFundingTime: 1700000000000 }],
+      ]],
+    ]);
+
+    const { getPredictedFundings } = await import("./client.js");
+    const mockInfo = { predictedFundings: mockPredictedFundings } as never;
+    const result = await getPredictedFundings(mockInfo);
+
+    expect(result.size).toBe(1);
+    expect(result.has("SOL")).toBe(false);
+    expect(result.get("ETH")).toEqual({ rate: 0.0002, nextFundingTime: 1700000000000 });
+  });
+
+  it("returns empty map when no Hyperliquid entries exist", async () => {
+    mockPredictedFundings.mockResolvedValue([
+      ["ETH", [
+        ["Binance", { fundingRate: "0.0001", nextFundingTime: 1700000000000 }],
+      ]],
+    ]);
+
+    const { getPredictedFundings } = await import("./client.js");
+    const mockInfo = { predictedFundings: mockPredictedFundings } as never;
+    const result = await getPredictedFundings(mockInfo);
+
+    expect(result.size).toBe(0);
+  });
+
+  it("returns empty map when response is empty array", async () => {
+    mockPredictedFundings.mockResolvedValue([]);
+
+    const { getPredictedFundings } = await import("./client.js");
+    const mockInfo = { predictedFundings: mockPredictedFundings } as never;
+    const result = await getPredictedFundings(mockInfo);
+
+    expect(result.size).toBe(0);
   });
 });
 
