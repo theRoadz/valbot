@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { toSmallestUnit } from "../../shared/types.js";
+import { toSmallestUnit, fromSmallestUnit } from "../../shared/types.js";
 import { EVENTS } from "../../shared/events.js";
 import { AppError } from "../lib/errors.js";
 import { getEngine, startMode, stopMode, resetKillSwitch, getModeStatus } from "../engine/index.js";
@@ -68,7 +68,7 @@ export default async function modeRoutes(fastify: FastifyInstance) {
     return { status: "stopped", mode: modeType };
   });
 
-  fastify.put<{ Params: { mode: string }; Body: { allocation?: number; positionSize?: number | null; maxAllocation?: number; pairs?: string[]; slippage?: number; rsiPeriod?: number; oversoldThreshold?: number; overboughtThreshold?: number; exitRsi?: number } }>("/api/mode/:mode/config", {
+  fastify.put<{ Params: { mode: string }; Body: { allocation?: number; positionSize?: number | null; maxAllocation?: number; pairs?: string[]; slippage?: number; rsiPeriod?: number; oversoldThreshold?: number; overboughtThreshold?: number; exitRsi?: number; gridUpperPrice?: number; gridLowerPrice?: number; gridLines?: number } }>("/api/mode/:mode/config", {
     schema: {
       params: modeParamSchema,
       body: {
@@ -84,6 +84,9 @@ export default async function modeRoutes(fastify: FastifyInstance) {
           oversoldThreshold: { type: "number" as const, minimum: 0, maximum: 100 },
           overboughtThreshold: { type: "number" as const, minimum: 0, maximum: 100 },
           exitRsi: { type: "number" as const, minimum: 0, maximum: 100 },
+          gridUpperPrice: { type: "number" as const, minimum: 0.01, maximum: 1_000_000 },
+          gridLowerPrice: { type: "number" as const, minimum: 0.01, maximum: 1_000_000 },
+          gridLines: { type: "integer" as const, minimum: 2, maximum: 50 },
         },
       },
     },
@@ -154,6 +157,53 @@ export default async function modeRoutes(fastify: FastifyInstance) {
           message: "exitRsi must be between oversoldThreshold and overboughtThreshold",
           resolution: "Set exitRsi to a value between oversold and overbought thresholds",
         });
+      }
+    }
+
+    // Cross-field validation for Grid Trading config params
+    const { gridUpperPrice, gridLowerPrice, gridLines } = request.body;
+    if (gridUpperPrice !== undefined || gridLowerPrice !== undefined) {
+      // Fetch stored values for missing fields to validate cross-field constraint
+      let storedUpper = 0;
+      let storedLower = 0;
+      try {
+        const { fundAllocator } = getEngine();
+        const rawUpper = fundAllocator.getModeMetadata(modeType, "gridUpperPrice");
+        const rawLower = fundAllocator.getModeMetadata(modeType, "gridLowerPrice");
+        if (rawUpper !== null) storedUpper = fromSmallestUnit(rawUpper);
+        if (rawLower !== null) storedLower = fromSmallestUnit(rawLower);
+      } catch {
+        // Engine not ready — skip stored lookup, constructor will validate at start
+      }
+      const upper = gridUpperPrice ?? storedUpper;
+      const lower = gridLowerPrice ?? storedLower;
+      if (upper > 0 && lower > 0 && lower >= upper) {
+        throw new AppError({
+          severity: "warning",
+          code: "INVALID_GRID_CONFIG",
+          message: "gridLowerPrice must be less than gridUpperPrice",
+          resolution: "Adjust prices so lowerPrice < upperPrice",
+        });
+      }
+    }
+
+    // Persist grid config via fund allocator metadata
+    try {
+      const { fundAllocator } = getEngine();
+      if (gridUpperPrice !== undefined) {
+        fundAllocator.setModeMetadata(modeType, "gridUpperPrice", toSmallestUnit(gridUpperPrice));
+      }
+      if (gridLowerPrice !== undefined) {
+        fundAllocator.setModeMetadata(modeType, "gridLowerPrice", toSmallestUnit(gridLowerPrice));
+      }
+      if (gridLines !== undefined) {
+        fundAllocator.setModeMetadata(modeType, "gridLines", gridLines);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("Engine not initialized")) {
+        // Skip persistence if engine not ready
+      } else {
+        throw err;
       }
     }
 

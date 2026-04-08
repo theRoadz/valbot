@@ -361,6 +361,62 @@ function RsiConfigInputs({
   );
 }
 
+function GridConfigInputs({
+  gridUpperPrice,
+  gridLowerPrice,
+  gridLines,
+  disabled,
+  mode,
+  name,
+  setModeConfig,
+}: {
+  gridUpperPrice: number;
+  gridLowerPrice: number;
+  gridLines: number;
+  disabled: boolean;
+  mode: ModeType;
+  name: string;
+  setModeConfig: (mode: ModeType, config: Partial<{ gridUpperPrice: number; gridLowerPrice: number; gridLines: number }>) => void;
+}) {
+  const commitGridField = (field: string, value: string, min: number, max: number) => {
+    const num = parseFloat(value);
+    if (isNaN(num) || num < min || num > max) return;
+    const rounded = field === "gridLines" ? Math.round(num) : parseFloat(num.toFixed(2));
+    // Cross-field validation: lower < upper
+    if (field === "gridLowerPrice" && rounded >= gridUpperPrice) return;
+    if (field === "gridUpperPrice" && rounded <= gridLowerPrice) return;
+    setModeConfig(mode, { [field]: rounded });
+    api.updateModeConfig(mode, { [field]: rounded }).catch((err) => {
+      if (import.meta.env.DEV) console.error(`[ModeCard] Grid config update failed:`, err);
+    });
+  };
+
+  const gridFields: { label: string; field: string; value: number; min: number; max: number }[] = [
+    { label: "Upper $", field: "gridUpperPrice", value: gridUpperPrice, min: 0.01, max: 1_000_000 },
+    { label: "Lower $", field: "gridLowerPrice", value: gridLowerPrice, min: 0.01, max: 1_000_000 },
+    { label: "Grid Lines", field: "gridLines", value: gridLines, min: 2, max: 50 },
+  ];
+
+  return (
+    <div className="mt-3 grid grid-cols-2 gap-2">
+      {gridFields.map(({ label, field, value, min, max }) => (
+        <div key={field} className="flex items-center gap-1">
+          <span className="text-xs font-medium text-text-secondary whitespace-nowrap">{label}:</span>
+          <Input
+            type="text"
+            className="h-7 w-16 font-mono text-center text-sm"
+            defaultValue={String(value)}
+            onBlur={(e) => commitGridField(field, e.target.value, min, max)}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+            disabled={disabled}
+            aria-label={`${label} for ${name}`}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ModeCard({ mode, name, description, color, barColor, strategies, assignedModes, onSelectStrategy }: ModeCardProps) {
   const modeState = useStore((s) => mode ? s.modes[mode] : undefined);
   const totalAllocated = useStore((s) =>
@@ -491,7 +547,7 @@ export function ModeCard({ mode, name, description, color, barColor, strategies,
     );
   }
 
-  const { status, stats, allocation, maxAllocation: modeMaxAllocation, positionSize, pairs, slippage, errorDetail, killSwitchDetail, rsiPeriod, oversoldThreshold, overboughtThreshold, exitRsi } = modeState;
+  const { status, stats, allocation, maxAllocation: modeMaxAllocation, positionSize, pairs, slippage, errorDetail, killSwitchDetail, rsiPeriod, oversoldThreshold, overboughtThreshold, exitRsi, gridUpperPrice, gridLowerPrice, gridLines } = modeState;
   const maxAlloc = modeMaxAllocation ?? 500;
   const availableForMode = Math.max(0, maxAlloc - totalAllocated + allocation);
 
@@ -841,6 +897,19 @@ export function ModeCard({ mode, name, description, color, barColor, strategies,
             oversoldThreshold={oversoldThreshold ?? 30}
             overboughtThreshold={overboughtThreshold ?? 70}
             exitRsi={exitRsi ?? 50}
+            disabled={isControlsDisabled}
+            mode={mode}
+            name={name}
+            setModeConfig={setModeConfig}
+          />
+        )}
+
+        {/* Grid Config (Grid Trading only) */}
+        {mode === "gridTrading" && (
+          <GridConfigInputs
+            gridUpperPrice={gridUpperPrice ?? 160}
+            gridLowerPrice={gridLowerPrice ?? 140}
+            gridLines={gridLines ?? 10}
             disabled={isControlsDisabled}
             mode={mode}
             name={name}

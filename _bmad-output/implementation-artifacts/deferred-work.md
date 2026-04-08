@@ -244,3 +244,7 @@
 - ~~In-memory stop-loss updated after on-chain but before DB — restart restores stale stop~~ — resolved: improved logging with `STOP_LOSS_DB_DESYNC` code for monitoring/alerting
 - ~~Crossover state lost on restart may cause one spurious signal~~ — dismissed: `prevAbove === null` guard already prevents spurious signals on first post-restart iteration
 - ~~Close-then-reopen in same iteration~~ — resolved: added `closedThisIteration` set to skip pairs closed in Phase 1 during Phase 2 entry scanning
+
+## Deferred from: code review of 8-12-grid-trading-strategy (2026-04-09)
+
+- ~~No server-side max for gridUpperPrice/gridLowerPrice~~ — resolved: added `maximum: 1_000_000` to both fields in API schema [src/server/api/mode.ts:87-88]

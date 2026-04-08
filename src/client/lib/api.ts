@@ -96,7 +96,7 @@ export async function stopMode(mode: ModeType): Promise<void> {
 
 export async function updateModeConfig(
   mode: ModeType,
-  config: { allocation?: number; positionSize?: number | null; maxAllocation?: number; pairs?: string[]; slippage?: number; rsiPeriod?: number; oversoldThreshold?: number; overboughtThreshold?: number; exitRsi?: number },
+  config: { allocation?: number; positionSize?: number | null; maxAllocation?: number; pairs?: string[]; slippage?: number; rsiPeriod?: number; oversoldThreshold?: number; overboughtThreshold?: number; exitRsi?: number; gridUpperPrice?: number; gridLowerPrice?: number; gridLines?: number },
 ): Promise<void> {
   let res: Response;
   try {

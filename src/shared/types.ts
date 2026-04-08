@@ -80,6 +80,10 @@ export interface ModeConfig {
   oversoldThreshold?: number;
   overboughtThreshold?: number;
   exitRsi?: number;
+  // Grid Trading config
+  gridUpperPrice?: number;
+  gridLowerPrice?: number;
+  gridLines?: number;
 }
 
 // DB stores monetary values as smallest-unit integers (USDC × 1e6) — see ADR-001

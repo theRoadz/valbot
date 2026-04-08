@@ -23,6 +23,23 @@ function getRsiConfig(mode: ModeType): Pick<ModeConfig, "rsiPeriod" | "oversoldT
   return RSI_DEFAULTS;
 }
 
+function getGridConfig(mode: ModeType): Pick<ModeConfig, "gridUpperPrice" | "gridLowerPrice" | "gridLines"> | undefined {
+  if (mode !== "gridTrading") return undefined;
+  try {
+    const { fundAllocator } = getEngine();
+    const upperRaw = fundAllocator.getModeMetadata(mode, "gridUpperPrice");
+    const lowerRaw = fundAllocator.getModeMetadata(mode, "gridLowerPrice");
+    const lines = fundAllocator.getModeMetadata(mode, "gridLines");
+    return {
+      gridUpperPrice: upperRaw !== null ? fromSmallestUnit(upperRaw) : undefined,
+      gridLowerPrice: lowerRaw !== null ? fromSmallestUnit(lowerRaw) : undefined,
+      gridLines: lines ?? undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 function defaultModeConfig(mode: ModeType): ModeConfig {
   const base: ModeConfig = {
     mode,
@@ -35,6 +52,8 @@ function defaultModeConfig(mode: ModeType): ModeConfig {
   };
   const rsi = getRsiConfig(mode);
   if (rsi) Object.assign(base, rsi);
+  const grid = getGridConfig(mode);
+  if (grid) Object.assign(base, grid);
   return base;
 }
 
@@ -58,6 +77,8 @@ function getModeConfig(mode: ModeType): ModeConfig {
     };
     const rsi = getRsiConfig(mode);
     if (rsi) Object.assign(config, rsi);
+    const grid = getGridConfig(mode);
+    if (grid) Object.assign(config, grid);
     return config;
   } catch {
     return defaultModeConfig(mode);

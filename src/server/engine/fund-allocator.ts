@@ -190,6 +190,8 @@ export class FundAllocator {
         this.maxAllocation = parsed.amount;
       }
     }
+
+    this.loadMetadataFromDb();
   }
 
   /** Subtract open position sizes from remaining after crash recovery */
@@ -289,6 +291,54 @@ export class FundAllocator {
     } catch (err) {
       if (prev !== undefined) this.positionSizes.set(mode, prev);
       throw err;
+    }
+  }
+
+  // --- Strategy-specific config (e.g., grid trading upperPrice/lowerPrice/gridLines) ---
+
+  private modeMetadata = new Map<string, number>(); // key = "fieldName:modeType"
+
+  getModeMetadata(mode: ModeType, field: string): number | null {
+    return this.modeMetadata.get(`${field}:${mode}`) ?? null;
+  }
+
+  setModeMetadata(mode: ModeType, field: string, value: number): void {
+    const metaKey = `${field}:${mode}`;
+    const prev = this.modeMetadata.get(metaKey);
+    this.modeMetadata.set(metaKey, value);
+    try {
+      const db = getDb();
+      const dbKey = `meta:${metaKey}`;
+      const dbValue = JSON.stringify({ amount: value });
+      db.insert(config)
+        .values({ key: dbKey, value: dbValue })
+        .onConflictDoUpdate({ target: config.key, set: { value: dbValue } })
+        .run();
+    } catch (err) {
+      if (prev !== undefined) this.modeMetadata.set(metaKey, prev);
+      else this.modeMetadata.delete(metaKey);
+      throw err;
+    }
+  }
+
+  /** Load strategy-specific metadata from DB during init */
+  private loadMetadataFromDb(): void {
+    try {
+      const db = getDb();
+      const metaRows = db.select().from(config).where(like(config.key, "meta:%")).all();
+      for (const row of metaRows) {
+        const metaKey = row.key.replace("meta:", "");
+        try {
+          const parsed = JSON.parse(row.value) as { amount: number };
+          if (typeof parsed.amount === "number" && Number.isFinite(parsed.amount)) {
+            this.modeMetadata.set(metaKey, parsed.amount);
+          }
+        } catch {
+          logger.warn({ key: row.key }, "Skipping metadata row with malformed JSON");
+        }
+      }
+    } catch {
+      // DB may not be available yet — skip
     }
   }
 
