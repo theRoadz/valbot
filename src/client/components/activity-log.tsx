@@ -53,19 +53,18 @@ function getOutcomeClass(outcome: ActivityPairEntry["outcome"]): string {
   }
 }
 
-function getDeviationText(entry: ActivityPairEntry): string {
-  if (entry.deviationPct === null) {
+function getSignalText(entry: ActivityPairEntry): string {
+  if (entry.signalValue === null) {
     return entry.oracleStatus === "stale" ? "oracle stale" : "warming up";
   }
-  const sign = entry.deviationPct >= 0 ? "+" : "";
-  return `dev ${sign}${entry.deviationPct.toFixed(2)}%`;
+  return `RSI ${entry.signalValue.toFixed(1)}`;
 }
 
 function PairEntry({ entry }: { entry: ActivityPairEntry }) {
   return (
     <div className="font-mono text-xs leading-relaxed pl-4">
       <span className="text-text-muted">{entry.pair}</span>{" "}
-      <span className="text-text-muted">{getDeviationText(entry)}</span>
+      <span className="text-text-muted">{getSignalText(entry)}</span>
       {" → "}
       <span className={getOutcomeClass(entry.outcome)}>{getOutcomeText(entry)}</span>
     </div>

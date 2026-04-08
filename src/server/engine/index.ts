@@ -253,6 +253,13 @@ export async function stopAllModes(): Promise<void> {
   }
 }
 
+/** Return the running strategy's config (if any) for the given mode. */
+export function getModeRunnerConfig(mode: ModeType): Record<string, unknown> | null {
+  const runner = modeRunners.get(mode);
+  if (!runner || !("config" in runner)) return null;
+  return { ...(runner as any).config };
+}
+
 export function getEngine(): {
   fundAllocator: FundAllocator;
   positionManager: PositionManager;

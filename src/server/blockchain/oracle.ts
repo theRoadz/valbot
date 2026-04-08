@@ -6,6 +6,8 @@ import { EVENTS } from "../../shared/events.js";
 import { logger } from "../lib/logger.js";
 import { oracleConnectionFailedError, oracleStaleDataError } from "../lib/errors.js";
 import type { EventName, EventPayloadMap } from "../../shared/events.js";
+import { CandleAggregator } from "./candle-aggregator.js";
+import type { Candle } from "./candle-aggregator.js";
 
 const HERMES_ENDPOINT = "https://hermes.pyth.network";
 const MOVING_AVERAGE_WINDOW_MS = 300_000;
@@ -16,6 +18,7 @@ const MAX_RECONNECT_ATTEMPTS = 3;
 const BACKOFF_BASE_MS = 1_000;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const MIN_DATA_FOR_MA_MS = 30_000;
+const CANDLE_PERIOD_MS = 300_000; // 5-minute candles
 
 interface PriceSample {
   price: number;
@@ -46,6 +49,7 @@ export class OracleClient {
   private subscribedPairs: string[] = [];
   private hermesClient: HermesClient | null = null;
   private connecting = false;
+  private candleAggregator = new CandleAggregator();
 
   constructor(broadcast: BroadcastFn) {
     this.broadcast = broadcast;
@@ -147,6 +151,7 @@ export class OracleClient {
         }
 
         this.updatePrice(pair, smallestUnit, publishTime, feedId, confidence, rawPrice, expo);
+        this.candleAggregator.addPrice(pair, smallestUnit, publishTime, CANDLE_PERIOD_MS);
       }
     } catch (err) {
       logger.error({ err }, "Failed to parse Pyth price update");
@@ -374,6 +379,14 @@ export class OracleClient {
     const entry = this.priceMap.get(pair);
     if (!entry) return null;
     return entry.rawData;
+  }
+
+  getCandles(pair: string, count?: number): Candle[] {
+    return this.candleAggregator.getCandles(pair, count);
+  }
+
+  getRsi(pair: string, period = 14): number | null {
+    return this.candleAggregator.getRsi(pair, period);
   }
 
   disconnect(): void {

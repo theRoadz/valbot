@@ -232,3 +232,9 @@
 
 - ~~No caching on `getPredictedFundings` calls~~ — resolved: added 10s TTL cache matching `getConnectionStatus` pattern [src/server/blockchain/client.ts:323]
 - ~~Strategy stopped mid-iteration leaves pending async calls~~ — resolved: added `_stopped` flag set via `onStop()` hook, checked at Phase 1→2 boundary and before position opens [src/server/engine/strategies/arbitrage.ts]
+
+## Deferred from: code review of 8-13-improved-profit-hunter-rsi (2026-04-08)
+
+- ~~Gap candles: large timestamp jumps skip intermediate candle periods~~ — resolved: gap periods now filled with flat candles (last close) to keep RSI history contiguous
+- ~~Out-of-order timestamps from Pyth could corrupt candle OHLC data~~ — resolved: samples with earlier timestamps than pending candle are silently rejected
+- ~~Fixed 3% stop-loss may be too tight for RSI's 70-min signal timeframe~~ — resolved: widened to 5% default, made configurable via `stopLossPct`

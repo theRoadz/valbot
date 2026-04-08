@@ -1,14 +1,30 @@
 import type { FastifyInstance } from "fastify";
 import type { ModeConfig, ModeType } from "../../shared/types.js";
 import { fromSmallestUnit } from "../../shared/types.js";
-import { getEngine, getModeStatus } from "../engine/index.js";
+import { getEngine, getModeStatus, getModeRunnerConfig } from "../engine/index.js";
 import { strategyRegistry } from "../engine/strategy-registry.js";
 import { logger } from "../lib/logger.js";
 import { getConnectionStatus } from "../blockchain/client.js";
 import { getRecentTrades } from "./trades.js";
 
+const RSI_DEFAULTS = { rsiPeriod: 14, oversoldThreshold: 30, overboughtThreshold: 70, exitRsi: 50 };
+
+function getRsiConfig(mode: ModeType): Pick<ModeConfig, "rsiPeriod" | "oversoldThreshold" | "overboughtThreshold" | "exitRsi"> | undefined {
+  if (mode !== "profitHunter") return undefined;
+  const runnerCfg = getModeRunnerConfig(mode);
+  if (runnerCfg) {
+    return {
+      rsiPeriod: (runnerCfg.rsiPeriod as number) ?? RSI_DEFAULTS.rsiPeriod,
+      oversoldThreshold: (runnerCfg.oversoldThreshold as number) ?? RSI_DEFAULTS.oversoldThreshold,
+      overboughtThreshold: (runnerCfg.overboughtThreshold as number) ?? RSI_DEFAULTS.overboughtThreshold,
+      exitRsi: (runnerCfg.exitRsi as number) ?? RSI_DEFAULTS.exitRsi,
+    };
+  }
+  return RSI_DEFAULTS;
+}
+
 function defaultModeConfig(mode: ModeType): ModeConfig {
-  return {
+  const base: ModeConfig = {
     mode,
     status: "stopped",
     allocation: 0,
@@ -17,6 +33,9 @@ function defaultModeConfig(mode: ModeType): ModeConfig {
     slippage: 0.5,
     stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 },
   };
+  const rsi = getRsiConfig(mode);
+  if (rsi) Object.assign(base, rsi);
+  return base;
 }
 
 function getModeConfig(mode: ModeType): ModeConfig {
@@ -27,7 +46,7 @@ function getModeConfig(mode: ModeType): ModeConfig {
     const pmStatus = positionManager.getModeStatus(mode);
     const runnerStatus = getModeStatus(mode);
     const posSize = fundAllocator.getPositionSize(mode);
-    return {
+    const config: ModeConfig = {
       mode,
       status: pmStatus === "kill-switch" ? "kill-switch" : runnerStatus,
       allocation: fromSmallestUnit(alloc.allocation),
@@ -37,6 +56,9 @@ function getModeConfig(mode: ModeType): ModeConfig {
       slippage: 0.5,
       stats,
     };
+    const rsi = getRsiConfig(mode);
+    if (rsi) Object.assign(config, rsi);
+    return config;
   } catch {
     return defaultModeConfig(mode);
   }

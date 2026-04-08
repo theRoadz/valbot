@@ -106,7 +106,7 @@ export interface PriceUpdatedPayload {
 
 export interface ActivityPairEntry {
   pair: string;
-  deviationPct: number | null;
+  signalValue: number | null; // RSI (0-100) or null during warm-up
   oracleStatus: "ok" | "stale" | "warming-up";
   outcome:
     | "no-signal"

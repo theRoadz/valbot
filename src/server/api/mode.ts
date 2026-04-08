@@ -68,7 +68,7 @@ export default async function modeRoutes(fastify: FastifyInstance) {
     return { status: "stopped", mode: modeType };
   });
 
-  fastify.put<{ Params: { mode: string }; Body: { allocation?: number; positionSize?: number | null; maxAllocation?: number; pairs?: string[]; slippage?: number } }>("/api/mode/:mode/config", {
+  fastify.put<{ Params: { mode: string }; Body: { allocation?: number; positionSize?: number | null; maxAllocation?: number; pairs?: string[]; slippage?: number; rsiPeriod?: number; oversoldThreshold?: number; overboughtThreshold?: number; exitRsi?: number } }>("/api/mode/:mode/config", {
     schema: {
       params: modeParamSchema,
       body: {
@@ -80,6 +80,10 @@ export default async function modeRoutes(fastify: FastifyInstance) {
           maxAllocation: { type: "number" as const, minimum: 10, maximum: 100000 },
           pairs: { type: "array" as const, items: { type: "string" as const, enum: VALID_PAIRS }, maxItems: 50 },
           slippage: { type: "number" as const, minimum: 0, maximum: 100 },
+          rsiPeriod: { type: "number" as const, minimum: 2, maximum: 50 },
+          oversoldThreshold: { type: "number" as const, minimum: 0, maximum: 100 },
+          overboughtThreshold: { type: "number" as const, minimum: 0, maximum: 100 },
+          exitRsi: { type: "number" as const, minimum: 0, maximum: 100 },
         },
       },
     },
@@ -127,6 +131,30 @@ export default async function modeRoutes(fastify: FastifyInstance) {
         });
       }
       throw err;
+    }
+
+    // Cross-field validation for RSI config params
+    const { oversoldThreshold, overboughtThreshold, exitRsi } = request.body;
+    if (oversoldThreshold !== undefined || overboughtThreshold !== undefined || exitRsi !== undefined) {
+      const oversold = oversoldThreshold ?? 30;
+      const overbought = overboughtThreshold ?? 70;
+      const exit = exitRsi ?? 50;
+      if (oversold >= overbought) {
+        throw new AppError({
+          severity: "warning",
+          code: "INVALID_RSI_CONFIG",
+          message: "oversoldThreshold must be less than overboughtThreshold",
+          resolution: "Adjust thresholds so oversold < overbought",
+        });
+      }
+      if (exit <= oversold || exit >= overbought) {
+        throw new AppError({
+          severity: "warning",
+          code: "INVALID_RSI_CONFIG",
+          message: "exitRsi must be between oversoldThreshold and overboughtThreshold",
+          resolution: "Set exitRsi to a value between oversold and overbought thresholds",
+        });
+      }
     }
 
     return { status: "updated", mode: modeType };

@@ -41,6 +41,8 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-08
+# last review: 2026-04-08 code review of story 8-13, all patches applied
+# last dev: 2026-04-08 story 8-13 implementation complete
 # last review: 2026-04-08 code review of story 8-11, all patches applied
 # last dev: 2026-04-08 story 8-11 implementation complete
 # last review: 2026-04-08 code review of story 8-15, all patches applied
@@ -202,3 +204,4 @@ development_status:
   8-10-profit-hunter-activity-log: done
   8-11-funding-rate-arbitrage: done
   8-15-strategy-slot-ui: done
+  8-13-improved-profit-hunter-rsi: done

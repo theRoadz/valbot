@@ -75,6 +75,11 @@ export interface ModeConfig {
   pairs: string[];
   slippage: number;
   stats: ModeStats;
+  // RSI strategy config (Profit Hunter only)
+  rsiPeriod?: number;
+  oversoldThreshold?: number;
+  overboughtThreshold?: number;
+  exitRsi?: number;
 }
 
 // DB stores monetary values as smallest-unit integers (USDC × 1e6) — see ADR-001

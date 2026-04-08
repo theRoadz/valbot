@@ -2232,7 +2232,7 @@ describe("ValBotStore", () => {
         data: {
           mode: "profitHunter",
           iteration: 1,
-          pairs: [{ pair: "SOL/USDC", deviationPct: 1.5, oracleStatus: "ok", outcome: "no-signal", size: null, side: null }],
+          pairs: [{ pair: "SOL/USDC", signalValue: 1.5, oracleStatus: "ok", outcome: "no-signal", size: null, side: null }],
         },
       });
 

@@ -15,7 +15,7 @@ function makeEntry(overrides: Partial<ActivityEntry> = {}): ActivityEntry {
   return {
     mode: "profitHunter",
     iteration: 1,
-    pairs: [{ pair: "SOL/USDC", deviationPct: 1.5, oracleStatus: "ok", outcome: "no-signal", size: null, side: null }],
+    pairs: [{ pair: "SOL/USDC", signalValue: 45.5, oracleStatus: "ok", outcome: "no-signal", size: null, side: null }],
     timestamp: TEST_TIMESTAMP,
     ...overrides,
   };
@@ -44,14 +44,14 @@ describe("ActivityLog", () => {
     useStore.setState({ activityLog: [makeEntry()] });
     render(<ActivityLog />);
     expect(screen.getByText("SOL/USDC")).toBeInTheDocument();
-    expect(screen.getByText("dev +1.50%")).toBeInTheDocument();
+    expect(screen.getByText("RSI 45.5")).toBeInTheDocument();
     expect(screen.getByText("No signal")).toBeInTheDocument();
   });
 
-  it("renders 'oracle stale' when deviationPct is null and oracle stale", () => {
+  it("renders 'oracle stale' when signalValue is null and oracle stale", () => {
     useStore.setState({
       activityLog: [makeEntry({
-        pairs: [{ pair: "SOL/USDC", deviationPct: null, oracleStatus: "stale", outcome: "skipped-stale", size: null, side: null }],
+        pairs: [{ pair: "SOL/USDC", signalValue: null, oracleStatus: "stale", outcome: "skipped-stale", size: null, side: null }],
       })],
     });
     render(<ActivityLog />);
@@ -59,10 +59,10 @@ describe("ActivityLog", () => {
     expect(screen.getByText("Skipped (oracle stale)")).toBeInTheDocument();
   });
 
-  it("renders 'warming up' when deviationPct is null and oracle warming-up", () => {
+  it("renders 'warming up' when signalValue is null and oracle warming-up", () => {
     useStore.setState({
       activityLog: [makeEntry({
-        pairs: [{ pair: "SOL/USDC", deviationPct: null, oracleStatus: "warming-up", outcome: "skipped-warming", size: null, side: null }],
+        pairs: [{ pair: "SOL/USDC", signalValue: null, oracleStatus: "warming-up", outcome: "skipped-warming", size: null, side: null }],
       })],
     });
     render(<ActivityLog />);
@@ -73,11 +73,11 @@ describe("ActivityLog", () => {
   it("renders opened-long outcome with size", () => {
     useStore.setState({
       activityLog: [makeEntry({
-        pairs: [{ pair: "SOL/USDC", deviationPct: -2.0, oracleStatus: "ok", outcome: "opened-long", size: 50_000_000, side: "Long" }],
+        pairs: [{ pair: "SOL/USDC", signalValue: 25.3, oracleStatus: "ok", outcome: "opened-long", size: 50_000_000, side: "Long" }],
       })],
     });
     render(<ActivityLog />);
-    expect(screen.getByText("dev -2.00%")).toBeInTheDocument();
+    expect(screen.getByText("RSI 25.3")).toBeInTheDocument();
     expect(screen.getByText(/Opened Long/)).toBeInTheDocument();
   });
 
@@ -85,7 +85,7 @@ describe("ActivityLog", () => {
     useStore.setState({
       activityLog: [makeEntry({
         pairs: [
-          { pair: "SOL/USDC", deviationPct: -2.0, oracleStatus: "ok", outcome: "open-failed", size: null, side: "Long" },
+          { pair: "SOL/USDC", signalValue: 25.3, oracleStatus: "ok", outcome: "open-failed", size: null, side: "Long" },
         ],
       })],
     });
@@ -97,11 +97,11 @@ describe("ActivityLog", () => {
     useStore.setState({
       activityLog: [makeEntry({
         pairs: [
-          { pair: "A/B", deviationPct: 0.5, oracleStatus: "ok", outcome: "held", size: null, side: "Long" },
-          { pair: "C/D", deviationPct: 0.1, oracleStatus: "ok", outcome: "closed-reverted", size: 10_000_000, side: "Short" },
-          { pair: "E/F", deviationPct: null, oracleStatus: "ok", outcome: "skipped-no-funds", size: null, side: null },
-          { pair: "G/H", deviationPct: null, oracleStatus: "ok", outcome: "skipped-has-position", size: null, side: null },
-          { pair: "I/J", deviationPct: -1.0, oracleStatus: "ok", outcome: "close-failed", size: null, side: "Long" },
+          { pair: "A/B", signalValue: 45.0, oracleStatus: "ok", outcome: "held", size: null, side: "Long" },
+          { pair: "C/D", signalValue: 52.0, oracleStatus: "ok", outcome: "closed-reverted", size: 10_000_000, side: "Short" },
+          { pair: "E/F", signalValue: null, oracleStatus: "ok", outcome: "skipped-no-funds", size: null, side: null },
+          { pair: "G/H", signalValue: null, oracleStatus: "ok", outcome: "skipped-has-position", size: null, side: null },
+          { pair: "I/J", signalValue: 35.0, oracleStatus: "ok", outcome: "close-failed", size: null, side: "Long" },
         ],
       })],
     });
@@ -125,14 +125,14 @@ describe("ActivityLog", () => {
     expect(screen.getByText(/Iteration #2/)).toBeInTheDocument();
   });
 
-  it("renders negative deviation with minus sign", () => {
+  it("renders RSI value in activity log", () => {
     useStore.setState({
       activityLog: [makeEntry({
-        pairs: [{ pair: "SOL/USDC", deviationPct: -1.75, oracleStatus: "ok", outcome: "opened-long", size: 50_000_000, side: "Long" }],
+        pairs: [{ pair: "SOL/USDC", signalValue: 28.5, oracleStatus: "ok", outcome: "opened-long", size: 50_000_000, side: "Long" }],
       })],
     });
     render(<ActivityLog />);
-    expect(screen.getByText("dev -1.75%")).toBeInTheDocument();
+    expect(screen.getByText("RSI 28.5")).toBeInTheDocument();
   });
 
   it("has accessible scroll-to-bottom button label", () => {

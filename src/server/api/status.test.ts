@@ -19,6 +19,7 @@ vi.mock("../engine/index.js", () => {
       return mockEngine;
     }),
     getModeStatus: vi.fn(() => "stopped"),
+    getModeRunnerConfig: vi.fn(() => null),
     _setMockEngine: (engine: unknown) => { mockEngine = engine; },
   };
 });

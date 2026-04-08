@@ -301,6 +301,66 @@ function StrategySelector({
   );
 }
 
+function RsiConfigInputs({
+  rsiPeriod,
+  oversoldThreshold,
+  overboughtThreshold,
+  exitRsi,
+  disabled,
+  mode,
+  name,
+  setModeConfig,
+}: {
+  rsiPeriod: number;
+  oversoldThreshold: number;
+  overboughtThreshold: number;
+  exitRsi: number;
+  disabled: boolean;
+  mode: ModeType;
+  name: string;
+  setModeConfig: (mode: ModeType, config: Partial<{ rsiPeriod: number; oversoldThreshold: number; overboughtThreshold: number; exitRsi: number }>) => void;
+}) {
+  const commitRsiField = (field: string, value: string, min: number, max: number) => {
+    const num = parseFloat(value);
+    if (isNaN(num) || num < min || num > max) return;
+    const rounded = Math.round(num);
+    // Cross-field validation: oversold < exitRsi < overbought
+    if (field === "oversoldThreshold" && (rounded >= overboughtThreshold || rounded >= exitRsi)) return;
+    if (field === "overboughtThreshold" && (rounded <= oversoldThreshold || rounded <= exitRsi)) return;
+    if (field === "exitRsi" && (rounded <= oversoldThreshold || rounded >= overboughtThreshold)) return;
+    setModeConfig(mode, { [field]: rounded });
+    api.updateModeConfig(mode, { [field]: rounded }).catch((err) => {
+      if (import.meta.env.DEV) console.error(`[ModeCard] RSI config update failed:`, err);
+    });
+  };
+
+  const rsiFields: { label: string; field: string; value: number; min: number; max: number }[] = [
+    { label: "RSI Period", field: "rsiPeriod", value: rsiPeriod, min: 2, max: 50 },
+    { label: "Oversold", field: "oversoldThreshold", value: oversoldThreshold, min: 0, max: 100 },
+    { label: "Overbought", field: "overboughtThreshold", value: overboughtThreshold, min: 0, max: 100 },
+    { label: "Exit RSI", field: "exitRsi", value: exitRsi, min: 0, max: 100 },
+  ];
+
+  return (
+    <div className="mt-3 grid grid-cols-2 gap-2">
+      {rsiFields.map(({ label, field, value, min, max }) => (
+        <div key={`${field}-${value}`} className="flex items-center gap-1">
+          <span className="text-xs font-medium text-text-secondary whitespace-nowrap">{label}:</span>
+          <Input
+            type="text"
+            className="h-7 w-16 font-mono text-center text-sm"
+            defaultValue={String(value)}
+            onBlur={(e) => commitRsiField(field, e.target.value, min, max)}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+            disabled={disabled}
+            aria-label={`${label} for ${name}`}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ModeCard({ mode, name, description, color, barColor, strategies, assignedModes, onSelectStrategy }: ModeCardProps) {
   const modeState = useStore((s) => mode ? s.modes[mode] : undefined);
   const totalAllocated = useStore((s) =>
@@ -431,7 +491,7 @@ export function ModeCard({ mode, name, description, color, barColor, strategies,
     );
   }
 
-  const { status, stats, allocation, maxAllocation: modeMaxAllocation, positionSize, pairs, slippage, errorDetail, killSwitchDetail } = modeState;
+  const { status, stats, allocation, maxAllocation: modeMaxAllocation, positionSize, pairs, slippage, errorDetail, killSwitchDetail, rsiPeriod, oversoldThreshold, overboughtThreshold, exitRsi } = modeState;
   const maxAlloc = modeMaxAllocation ?? 500;
   const availableForMode = Math.max(0, maxAlloc - totalAllocated + allocation);
 
@@ -773,6 +833,20 @@ export function ModeCard({ mode, name, description, color, barColor, strategies,
             aria-label={`Position size for ${name}`}
           />
         </div>
+
+        {/* RSI Config (Profit Hunter only) */}
+        {mode === "profitHunter" && (
+          <RsiConfigInputs
+            rsiPeriod={rsiPeriod ?? 14}
+            oversoldThreshold={oversoldThreshold ?? 30}
+            overboughtThreshold={overboughtThreshold ?? 70}
+            exitRsi={exitRsi ?? 50}
+            disabled={isControlsDisabled}
+            mode={mode}
+            name={name}
+            setModeConfig={setModeConfig}
+          />
+        )}
 
       </CardContent>
     </Card>

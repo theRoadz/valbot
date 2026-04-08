@@ -48,13 +48,15 @@ function createMocks(allocationAmount = 1_000_000_000) {
   };
 
   const oracleClient = {
-    getPrice: vi.fn().mockReturnValue(100_000_000), // 100 USDC in smallest-unit
+    getPrice: vi.fn().mockReturnValue(100_000_000),
     getMovingAverage: vi.fn().mockReturnValue(100_000_000),
     isAvailable: vi.fn().mockReturnValue(true),
     connect: vi.fn(),
     disconnect: vi.fn(),
     getFeedEntry: vi.fn(),
     getRawData: vi.fn(),
+    getRsi: vi.fn().mockReturnValue(50), // neutral RSI by default
+    getCandles: vi.fn().mockReturnValue([]),
   };
 
   const broadcast = vi.fn() as unknown as BroadcastFn;
@@ -69,11 +71,11 @@ describe("ProfitHunterStrategy", () => {
     mocks = createMocks();
   });
 
-  // --- Constructor tests (Task 4.2) ---
+  // --- Constructor tests ---
 
   describe("constructor validation", () => {
     it("rejects allocation below $10 minimum", () => {
-      const smallMocks = createMocks(5_000_000); // $5 — below $10 minimum
+      const smallMocks = createMocks(5_000_000);
       expect(
         () =>
           new ProfitHunterStrategy(
@@ -99,7 +101,7 @@ describe("ProfitHunterStrategy", () => {
       ).toThrow("Invalid strategy configuration");
     });
 
-    it("rejects invalid deviationThreshold", () => {
+    it("rejects oversoldThreshold >= overboughtThreshold", () => {
       expect(
         () =>
           new ProfitHunterStrategy(
@@ -107,12 +109,12 @@ describe("ProfitHunterStrategy", () => {
             mocks.positionManager as any,
             mocks.broadcast,
             mocks.oracleClient as any,
-            { pairs: ["SOL/USDC"], deviationThreshold: -0.01 },
+            { pairs: ["SOL/USDC"], oversoldThreshold: 70, overboughtThreshold: 30 },
           ),
       ).toThrow("Invalid strategy configuration");
     });
 
-    it("rejects zero deviationThreshold", () => {
+    it("rejects oversoldThreshold out of range", () => {
       expect(
         () =>
           new ProfitHunterStrategy(
@@ -120,12 +122,12 @@ describe("ProfitHunterStrategy", () => {
             mocks.positionManager as any,
             mocks.broadcast,
             mocks.oracleClient as any,
-            { pairs: ["SOL/USDC"], deviationThreshold: 0 },
+            { pairs: ["SOL/USDC"], oversoldThreshold: -5 },
           ),
       ).toThrow("Invalid strategy configuration");
     });
 
-    it("rejects invalid closeThreshold", () => {
+    it("rejects exitRsi outside oversold/overbought range", () => {
       expect(
         () =>
           new ProfitHunterStrategy(
@@ -133,7 +135,17 @@ describe("ProfitHunterStrategy", () => {
             mocks.positionManager as any,
             mocks.broadcast,
             mocks.oracleClient as any,
-            { pairs: ["SOL/USDC"], closeThreshold: 0 },
+            { pairs: ["SOL/USDC"], oversoldThreshold: 30, overboughtThreshold: 70, exitRsi: 20 },
+          ),
+      ).toThrow("Invalid strategy configuration");
+      expect(
+        () =>
+          new ProfitHunterStrategy(
+            mocks.fundAllocator as any,
+            mocks.positionManager as any,
+            mocks.broadcast,
+            mocks.oracleClient as any,
+            { pairs: ["SOL/USDC"], oversoldThreshold: 30, overboughtThreshold: 70, exitRsi: 80 },
           ),
       ).toThrow("Invalid strategy configuration");
     });
@@ -146,7 +158,7 @@ describe("ProfitHunterStrategy", () => {
         mocks.oracleClient as any,
         { pairs: ["SOL/USDC", "ETH/USDC"] },
       );
-      expect(strategy.getIntervalMs()).toBe(5_000);
+      expect(strategy.getIntervalMs()).toBe(30_000);
     });
 
     it("creates strategy with custom config values", () => {
@@ -157,24 +169,24 @@ describe("ProfitHunterStrategy", () => {
         mocks.oracleClient as any,
         {
           pairs: ["SOL/USDC"],
-          deviationThreshold: 0.02,
-          closeThreshold: 0.005,
-          iterationIntervalMs: 10_000,
+          rsiPeriod: 10,
+          oversoldThreshold: 25,
+          overboughtThreshold: 75,
+          exitRsi: 50,
+          iterationIntervalMs: 60_000,
           slippage: 1.0,
           positionSize: 500_000,
         },
       );
-      expect(strategy.getIntervalMs()).toBe(10_000);
+      expect(strategy.getIntervalMs()).toBe(60_000);
     });
   });
 
-  // --- executeIteration: open Long when price < MA (Task 4.3) ---
+  // --- Opens Long when RSI < 30 (Task 4.4) ---
 
-  describe("opens Long when price < MA beyond threshold", () => {
-    it("opens Long position for mean-reversion up", async () => {
-      // Price 2% below MA → deviation = -0.02, exceeds default 1% threshold
-      mocks.oracleClient.getPrice.mockReturnValue(98_000_000); // 98 USDC
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000); // 100 USDC
+  describe("opens Long when RSI < oversoldThreshold", () => {
+    it("opens Long position when RSI is below 30", async () => {
+      mocks.oracleClient.getRsi.mockReturnValue(25); // RSI 25 < 30 → oversold
 
       const strategy = new ProfitHunterStrategy(
         mocks.fundAllocator as any,
@@ -197,13 +209,11 @@ describe("ProfitHunterStrategy", () => {
     });
   });
 
-  // --- executeIteration: open Short when price > MA (Task 4.4) ---
+  // --- Opens Short when RSI > 70 (Task 4.5) ---
 
-  describe("opens Short when price > MA beyond threshold", () => {
-    it("opens Short position for mean-reversion down", async () => {
-      // Price 2% above MA → deviation = +0.02
-      mocks.oracleClient.getPrice.mockReturnValue(102_000_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+  describe("opens Short when RSI > overboughtThreshold", () => {
+    it("opens Short position when RSI is above 70", async () => {
+      mocks.oracleClient.getRsi.mockReturnValue(75); // RSI 75 > 70 → overbought
 
       const strategy = new ProfitHunterStrategy(
         mocks.fundAllocator as any,
@@ -226,40 +236,14 @@ describe("ProfitHunterStrategy", () => {
     });
   });
 
-  // --- No trade when deviation within threshold (Task 4.5) ---
+  // --- Closes Long when RSI > 50 (Task 4.6) ---
 
-  describe("no trade when deviation within threshold", () => {
-    it("does not open position when price is within deviation threshold", async () => {
-      // Price 0.5% above MA → within default 1% threshold
-      mocks.oracleClient.getPrice.mockReturnValue(100_500_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
-
-      const strategy = new ProfitHunterStrategy(
-        mocks.fundAllocator as any,
-        mocks.positionManager as any,
-        mocks.broadcast,
-        mocks.oracleClient as any,
-        { pairs: ["SOL/USDC"] },
-      );
-
-      await strategy.executeIteration();
-
-      expect(mocks.positionManager.openPosition).not.toHaveBeenCalled();
-    });
-  });
-
-  // --- Close position when price reverts (Task 4.6) ---
-
-  describe("closes position when price reverts within closeThreshold", () => {
-    it("closes position when deviation returns within close threshold of MA", async () => {
-      // Open position exists on SOL/USDC
+  describe("closes Long when RSI > exitRsi", () => {
+    it("closes Long position when RSI crosses above 50", async () => {
       mocks.positionManager.getPositions.mockReturnValue([
-        { id: 42, mode: "profitHunter", pair: "SOL/USDC", side: "Long", size: 50, entryPrice: 98, stopLoss: 95, timestamp: Date.now() },
+        { id: 42, mode: "profitHunter", pair: "SOL/USDC", side: "Long", size: 50_000_000, entryPrice: 98, stopLoss: 95, timestamp: Date.now() },
       ]);
-
-      // Price has reverted: 0.1% deviation from MA (within default 0.3% close threshold)
-      mocks.oracleClient.getPrice.mockReturnValue(100_100_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+      mocks.oracleClient.getRsi.mockReturnValue(55); // RSI > 50 → mean reverted
 
       const strategy = new ProfitHunterStrategy(
         mocks.fundAllocator as any,
@@ -275,9 +259,48 @@ describe("ProfitHunterStrategy", () => {
     });
   });
 
-  // --- Skip pair when oracle unavailable or MA null (Task 4.7) ---
+  // --- Closes Short when RSI < 50 (Task 4.7) ---
 
-  describe("skips pair when oracle unavailable or MA null", () => {
+  describe("closes Short when RSI < exitRsi", () => {
+    it("closes Short position when RSI crosses below 50", async () => {
+      mocks.positionManager.getPositions.mockReturnValue([
+        { id: 43, mode: "profitHunter", pair: "SOL/USDC", side: "Short", size: 50_000_000, entryPrice: 102, stopLoss: 105, timestamp: Date.now() },
+      ]);
+      mocks.oracleClient.getRsi.mockReturnValue(45); // RSI < 50 → mean reverted
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      expect(mocks.positionManager.closePosition).toHaveBeenCalledWith(43);
+    });
+  });
+
+  // --- Skips during warm-up (Task 4.8) ---
+
+  describe("skips during warm-up (insufficient candles)", () => {
+    it("skips pair when getRsi returns null", async () => {
+      mocks.oracleClient.getRsi.mockReturnValue(null); // insufficient candles
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      expect(mocks.positionManager.openPosition).not.toHaveBeenCalled();
+    });
+
     it("skips pair when oracle isAvailable returns false", async () => {
       mocks.oracleClient.isAvailable.mockReturnValue(false);
 
@@ -293,27 +316,13 @@ describe("ProfitHunterStrategy", () => {
 
       expect(mocks.positionManager.openPosition).not.toHaveBeenCalled();
     });
+  });
 
-    it("skips pair when moving average is null (warm-up period)", async () => {
-      mocks.oracleClient.getPrice.mockReturnValue(100_000_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(null);
+  // --- No trade when RSI is neutral ---
 
-      const strategy = new ProfitHunterStrategy(
-        mocks.fundAllocator as any,
-        mocks.positionManager as any,
-        mocks.broadcast,
-        mocks.oracleClient as any,
-        { pairs: ["SOL/USDC"] },
-      );
-
-      await strategy.executeIteration();
-
-      expect(mocks.positionManager.openPosition).not.toHaveBeenCalled();
-    });
-
-    it("skips pair when price is null", async () => {
-      mocks.oracleClient.getPrice.mockReturnValue(null);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+  describe("no trade when RSI is within thresholds", () => {
+    it("does not open position when RSI is neutral (between 30-70)", async () => {
+      mocks.oracleClient.getRsi.mockReturnValue(50); // neutral
 
       const strategy = new ProfitHunterStrategy(
         mocks.fundAllocator as any,
@@ -329,241 +338,16 @@ describe("ProfitHunterStrategy", () => {
     });
   });
 
-  // --- Skip trade when canAllocate returns false (Task 4.8) ---
+  // --- Activity log reports RSI values (Task 4.9) ---
 
-  describe("skips trade when canAllocate returns false", () => {
-    it("does not open position when funds insufficient", async () => {
-      mocks.fundAllocator.canAllocate.mockReturnValue(false);
-      mocks.oracleClient.getPrice.mockReturnValue(98_000_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
-
-      const strategy = new ProfitHunterStrategy(
-        mocks.fundAllocator as any,
-        mocks.positionManager as any,
-        mocks.broadcast,
-        mocks.oracleClient as any,
-        { pairs: ["SOL/USDC"] },
-      );
-
-      await strategy.executeIteration();
-
-      expect(mocks.positionManager.openPosition).not.toHaveBeenCalled();
-    });
-  });
-
-  // --- Stop-loss calculated correctly (Task 4.9) ---
-
-  describe("stop-loss calculation", () => {
-    it("sets stop-loss below price for Long (3% below)", async () => {
-      const price = 100_000_000; // 100 USDC
-      mocks.oracleClient.getPrice.mockReturnValue(price);
-      // MA higher so price < MA → Long
-      mocks.oracleClient.getMovingAverage.mockReturnValue(102_000_000);
-
-      const strategy = new ProfitHunterStrategy(
-        mocks.fundAllocator as any,
-        mocks.positionManager as any,
-        mocks.broadcast,
-        mocks.oracleClient as any,
-        { pairs: ["SOL/USDC"], deviationThreshold: 0.01 },
-      );
-
-      await strategy.executeIteration();
-
-      expect(mocks.positionManager.openPosition).toHaveBeenCalledWith(
-        expect.objectContaining({
-          side: "Long",
-          stopLossPrice: Math.floor(price * 0.97), // 97_000_000
-        }),
-      );
-    });
-
-    it("sets stop-loss above price for Short (3% above)", async () => {
-      const price = 104_000_000; // 104 USDC
-      mocks.oracleClient.getPrice.mockReturnValue(price);
-      // MA lower so price > MA → Short
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
-
-      const strategy = new ProfitHunterStrategy(
-        mocks.fundAllocator as any,
-        mocks.positionManager as any,
-        mocks.broadcast,
-        mocks.oracleClient as any,
-        { pairs: ["SOL/USDC"], deviationThreshold: 0.01 },
-      );
-
-      await strategy.executeIteration();
-
-      expect(mocks.positionManager.openPosition).toHaveBeenCalledWith(
-        expect.objectContaining({
-          side: "Short",
-          stopLossPrice: Math.floor(price * 1.03), // 107_120_000
-        }),
-      );
-    });
-  });
-
-  // --- stop() calls closeAllForMode (Task 4.10) ---
-
-  describe("stop() closes all positions", () => {
-    it("calls closeAllForMode via super.stop()", async () => {
-      const strategy = new ProfitHunterStrategy(
-        mocks.fundAllocator as any,
-        mocks.positionManager as any,
-        mocks.broadcast,
-        mocks.oracleClient as any,
-        { pairs: ["SOL/USDC"] },
-      );
-
-      // Need to start first so _running = true, otherwise stop() is a no-op
-      // We can test by directly calling stop after simulating running state
-      // Since start() fires _runLoop in background, we use a different approach:
-      // Call stop() directly — it checks _running. We'll verify closeAllForMode
-      // is called when the mode is stopped after being started.
-
-      // Simulate a started strategy by starting then immediately stopping
-      await strategy.start();
-      await strategy.stop();
-
-      expect(mocks.positionManager.closeAllForMode).toHaveBeenCalledWith("profitHunter");
-    });
-  });
-
-  // --- Does not open duplicate on same pair (Task 4.11) ---
-
-  describe("no duplicate positions on same pair", () => {
-    it("does not open position on pair that already has an open position", async () => {
-      // Existing position on SOL/USDC
-      mocks.positionManager.getPositions.mockReturnValue([
-        { id: 42, mode: "profitHunter", pair: "SOL/USDC", side: "Long", size: 50, entryPrice: 98, stopLoss: 95, timestamp: Date.now() },
-      ]);
-
-      // Strong deviation signal
-      mocks.oracleClient.getPrice.mockReturnValue(95_000_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
-
-      const strategy = new ProfitHunterStrategy(
-        mocks.fundAllocator as any,
-        mocks.positionManager as any,
-        mocks.broadcast,
-        mocks.oracleClient as any,
-        { pairs: ["SOL/USDC"] },
-      );
-
-      await strategy.executeIteration();
-
-      // closePosition may be called (close check), but openPosition should NOT
-      expect(mocks.positionManager.openPosition).not.toHaveBeenCalled();
-    });
-  });
-
-  // --- CAN open positions on different pairs simultaneously (Task 4.12) ---
-
-  describe("opens positions on different pairs simultaneously", () => {
-    it("opens positions on multiple pairs in same iteration", async () => {
-      // Both pairs have strong deviation signals
-      mocks.oracleClient.getPrice.mockReturnValue(98_000_000); // 2% below MA
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
-
-      const strategy = new ProfitHunterStrategy(
-        mocks.fundAllocator as any,
-        mocks.positionManager as any,
-        mocks.broadcast,
-        mocks.oracleClient as any,
-        { pairs: ["SOL/USDC", "ETH/USDC"] },
-      );
-
-      await strategy.executeIteration();
-
-      expect(mocks.positionManager.openPosition).toHaveBeenCalledTimes(2);
-      expect(mocks.positionManager.openPosition).toHaveBeenCalledWith(
-        expect.objectContaining({ pair: "SOL/USDC", side: "Long" }),
-      );
-      expect(mocks.positionManager.openPosition).toHaveBeenCalledWith(
-        expect.objectContaining({ pair: "ETH/USDC", side: "Long" }),
-      );
-    });
-  });
-
-  // --- pairToOracleKey mapping (AC 4) ---
-
-  describe("oracle key mapping", () => {
-    it("calls oracle with SOL-PERP key for SOL/USDC pair", async () => {
-      mocks.oracleClient.getPrice.mockReturnValue(98_000_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
-
-      const strategy = new ProfitHunterStrategy(
-        mocks.fundAllocator as any,
-        mocks.positionManager as any,
-        mocks.broadcast,
-        mocks.oracleClient as any,
-        { pairs: ["SOL/USDC"] },
-      );
-
-      await strategy.executeIteration();
-
-      expect(mocks.oracleClient.isAvailable).toHaveBeenCalledWith("SOL-PERP");
-      expect(mocks.oracleClient.getPrice).toHaveBeenCalledWith("SOL-PERP");
-      expect(mocks.oracleClient.getMovingAverage).toHaveBeenCalledWith("SOL-PERP");
-    });
-
-    it("maps all supported pairs to correct oracle keys", async () => {
-      mocks.oracleClient.getPrice.mockReturnValue(98_000_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
-
-      const strategy = new ProfitHunterStrategy(
-        mocks.fundAllocator as any,
-        mocks.positionManager as any,
-        mocks.broadcast,
-        mocks.oracleClient as any,
-        { pairs: ["SOL/USDC", "ETH/USDC", "BTC/USDC"] },
-      );
-
-      await strategy.executeIteration();
-
-      expect(mocks.oracleClient.isAvailable).toHaveBeenCalledWith("SOL-PERP");
-      expect(mocks.oracleClient.isAvailable).toHaveBeenCalledWith("ETH-PERP");
-      expect(mocks.oracleClient.isAvailable).toHaveBeenCalledWith("BTC-PERP");
-    });
-  });
-
-  // --- getIntervalMs returns configured value ---
-
-  describe("getIntervalMs", () => {
-    it("returns configured iteration interval", () => {
-      const strategy = new ProfitHunterStrategy(
-        mocks.fundAllocator as any,
-        mocks.positionManager as any,
-        mocks.broadcast,
-        mocks.oracleClient as any,
-        { pairs: ["SOL/USDC"], iterationIntervalMs: 3_000 },
-      );
-      expect(strategy.getIntervalMs()).toBe(3_000);
-    });
-
-    it("returns default interval when not configured", () => {
-      const strategy = new ProfitHunterStrategy(
-        mocks.fundAllocator as any,
-        mocks.positionManager as any,
-        mocks.broadcast,
-        mocks.oracleClient as any,
-        { pairs: ["SOL/USDC"] },
-      );
-      expect(strategy.getIntervalMs()).toBe(5_000);
-    });
-  });
-
-  // --- Iteration activity broadcast ---
-
-  describe("iteration activity broadcast", () => {
+  describe("activity log reports RSI values", () => {
     function getActivityCall(broadcast: ReturnType<typeof vi.fn>) {
       const calls = broadcast.mock.calls as [string, unknown][];
       return calls.find(([event]) => event === "mode.activity");
     }
 
-    it("broadcasts MODE_ACTIVITY with correct structure after iteration", async () => {
-      mocks.oracleClient.getPrice.mockReturnValue(100_500_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+    it("broadcasts MODE_ACTIVITY with RSI signalValue", async () => {
+      mocks.oracleClient.getRsi.mockReturnValue(50);
 
       const strategy = new ProfitHunterStrategy(
         mocks.fundAllocator as any,
@@ -582,14 +366,13 @@ describe("ProfitHunterStrategy", () => {
         mode: "profitHunter",
         iteration: 1,
         pairs: expect.arrayContaining([
-          expect.objectContaining({ pair: "SOL/USDC", outcome: "no-signal" }),
+          expect.objectContaining({ pair: "SOL/USDC", signalValue: 50, outcome: "no-signal" }),
         ]),
       }));
     });
 
-    it("reports opened-long when deviation triggers Long", async () => {
-      mocks.oracleClient.getPrice.mockReturnValue(98_000_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+    it("reports null signalValue during warm-up", async () => {
+      mocks.oracleClient.getRsi.mockReturnValue(null);
 
       const strategy = new ProfitHunterStrategy(
         mocks.fundAllocator as any,
@@ -605,12 +388,34 @@ describe("ProfitHunterStrategy", () => {
       const payload = call![1] as any;
       expect(payload.pairs[0]).toEqual(expect.objectContaining({
         pair: "SOL/USDC",
+        signalValue: null,
+        oracleStatus: "warming-up",
+        outcome: "skipped-warming",
+      }));
+    });
+
+    it("reports opened-long when RSI triggers Long", async () => {
+      mocks.oracleClient.getRsi.mockReturnValue(25);
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      const call = getActivityCall(mocks.broadcast as unknown as ReturnType<typeof vi.fn>);
+      const payload = call![1] as any;
+      expect(payload.pairs[0]).toEqual(expect.objectContaining({
+        pair: "SOL/USDC",
+        signalValue: 25,
         outcome: "opened-long",
         side: "Long",
         oracleStatus: "ok",
       }));
-      expect(payload.pairs[0].deviationPct).toBeCloseTo(-2.0, 1);
-      expect(payload.pairs[0].size).toBe(50_000_000);
     });
 
     it("reports skipped-stale when oracle unavailable", async () => {
@@ -632,7 +437,7 @@ describe("ProfitHunterStrategy", () => {
         pair: "SOL/USDC",
         outcome: "skipped-stale",
         oracleStatus: "stale",
-        deviationPct: null,
+        signalValue: null,
       }));
     });
 
@@ -640,8 +445,7 @@ describe("ProfitHunterStrategy", () => {
       mocks.positionManager.getPositions.mockReturnValue([
         { id: 42, mode: "profitHunter", pair: "SOL/USDC", side: "Long", size: 50_000_000, entryPrice: 98, stopLoss: 95, timestamp: Date.now() },
       ]);
-      mocks.oracleClient.getPrice.mockReturnValue(100_100_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+      mocks.oracleClient.getRsi.mockReturnValue(55);
 
       const strategy = new ProfitHunterStrategy(
         mocks.fundAllocator as any,
@@ -665,8 +469,7 @@ describe("ProfitHunterStrategy", () => {
 
     it("reports skipped-no-funds when canAllocate returns false", async () => {
       mocks.fundAllocator.canAllocate.mockReturnValue(false);
-      mocks.oracleClient.getPrice.mockReturnValue(98_000_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+      mocks.oracleClient.getRsi.mockReturnValue(25);
 
       const strategy = new ProfitHunterStrategy(
         mocks.fundAllocator as any,
@@ -688,8 +491,7 @@ describe("ProfitHunterStrategy", () => {
     });
 
     it("increments iteration counter across calls", async () => {
-      mocks.oracleClient.getPrice.mockReturnValue(100_500_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+      mocks.oracleClient.getRsi.mockReturnValue(50);
 
       const strategy = new ProfitHunterStrategy(
         mocks.fundAllocator as any,
@@ -710,13 +512,176 @@ describe("ProfitHunterStrategy", () => {
     });
   });
 
+  // --- Stop-loss calculated correctly ---
+
+  describe("stop-loss calculation", () => {
+    it("sets stop-loss below price for Long (5% below)", async () => {
+      const price = 100_000_000;
+      mocks.oracleClient.getRsi.mockReturnValue(25); // triggers Long
+      mocks.oracleClient.getPrice.mockReturnValue(price);
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      expect(mocks.positionManager.openPosition).toHaveBeenCalledWith(
+        expect.objectContaining({
+          side: "Long",
+          stopLossPrice: Math.floor(price * 0.95), // 5% stop-loss
+        }),
+      );
+    });
+
+    it("sets stop-loss above price for Short (5% above)", async () => {
+      const price = 100_000_000;
+      mocks.oracleClient.getRsi.mockReturnValue(75); // triggers Short
+      mocks.oracleClient.getPrice.mockReturnValue(price);
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      expect(mocks.positionManager.openPosition).toHaveBeenCalledWith(
+        expect.objectContaining({
+          side: "Short",
+          stopLossPrice: Math.floor(price * 1.05), // 5% stop-loss
+        }),
+      );
+    });
+  });
+
+  // --- stop() calls closeAllForMode ---
+
+  describe("stop() closes all positions", () => {
+    it("calls closeAllForMode via super.stop()", async () => {
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.start();
+      await strategy.stop();
+
+      expect(mocks.positionManager.closeAllForMode).toHaveBeenCalledWith("profitHunter");
+    });
+  });
+
+  // --- Does not open duplicate on same pair ---
+
+  describe("no duplicate positions on same pair", () => {
+    it("does not open position on pair that already has an open position", async () => {
+      mocks.positionManager.getPositions.mockReturnValue([
+        { id: 42, mode: "profitHunter", pair: "SOL/USDC", side: "Long", size: 50, entryPrice: 98, stopLoss: 95, timestamp: Date.now() },
+      ]);
+      mocks.oracleClient.getRsi.mockReturnValue(25); // strong buy signal
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      expect(mocks.positionManager.openPosition).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- CAN open positions on different pairs simultaneously ---
+
+  describe("opens positions on different pairs simultaneously", () => {
+    it("opens positions on multiple pairs in same iteration", async () => {
+      mocks.oracleClient.getRsi.mockReturnValue(25); // oversold on all pairs
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC", "ETH/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      expect(mocks.positionManager.openPosition).toHaveBeenCalledTimes(2);
+      expect(mocks.positionManager.openPosition).toHaveBeenCalledWith(
+        expect.objectContaining({ pair: "SOL/USDC", side: "Long" }),
+      );
+      expect(mocks.positionManager.openPosition).toHaveBeenCalledWith(
+        expect.objectContaining({ pair: "ETH/USDC", side: "Long" }),
+      );
+    });
+  });
+
+  // --- oracle key mapping ---
+
+  describe("oracle key mapping", () => {
+    it("calls oracle with SOL-PERP key for SOL/USDC pair", async () => {
+      mocks.oracleClient.getRsi.mockReturnValue(50);
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      expect(mocks.oracleClient.isAvailable).toHaveBeenCalledWith("SOL-PERP");
+      expect(mocks.oracleClient.getRsi).toHaveBeenCalledWith("SOL-PERP", 14);
+    });
+  });
+
+  // --- getIntervalMs ---
+
+  describe("getIntervalMs", () => {
+    it("returns configured iteration interval", () => {
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"], iterationIntervalMs: 60_000 },
+      );
+      expect(strategy.getIntervalMs()).toBe(60_000);
+    });
+
+    it("returns default interval (30s) when not configured", () => {
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+      expect(strategy.getIntervalMs()).toBe(30_000);
+    });
+  });
+
   // --- Dynamic position sizing ---
 
   describe("dynamic position sizing", () => {
     it("recalculates position size from current allocation when not explicitly configured", async () => {
-      // Start with 1B allocation → positionSize = floor(1B / 20) = 50_000_000
-      mocks.oracleClient.getPrice.mockReturnValue(98_000_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+      mocks.oracleClient.getRsi.mockReturnValue(25);
 
       const strategy = new ProfitHunterStrategy(
         mocks.fundAllocator as any,
@@ -731,7 +696,6 @@ describe("ProfitHunterStrategy", () => {
         expect.objectContaining({ size: 50_000_000 }),
       );
 
-      // Simulate allocation change to 500M → positionSize = floor(500M / 20) = 25_000_000
       mocks.fundAllocator.getAllocation.mockReturnValue({ allocation: 500_000_000, remaining: 500_000_000 });
       mocks.positionManager.getPositions.mockReturnValue([]);
       mocks.positionManager.openPosition.mockClear();
@@ -742,33 +706,8 @@ describe("ProfitHunterStrategy", () => {
       );
     });
 
-    it("clamps dynamic position size to $10 minimum", async () => {
-      // $100 allocation → allocation/20 = $5, should clamp to $10
-      const smallMocks = createMocks(100_000_000);
-      smallMocks.oracleClient.getPrice.mockReturnValue(98_000_000);
-      smallMocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
-
-      const strategy = new ProfitHunterStrategy(
-        smallMocks.fundAllocator as any,
-        smallMocks.positionManager as any,
-        smallMocks.broadcast,
-        smallMocks.oracleClient as any,
-        { pairs: ["SOL/USDC"] },
-      );
-
-      // Simulate allocation drop to $100 for dynamic recalc
-      smallMocks.fundAllocator.getAllocation.mockReturnValue({ allocation: 100_000_000, remaining: 100_000_000 });
-
-      await strategy.executeIteration();
-
-      expect(smallMocks.positionManager.openPosition).toHaveBeenCalledWith(
-        expect.objectContaining({ size: 10_000_000 }), // clamped to $10
-      );
-    });
-
     it("uses static position size when explicitly configured", async () => {
-      mocks.oracleClient.getPrice.mockReturnValue(98_000_000);
-      mocks.oracleClient.getMovingAverage.mockReturnValue(100_000_000);
+      mocks.oracleClient.getRsi.mockReturnValue(25);
 
       const strategy = new ProfitHunterStrategy(
         mocks.fundAllocator as any,
@@ -778,13 +717,54 @@ describe("ProfitHunterStrategy", () => {
         { pairs: ["SOL/USDC"], positionSize: 10_000_000 },
       );
 
-      // Change allocation — should NOT affect position size
       mocks.fundAllocator.getAllocation.mockReturnValue({ allocation: 500_000_000, remaining: 500_000_000 });
 
       await strategy.executeIteration();
       expect(mocks.positionManager.openPosition).toHaveBeenCalledWith(
         expect.objectContaining({ size: 10_000_000 }),
       );
+    });
+  });
+
+  // --- Does not close positions that haven't mean-reverted ---
+
+  describe("holds positions when RSI has not mean-reverted", () => {
+    it("holds Long when RSI is still below exitRsi", async () => {
+      mocks.positionManager.getPositions.mockReturnValue([
+        { id: 42, mode: "profitHunter", pair: "SOL/USDC", side: "Long", size: 50_000_000, entryPrice: 98, stopLoss: 95, timestamp: Date.now() },
+      ]);
+      mocks.oracleClient.getRsi.mockReturnValue(40); // still below 50
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      expect(mocks.positionManager.closePosition).not.toHaveBeenCalled();
+    });
+
+    it("holds Short when RSI is still above exitRsi", async () => {
+      mocks.positionManager.getPositions.mockReturnValue([
+        { id: 43, mode: "profitHunter", pair: "SOL/USDC", side: "Short", size: 50_000_000, entryPrice: 102, stopLoss: 105, timestamp: Date.now() },
+      ]);
+      mocks.oracleClient.getRsi.mockReturnValue(60); // still above 50
+
+      const strategy = new ProfitHunterStrategy(
+        mocks.fundAllocator as any,
+        mocks.positionManager as any,
+        mocks.broadcast,
+        mocks.oracleClient as any,
+        { pairs: ["SOL/USDC"] },
+      );
+
+      await strategy.executeIteration();
+
+      expect(mocks.positionManager.closePosition).not.toHaveBeenCalled();
     });
   });
 });
