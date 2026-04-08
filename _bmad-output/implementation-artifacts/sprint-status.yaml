@@ -41,6 +41,8 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-07
+# last dev: 2026-04-07 story 8-9 implementation complete
+# last story created: 2026-04-07 story 8-9
 # last review: 2026-04-07 code review of story 7-2, all patches applied
 # last story created: 2026-04-07 story 7-2
 # last review: 2026-04-07 code review of story 7-1, all patches applied
@@ -190,3 +192,6 @@ development_status:
   8-4-pair-selection-and-mode-start-fix: done
   8-5-minimum-order-value-enforcement: done
   8-6-configurable-position-size-and-max-allocation: done
+  8-7-pass-vault-address-in-exchange-calls: done
+  8-8-fix-dashboard-bottom-section-clipping: done
+  8-9-sqlite-wal-persistence-fix: done

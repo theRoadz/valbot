@@ -205,3 +205,15 @@
 - ~~Singleton blockchain client holds stale wallet address if env changes at runtime~~ — resolved: documented immutability with comment on singleton [client.ts:238]
 - ~~Orphaned position replacement drops `filledSz` in stop-loss rollback error path~~ — resolved: added `filledSz: openResult.filledSz` to replacement entry [position-manager.ts:252]
 - ~~`reconcileOnChainPositions` accepts unvalidated `string` parameter~~ — resolved: narrowed to `` `0x${string}` `` [position-manager.ts:621]
+
+## Deferred from: code review of story 8-9-sqlite-wal-persistence-fix (2026-04-07)
+
+- ~~`synchronous = FULL` pragma not verified like WAL pragma~~ — resolved: added verification check matching WAL pattern [src/server/db/index.ts:30-33]
+- ~~Client fallback default `500` in MaxAllocationControl disagrees with server default~~ — resolved: replaced with `null` fallback and "—" placeholder until server state loads [max-allocation-control.tsx:9]
+
+## Deferred from: code review of story 8-9-sqlite-wal-persistence-fix round 2 (2026-04-08)
+
+- ~~Missing client-side max validation on positionSize input~~ — resolved: added `numVal <= 100000` upper bound in mode-card [src/client/components/mode-card.tsx:299]
+- ~~Concurrent allocation updates not atomic~~ — dismissed: Node.js single-threaded, setAllocation is synchronous, no race possible [src/server/engine/fund-allocator.ts:57-68]
+- ~~Position size not cleared when allocation set to zero~~ — resolved: removed `amount > 0` guard [src/server/engine/fund-allocator.ts:78]
+- ~~No cross-field validation that positionSize <= maxAllocation~~ — dismissed: backend already enforces positionSize <= allocation in setPositionSize [src/server/engine/fund-allocator.ts:257]

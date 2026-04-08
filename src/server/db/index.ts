@@ -26,6 +26,11 @@ export function getDb() {
       }
 
       _sqlite.pragma('busy_timeout = 5000');
+      _sqlite.pragma('synchronous = FULL');
+      const syncResult = _sqlite.pragma('synchronous') as { synchronous: number | string }[];
+      if (Number(syncResult[0]?.synchronous) !== 2) {
+        console.warn(`synchronous = FULL not activated (got: ${syncResult[0]?.synchronous}). Data persistence may be at risk.`);
+      }
 
       // Verify schema tables exist (migration guard)
       const tables = _sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('trades','positions','sessions','config')").all() as { name: string }[];

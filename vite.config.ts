@@ -12,6 +12,9 @@ export default defineConfig({
     },
   },
   server: {
+    watch: {
+      ignored: ['**/valbot.db', '**/valbot.db-wal', '**/valbot.db-shm'],
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:3000',

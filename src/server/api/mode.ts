@@ -76,8 +76,8 @@ export default async function modeRoutes(fastify: FastifyInstance) {
         additionalProperties: false,
         properties: {
           allocation: { type: "number" as const, minimum: 0 },
-          positionSize: { type: ["number", "null"] as const, minimum: 10, maximum: 10000 },
-          maxAllocation: { type: "number" as const, minimum: 10, maximum: 10000 },
+          positionSize: { type: ["number", "null"] as const, minimum: 10, maximum: 100000 },
+          maxAllocation: { type: "number" as const, minimum: 10, maximum: 100000 },
           pairs: { type: "array" as const, items: { type: "string" as const, enum: VALID_PAIRS }, maxItems: 50 },
           slippage: { type: "number" as const, minimum: 0, maximum: 100 },
         },

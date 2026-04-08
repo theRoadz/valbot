@@ -296,7 +296,7 @@ export function ModeCard({ mode, name, description, color, barColor }: ModeCardP
       return;
     }
     const numVal = parseFloat(trimmed);
-    if (!isNaN(numVal) && isFinite(numVal) && numVal >= 10 && numVal !== positionSize) {
+    if (!isNaN(numVal) && isFinite(numVal) && numVal >= 10 && numVal <= 100000 && numVal !== positionSize) {
       const prevPositionSize = positionSize;
       setModeConfig(mode, { positionSize: numVal });
       api.updateModeConfig(mode, { positionSize: numVal }).catch((err) => {

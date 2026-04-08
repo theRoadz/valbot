@@ -75,7 +75,7 @@ export class FundAllocator {
 
     // Clear position size if it now exceeds the new allocation
     const currentPS = this.positionSizes.get(mode);
-    if (currentPS !== undefined && amount > 0 && currentPS > amount) {
+    if (currentPS !== undefined && currentPS > amount) {
       this.clearPositionSize(mode);
     }
 
@@ -211,13 +211,13 @@ export class FundAllocator {
   setMaxAllocation(amount: number): void {
     assertSafeInteger(amount, "maxAllocation");
     const MIN = 10_000_000; // $10
-    const MAX = 10_000_000_000; // $10,000
+    const MAX = 100_000_000_000; // $100,000
     if (amount < MIN || amount > MAX) {
       throw new AppError({
         severity: "warning",
         code: "INVALID_MAX_ALLOCATION",
-        message: `Max allocation must be between $10 and $10,000`,
-        resolution: `Enter a value between $10 and $10,000`,
+        message: `Max allocation must be between $10 and $100,000`,
+        resolution: `Enter a value between $10 and $100,000`,
       });
     }
     const prev = this.maxAllocation;

@@ -371,9 +371,14 @@ describe("FundAllocator", () => {
       }
     });
 
-    it("rejects max above $10,000", () => {
+    it("accepts exactly $100,000", () => {
+      allocator.setMaxAllocation(100_000_000_000);
+      expect(allocator.getMaxAllocation()).toBe(100_000_000_000);
+    });
+
+    it("rejects max above $100,000", () => {
       try {
-        allocator.setMaxAllocation(11_000_000_000);
+        allocator.setMaxAllocation(110_000_000_000);
         expect.fail("should have thrown");
       } catch (err: unknown) {
         const e = err as { code: string };

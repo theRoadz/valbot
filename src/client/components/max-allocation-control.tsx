@@ -6,15 +6,16 @@ import * as api from "@client/lib/api";
 export function MaxAllocationControl() {
   const maxAllocation = useStore((s) => {
     const first = Object.values(s.modes)[0];
-    return first?.maxAllocation ?? 500;
+    return first?.maxAllocation ?? null;
   });
   const setModeConfig = useStore((s) => s.setModeConfig);
   const [input, setInput] = useState("");
   const [focused, setFocused] = useState(false);
 
-  const displayed = focused ? input : String(maxAllocation);
+  const displayed = focused ? input : maxAllocation !== null ? String(maxAllocation) : "—";
 
   const handleFocus = () => {
+    if (maxAllocation === null) return;
     setInput(String(maxAllocation));
     setFocused(true);
   };
@@ -26,7 +27,7 @@ export function MaxAllocationControl() {
   const handleCommit = () => {
     setFocused(false);
     const numVal = parseFloat(input);
-    if (!isNaN(numVal) && isFinite(numVal) && numVal >= 10 && numVal <= 10000 && numVal !== maxAllocation) {
+    if (maxAllocation !== null && !isNaN(numVal) && isFinite(numVal) && numVal >= 10 && numVal <= 100000 && numVal !== maxAllocation) {
       const prev = maxAllocation;
       const modeKeys = Object.keys(useStore.getState().modes);
       if (modeKeys.length === 0) return;
@@ -48,10 +49,10 @@ export function MaxAllocationControl() {
   return (
     <div className="flex items-center gap-2 justify-end">
       <span className="text-xs font-medium text-text-secondary">Max Allocation Limit:</span>
-      <span className="text-sm font-mono text-text-secondary">$</span>
+      {maxAllocation !== null && <span className="text-sm font-mono text-text-secondary">$</span>}
       <Input
         type="text"
-        className="h-7 w-24 font-mono text-right text-sm"
+        className="h-7 w-28 font-mono text-right text-sm"
         value={displayed}
         onFocus={handleFocus}
         onChange={handleChange}
