@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { CandleAggregator, calculateRsi } from "./candle-aggregator.js";
+import { CandleAggregator, calculateRsi, calculateEma } from "./candle-aggregator.js";
 
 const PERIOD_MS = 300_000; // 5 minutes
 
@@ -195,6 +195,75 @@ describe("CandleAggregator", () => {
       expect(rsi!).toBeGreaterThanOrEqual(0);
       expect(rsi!).toBeLessThanOrEqual(100);
     });
+  });
+});
+
+describe("CandleAggregator.getEma", () => {
+  it("returns null when insufficient candles", () => {
+    const aggregator = new CandleAggregator(20);
+    expect(aggregator.getEma("SOL-PERP", 9)).toBeNull();
+  });
+
+  it("returns null for unknown feed", () => {
+    const aggregator = new CandleAggregator(20);
+    expect(aggregator.getEma("UNKNOWN", 9)).toBeNull();
+  });
+
+  it("returns valid EMA with enough candles", () => {
+    const aggregator = new CandleAggregator(20);
+    const base = PERIOD_MS * 10;
+    // Create 10 completed candles (enough for EMA(9))
+    const prices = [100, 102, 101, 103, 104, 102, 100, 99, 101, 103, 105];
+    for (let i = 0; i < prices.length; i++) {
+      aggregator.addPrice("SOL-PERP", prices[i] * 1_000_000, base + i * PERIOD_MS, PERIOD_MS);
+    }
+
+    const ema = aggregator.getEma("SOL-PERP", 9);
+    expect(ema).not.toBeNull();
+    expect(ema!).toBeGreaterThan(0);
+  });
+});
+
+describe("calculateEma", () => {
+  it("returns null when period <= 0", () => {
+    expect(calculateEma([100, 101, 102], 0)).toBeNull();
+    expect(calculateEma([100, 101, 102], -1)).toBeNull();
+  });
+
+  it("returns null when closes.length < period", () => {
+    expect(calculateEma([100, 101, 102], 9)).toBeNull();
+  });
+
+  it("returns SMA when closes.length == period (no smoothing steps)", () => {
+    const closes = [100, 102, 104, 106, 108, 110, 112, 114, 116];
+    const ema = calculateEma(closes, 9);
+    const sma = closes.reduce((a, b) => a + b, 0) / 9;
+    expect(ema).toBeCloseTo(sma, 5);
+  });
+
+  it("weights recent prices more heavily (uptrend → EMA > SMA)", () => {
+    // Strong uptrend: EMA should track closer to recent high prices
+    const closes = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 120];
+    const ema = calculateEma(closes, 9);
+    const sma = closes.reduce((a, b) => a + b, 0) / closes.length;
+    expect(ema!).toBeGreaterThan(sma); // EMA reacts faster to uptrend
+  });
+
+  it("produces known EMA value for simple series", () => {
+    // Prices: [10, 11, 12, 13, 14] with period=3
+    // SMA(first 3) = (10+11+12)/3 = 11
+    // k = 2/(3+1) = 0.5
+    // EMA after 13: 13*0.5 + 11*0.5 = 12
+    // EMA after 14: 14*0.5 + 12*0.5 = 13
+    const closes = [10, 11, 12, 13, 14];
+    const ema = calculateEma(closes, 3);
+    expect(ema).toBeCloseTo(13, 5);
+  });
+
+  it("returns constant value for flat prices", () => {
+    const closes = [100, 100, 100, 100, 100, 100, 100, 100, 100];
+    const ema = calculateEma(closes, 5);
+    expect(ema).toBeCloseTo(100, 5);
   });
 });
 

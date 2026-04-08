@@ -21,7 +21,7 @@ interface FeedState {
   pending: PendingCandle | null;
 }
 
-const DEFAULT_MAX_CANDLES = 20;
+const DEFAULT_MAX_CANDLES = 50;
 
 export class CandleAggregator {
   private feeds = new Map<string, FeedState>();
@@ -120,6 +120,37 @@ export class CandleAggregator {
     const closes = state.candles.map((c) => c.close);
     return calculateRsi(closes, period);
   }
+
+  /**
+   * Calculate EMA from completed candle close prices.
+   * Returns null if insufficient candles (need at least `period` closes).
+   */
+  getEma(feedKey: string, period: number): number | null {
+    const state = this.feeds.get(feedKey);
+    if (!state) return null;
+
+    const closes = state.candles.map((c) => c.close);
+    return calculateEma(closes, period);
+  }
+}
+
+export function calculateEma(closes: number[], period: number): number | null {
+  if (period <= 0) return null;
+  if (closes.length < period) return null;
+
+  // Seed with SMA of first `period` values
+  let ema = 0;
+  for (let i = 0; i < period; i++) {
+    ema += closes[i];
+  }
+  ema /= period;
+
+  const k = 2 / (period + 1);
+  for (let i = period; i < closes.length; i++) {
+    ema = closes[i] * k + ema * (1 - k);
+  }
+
+  return ema;
 }
 
 export function calculateRsi(closes: number[], period: number): number | null {

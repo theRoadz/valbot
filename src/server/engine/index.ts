@@ -8,6 +8,7 @@ import { strategyRegistry } from "./strategy-registry.js";
 import "./strategies/volume-max.js";
 import "./strategies/profit-hunter.js";
 import "./strategies/arbitrage.js";
+import "./strategies/momentum.js";
 import { OracleClient } from "../blockchain/oracle.js";
 import { getMidPrice } from "../blockchain/contracts.js";
 import { getBlockchainClient, getPredictedFundings } from "../blockchain/client.js";

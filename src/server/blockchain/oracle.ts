@@ -389,6 +389,10 @@ export class OracleClient {
     return this.candleAggregator.getRsi(pair, period);
   }
 
+  getEma(pair: string, period: number): number | null {
+    return this.candleAggregator.getEma(pair, period);
+  }
+
   disconnect(): void {
     this.stopHeartbeat();
     this.closeEventSource();

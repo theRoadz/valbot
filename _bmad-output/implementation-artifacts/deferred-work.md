@@ -238,3 +238,9 @@
 - ~~Gap candles: large timestamp jumps skip intermediate candle periods~~ — resolved: gap periods now filled with flat candles (last close) to keep RSI history contiguous
 - ~~Out-of-order timestamps from Pyth could corrupt candle OHLC data~~ — resolved: samples with earlier timestamps than pending candle are silently rejected
 - ~~Fixed 3% stop-loss may be too tight for RSI's 70-min signal timeframe~~ — resolved: widened to 5% default, made configurable via `stopLossPct`
+
+## Deferred from: code review of 8-14-momentum-trend-following (2026-04-09)
+
+- ~~In-memory stop-loss updated after on-chain but before DB — restart restores stale stop~~ — resolved: improved logging with `STOP_LOSS_DB_DESYNC` code for monitoring/alerting
+- ~~Crossover state lost on restart may cause one spurious signal~~ — dismissed: `prevAbove === null` guard already prevents spurious signals on first post-restart iteration
+- ~~Close-then-reopen in same iteration~~ — resolved: added `closedThisIteration` set to skip pairs closed in Phase 1 during Phase 2 entry scanning

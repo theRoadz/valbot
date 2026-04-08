@@ -819,6 +819,63 @@ export class PositionManager {
     this._modeStatus.delete(mode);
   }
 
+  /**
+   * Update the stop-loss for an existing position. No-ops if newStopPrice is
+   * worse than the current stop (enforces trailing-stop never-backward rule).
+   */
+  async updateStopLoss(positionId: number, newStopPrice: number): Promise<void> {
+    const pos = this.positions.get(positionId);
+    if (!pos) {
+      throw positionNotFoundError(positionId);
+    }
+
+    // Never-backward rule: for Long, stop must increase; for Short, stop must decrease
+    if (pos.side === "Long" && newStopPrice <= pos.stopLoss) return;
+    if (pos.side === "Short" && newStopPrice >= pos.stopLoss) return;
+
+    const client = getBlockchainClient();
+    if (!client) {
+      throw noBlockchainClientError();
+    }
+
+    try {
+      await contractSetStopLoss({
+        exchange: client.exchange,
+        pair: pos.pair,
+        side: pos.side,
+        size: pos.size,
+        stopLossPrice: newStopPrice,
+        baseSz: pos.filledSz,
+        vaultAddress: client.walletAddress,
+      });
+    } catch (err) {
+      logger.error(
+        { err, positionId, newStopPrice, code: "STOP_LOSS_UPDATE_FAILED" },
+        "Failed to update stop-loss on-chain",
+      );
+      throw stopLossFailedError(
+        `Failed to update stop-loss for position ${positionId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    // Update in-memory + DB together to keep all three stores consistent
+    pos.stopLoss = newStopPrice;
+
+    try {
+      const db = getDb();
+      assertSafeInteger(newStopPrice, "position.stopLoss");
+      db.update(positionsTable)
+        .set({ stopLoss: newStopPrice })
+        .where(eq(positionsTable.id, positionId))
+        .run();
+    } catch (dbErr) {
+      logger.error(
+        { dbErr, positionId, newStopPrice, code: "STOP_LOSS_DB_DESYNC" },
+        "Failed to persist stop-loss update to DB — on-chain and in-memory updated but DB has stale value; will diverge on restart",
+      );
+    }
+  }
+
   getPositions(mode?: ModeType): Position[] {
     const all = [...this.positions.values()];
     const filtered = mode ? all.filter((p) => p.mode === mode) : all;
