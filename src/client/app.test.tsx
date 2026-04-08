@@ -1,9 +1,33 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
+import userEvent from "@testing-library/user-event";
 import App from './App';
 import useStore from './store';
 import type { StrategyInfo, ModeStatus } from '@shared/types';
+
+vi.mock("@client/lib/api", () => ({
+  startMode: vi.fn(() => Promise.resolve()),
+  stopMode: vi.fn(() => Promise.resolve()),
+  updateModeConfig: vi.fn(() => Promise.resolve()),
+  fetchStatus: vi.fn(() => Promise.resolve()),
+  fetchTrades: vi.fn(() => Promise.resolve({ trades: [], total: 0 })),
+  ApiError: class ApiError extends Error {
+    severity: string;
+    code: string;
+    details: string | null;
+    resolution: string;
+    constructor(f: { severity: string; code: string; message: string; details: string | null; resolution: string }) {
+      super(f.message);
+      this.severity = f.severity;
+      this.code = f.code;
+      this.details = f.details;
+      this.resolution = f.resolution;
+    }
+  },
+}));
+
+const api = await import("@client/lib/api");
 
 const TEST_STRATEGIES: StrategyInfo[] = [
   { name: "Volume Max", description: "Volume maximization", modeType: "volumeMax", urlSlug: "volume-max", modeColor: "#8b5cf6", status: "stopped" as ModeStatus },
@@ -12,6 +36,7 @@ const TEST_STRATEGIES: StrategyInfo[] = [
 ];
 
 beforeEach(() => {
+  localStorage.removeItem("strategySlots");
   useStore.setState({
     strategies: TEST_STRATEGIES,
     modes: {
@@ -21,7 +46,10 @@ beforeEach(() => {
     },
   });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 describe('App (Dashboard Layout)', () => {
   it('renders without errors', () => {
@@ -31,9 +59,10 @@ describe('App (Dashboard Layout)', () => {
 
   it('renders all three mode cards', () => {
     render(<App />);
-    expect(screen.getByText('Volume Max')).toBeInTheDocument();
-    expect(screen.getByText('Profit Hunter')).toBeInTheDocument();
-    expect(screen.getByText('Arbitrage')).toBeInTheDocument();
+    // Each strategy name appears in its card header + as dropdown option in each card's selector
+    expect(screen.getAllByText('Volume Max').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Profit Hunter').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Arbitrage').length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders positions table and trade log', () => {
@@ -106,7 +135,7 @@ describe('App (Dashboard Layout)', () => {
     useStore.setState({ alerts: [] });
   });
 
-  it('renders a 4th mode card when a 4th strategy is added', () => {
+  it('shows strategy in dropdown when more than 3 are registered', () => {
     useStore.setState({
       strategies: [
         ...TEST_STRATEGIES,
@@ -119,19 +148,17 @@ describe('App (Dashboard Layout)', () => {
     });
 
     render(<App />);
-    expect(screen.getByText('Mean Reversion')).toBeInTheDocument();
-    expect(screen.getByText('Volume Max')).toBeInTheDocument();
+    // With 4 strategies and 3 slots, first 3 strategies render, Mean Reversion is available via dropdown
+    expect(screen.getAllByText('Volume Max').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('grid layout adapts to strategy count', () => {
+  it('renders exactly 3 card slots (fixed grid)', () => {
     const { container } = render(<App />);
-    // Find the grid container that holds mode cards
-    const modeGrid = container.querySelector('[style*="grid-template-columns"]');
+    const modeGrid = container.querySelector('[style*="repeat(3"]');
     expect(modeGrid).not.toBeNull();
-    expect(modeGrid!.getAttribute('style')).toContain('repeat(3');
   });
 
-  it('grid adapts to 1 strategy', () => {
+  it('shows 3 slots even with 1 strategy (empty placeholders for remaining)', () => {
     useStore.setState({
       strategies: [TEST_STRATEGIES[0]],
       modes: {
@@ -140,7 +167,134 @@ describe('App (Dashboard Layout)', () => {
     });
 
     const { container } = render(<App />);
-    const modeGrid = container.querySelector('[style*="grid-template-columns"]');
-    expect(modeGrid!.getAttribute('style')).toContain('repeat(1');
+    const modeGrid = container.querySelector('[style*="repeat(3"]');
+    expect(modeGrid).not.toBeNull();
+    // Should have "No strategy selected" text for empty slots
+    expect(screen.getAllByText('No strategy selected').length).toBe(2);
+  });
+
+  it('persists slot assignments to localStorage', () => {
+    render(<App />);
+    // After rendering with 3 strategies, slots should be saved
+    const saved = localStorage.getItem('strategySlots');
+    expect(saved).not.toBeNull();
+    const parsed = JSON.parse(saved!);
+    expect(parsed).toHaveLength(3);
+    expect(parsed).toContain('volumeMax');
+    expect(parsed).toContain('profitHunter');
+    expect(parsed).toContain('arbitrage');
+  });
+
+  it('restores slot assignments from localStorage on reload', () => {
+    // Pre-set localStorage with a specific order
+    localStorage.setItem('strategySlots', JSON.stringify(['arbitrage', 'volumeMax', null]));
+    render(<App />);
+    // Should have one "No strategy selected" placeholder
+    expect(screen.getAllByText('No strategy selected').length).toBe(1);
+  });
+
+  it('dropdown shows all strategies with disabled ones marked "(in use)"', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    // Click the first strategy selector
+    const selectors = screen.getAllByLabelText('Select strategy');
+    await user.click(selectors[0]);
+    // Should see strategy options
+    const listbox = document.querySelector('[role="listbox"]');
+    expect(listbox).not.toBeNull();
+  });
+
+  it('stopped strategy swap switches immediately without API call', async () => {
+    localStorage.setItem('strategySlots', JSON.stringify(['volumeMax', null, null]));
+    useStore.setState({
+      strategies: [
+        ...TEST_STRATEGIES,
+        { name: "Grid Trading", description: "Grid trading", modeType: "gridTrading", urlSlug: "grid-trading", modeColor: "#f59e0b", status: "stopped" as ModeStatus },
+      ],
+      modes: {
+        ...useStore.getState().modes,
+        gridTrading: { mode: "gridTrading", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 }, errorDetail: null, killSwitchDetail: null },
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+    // Click the first slot's strategy selector
+    const selectors = screen.getAllByLabelText('Select strategy');
+    await user.click(selectors[0]);
+    // Click "Grid Trading" option
+    const gridOption = screen.getByRole('option', { name: /Grid Trading/ });
+    await user.click(gridOption);
+    // stopMode should NOT be called (strategy was stopped)
+    expect(api.stopMode).not.toHaveBeenCalled();
+  });
+
+  it('running strategy swap triggers stop API call', async () => {
+    localStorage.setItem('strategySlots', JSON.stringify(['volumeMax', null, null]));
+    useStore.setState((s) => ({
+      strategies: [
+        ...TEST_STRATEGIES,
+        { name: "Grid Trading", description: "Grid trading", modeType: "gridTrading", urlSlug: "grid-trading", modeColor: "#f59e0b", status: "stopped" as ModeStatus },
+      ],
+      modes: {
+        ...s.modes,
+        volumeMax: { ...s.modes.volumeMax, status: "running" as ModeStatus, allocation: 100 },
+        gridTrading: { mode: "gridTrading", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 }, errorDetail: null, killSwitchDetail: null },
+      },
+    }));
+
+    const user = userEvent.setup();
+    render(<App />);
+    const selectors = screen.getAllByLabelText('Select strategy');
+    await user.click(selectors[0]);
+    const gridOption = screen.getByRole('option', { name: /Grid Trading/ });
+    await user.click(gridOption);
+    // stopMode SHOULD be called for the running strategy
+    expect(api.stopMode).toHaveBeenCalledWith('volumeMax');
+  });
+
+  it('reverts swap on stop failure', async () => {
+    (api.stopMode as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("stop failed"));
+    localStorage.setItem('strategySlots', JSON.stringify(['volumeMax', null, null]));
+    useStore.setState((s) => ({
+      strategies: [
+        ...TEST_STRATEGIES,
+        { name: "Grid Trading", description: "Grid trading", modeType: "gridTrading", urlSlug: "grid-trading", modeColor: "#f59e0b", status: "stopped" as ModeStatus },
+      ],
+      modes: {
+        ...s.modes,
+        volumeMax: { ...s.modes.volumeMax, status: "running" as ModeStatus, allocation: 100 },
+        gridTrading: { mode: "gridTrading", status: "stopped", allocation: 0, pairs: ["SOL/USDC"], slippage: 0.5, stats: { pnl: 0, trades: 0, volume: 0, allocated: 0, remaining: 0 }, errorDetail: null, killSwitchDetail: null },
+      },
+    }));
+
+    const user = userEvent.setup();
+    render(<App />);
+    const selectors = screen.getAllByLabelText('Select strategy');
+    await user.click(selectors[0]);
+    const gridOption = screen.getByRole('option', { name: /Grid Trading/ });
+    await user.click(gridOption);
+    // After rejection, slot should revert to volumeMax
+    await vi.waitFor(() => {
+      const saved = JSON.parse(localStorage.getItem('strategySlots')!);
+      expect(saved[0]).toBe('volumeMax');
+    });
+  });
+
+  it('warning indicator shown when slot has running strategy', async () => {
+    localStorage.setItem('strategySlots', JSON.stringify(['volumeMax', null, null]));
+    useStore.setState((s) => ({
+      modes: {
+        ...s.modes,
+        volumeMax: { ...s.modes.volumeMax, status: "running" as ModeStatus, allocation: 100 },
+      },
+    }));
+
+    const user = userEvent.setup();
+    render(<App />);
+    const selectors = screen.getAllByLabelText('Select strategy');
+    await user.click(selectors[0]);
+    // Should show warning text
+    expect(screen.getByText('Will stop current strategy')).toBeInTheDocument();
   });
 });

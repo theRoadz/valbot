@@ -222,3 +222,8 @@
 
 - ~~No client-side tests for ActivityLog component or store MODE_ACTIVITY handler~~ — resolved: added activity-log.test.tsx (10 tests) and 8 store handler tests for MODE_ACTIVITY
 - ~~Touch devices: mouseenter/mouseleave may not fire, permanently freezing ActivityLog auto-scroll~~ — resolved: replaced with onPointerEnter/onPointerLeave with pointerType === "mouse" guard, touch events pass through without pausing auto-scroll
+
+## Deferred from: code review of 8-15-strategy-slot-ui (2026-04-08)
+
+- ~~Custom StrategySelector dropdown lacks arrow-key navigation~~ — resolved: added full WCAG listbox keyboard nav (Arrow Up/Down, Home, End, Enter/Space, Escape) with roving tabindex and focusedIndex state
+- ~~`key={idx}` on ModeCard instead of stable identity~~ — resolved: changed to `key={slotMode ?? \`empty-${idx}\`}` to force remount on strategy swap

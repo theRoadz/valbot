@@ -11,12 +11,21 @@ import type { ModeType, ModeStatus } from "@shared/types";
 import { Flame } from "lucide-react";
 import { toast } from "sonner";
 
+interface StrategyOption {
+  modeType: ModeType;
+  name: string;
+  modeColor: string;
+}
+
 interface ModeCardProps {
-  mode: ModeType;
+  mode: ModeType | null;
   name: string;
   description: string;
   color: string;
   barColor: string;
+  strategies?: StrategyOption[];
+  assignedModes?: Set<ModeType>;
+  onSelectStrategy?: (modeType: ModeType) => void;
 }
 
 const AVAILABLE_PAIRS = ["SOL/USDC", "ETH/USDC", "BTC/USDC"];
@@ -108,8 +117,192 @@ function FundAllocationBar({
   );
 }
 
-export function ModeCard({ mode, name, description, color, barColor }: ModeCardProps) {
-  const modeState = useStore((s) => s.modes[mode]);
+function StrategySelector({
+  strategies,
+  assignedModes,
+  currentMode,
+  currentStatus,
+  onSelect,
+}: {
+  strategies: StrategyOption[];
+  assignedModes: Set<ModeType>;
+  currentMode: ModeType | null;
+  currentStatus?: ModeStatus;
+  onSelect: (modeType: ModeType) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [focusedIndex, setFocusedIndex] = useState(-1);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const optionRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const isRunning = currentStatus === "running" || currentStatus === "starting";
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
+        triggerRef.current && !triggerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  // Focus the active option when dropdown opens or focusedIndex changes
+  useEffect(() => {
+    if (open && focusedIndex >= 0) {
+      optionRefs.current[focusedIndex]?.focus();
+    }
+  }, [open, focusedIndex]);
+
+  const currentStrategy = strategies.find((s) => s.modeType === currentMode);
+  const displayLabel = currentStrategy ? currentStrategy.name : "Select Strategy";
+
+  const openDropdown = () => {
+    setOpen(true);
+    // Focus current selection or first non-disabled item
+    const startIdx = strategies.findIndex((s) => s.modeType === currentMode);
+    setFocusedIndex(startIdx >= 0 ? startIdx : findNextEnabledIndex(-1, 1));
+  };
+
+  const findNextEnabledIndex = (from: number, direction: 1 | -1): number => {
+    let idx = from + direction;
+    while (idx >= 0 && idx < strategies.length) {
+      const s = strategies[idx];
+      const isAssigned = assignedModes.has(s.modeType) && s.modeType !== currentMode;
+      if (!isAssigned) return idx;
+      idx += direction;
+    }
+    return from; // stay put if no enabled item found
+  };
+
+  const handleTriggerKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape" && open) {
+      setOpen(false);
+    } else if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (!open) openDropdown();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!open) openDropdown();
+    }
+  };
+
+  const handleListKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      setOpen(false);
+      triggerRef.current?.focus();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setFocusedIndex((prev) => findNextEnabledIndex(prev, 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setFocusedIndex((prev) => findNextEnabledIndex(prev, -1));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      setFocusedIndex(findNextEnabledIndex(-1, 1));
+    } else if (e.key === "End") {
+      e.preventDefault();
+      setFocusedIndex(findNextEnabledIndex(strategies.length, -1));
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (focusedIndex >= 0) {
+        const s = strategies[focusedIndex];
+        const isAssigned = assignedModes.has(s.modeType) && s.modeType !== currentMode;
+        if (!isAssigned && s.modeType !== currentMode) {
+          onSelect(s.modeType);
+          setOpen(false);
+          triggerRef.current?.focus();
+        }
+      }
+    }
+  };
+
+  return (
+    <div className="relative mb-2">
+      <button
+        ref={triggerRef}
+        type="button"
+        className="w-full h-8 px-3 text-left text-sm rounded-md border border-input bg-background flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        onClick={() => open ? setOpen(false) : openDropdown()}
+        onKeyDown={handleTriggerKeyDown}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        aria-label="Select strategy"
+      >
+        {currentStrategy && (
+          <span
+            className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+            style={{ backgroundColor: currentStrategy.modeColor }}
+          />
+        )}
+        <span className={currentStrategy ? "text-text-primary" : "text-text-muted"}>
+          {displayLabel}
+        </span>
+      </button>
+      {open && (
+        <div
+          ref={dropdownRef}
+          role="listbox"
+          aria-label="Strategy options"
+          aria-activedescendant={focusedIndex >= 0 ? `strategy-option-${strategies[focusedIndex].modeType}` : undefined}
+          className="absolute z-10 mt-1 w-full rounded-md border border-input bg-background shadow-lg"
+          onKeyDown={handleListKeyDown}
+        >
+          {isRunning && (
+            <div className="px-3 py-1.5 text-xs text-warning border-b border-input flex items-center gap-1.5">
+              <span className="inline-block w-2 h-2 rounded-full bg-warning" />
+              Will stop current strategy
+            </div>
+          )}
+          {strategies.map((s, i) => {
+            const isAssigned = assignedModes.has(s.modeType) && s.modeType !== currentMode;
+            return (
+              <button
+                key={s.modeType}
+                ref={(el) => { optionRefs.current[i] = el; }}
+                id={`strategy-option-${s.modeType}`}
+                type="button"
+                role="option"
+                tabIndex={i === focusedIndex ? 0 : -1}
+                aria-selected={s.modeType === currentMode}
+                aria-disabled={isAssigned}
+                disabled={isAssigned}
+                className={cn(
+                  "w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left",
+                  isAssigned
+                    ? "opacity-50 cursor-not-allowed text-text-muted"
+                    : "hover:bg-surface-elevated cursor-pointer",
+                  s.modeType === currentMode && "bg-surface-elevated",
+                  i === focusedIndex && !isAssigned && "bg-surface-elevated",
+                )}
+                onClick={() => {
+                  if (!isAssigned && s.modeType !== currentMode) {
+                    onSelect(s.modeType);
+                    setOpen(false);
+                    triggerRef.current?.focus();
+                  }
+                }}
+              >
+                <span
+                  className="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: s.modeColor }}
+                />
+                <span>{s.name}{isAssigned ? " (in use)" : ""}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ModeCard({ mode, name, description, color, barColor, strategies, assignedModes, onSelectStrategy }: ModeCardProps) {
+  const modeState = useStore((s) => mode ? s.modes[mode] : undefined);
   const totalAllocated = useStore((s) =>
     Object.values(s.modes).reduce((sum, m) => sum + m.allocation, 0),
   );
@@ -127,15 +320,7 @@ export function ModeCard({ mode, name, description, color, barColor }: ModeCardP
   const [slippageFocused, setSlippageFocused] = useState(false);
   const [positionSizeInput, setPositionSizeInput] = useState("");
   const [positionSizeFocused, setPositionSizeFocused] = useState(false);
-
-  if (!modeState) return null;
-
-  const { status, stats, allocation, maxAllocation: modeMaxAllocation, positionSize, pairs, slippage, errorDetail, killSwitchDetail } = modeState;
-  const maxAlloc = modeMaxAllocation ?? 500;
-  const availableForMode = Math.max(0, maxAlloc - totalAllocated + allocation);
-
-  const isRunning = status === "running" || status === "starting";
-  const isDisabledToggle = allocation === 0 || status === "error" || status === "kill-switch" || status === "stopping";
+  const pairTogglingRef = useRef(false);
 
   const clearSafetyTimeout = useCallback(() => {
     if (timeoutRef.current) {
@@ -150,12 +335,37 @@ export function ModeCard({ mode, name, description, color, barColor }: ModeCardP
 
   useEffect(() => () => clearSafetyTimeout(), [clearSafetyTimeout]);
 
+  // Focus first checkbox when pair dropdown opens
+  useEffect(() => {
+    if (pairDropdownOpen && pairDropdownRef.current) {
+      const firstCheckbox = pairDropdownRef.current.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      firstCheckbox?.focus();
+    }
+  }, [pairDropdownOpen]);
+
+  // Close pair dropdown on click outside
+  useEffect(() => {
+    if (!pairDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        pairDropdownRef.current && !pairDropdownRef.current.contains(e.target as Node) &&
+        pairTriggerRef.current && !pairTriggerRef.current.contains(e.target as Node)
+      ) {
+        setPairDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [pairDropdownOpen]);
+
   const handleToggle = useCallback(
     async (checked: boolean) => {
+      if (!mode || !modeState) return;
       if (togglingRef.current) return;
       togglingRef.current = true;
       clearSafetyTimeout();
 
+      const { pairs, slippage } = modeState;
       const revertStatus = checked ? "stopped" : "running";
       const targetStatus = checked ? "starting" : "stopping";
 
@@ -193,8 +403,40 @@ export function ModeCard({ mode, name, description, color, barColor }: ModeCardP
         togglingRef.current = false;
       }
     },
-    [mode, pairs, slippage, setModeStatus, clearSafetyTimeout],
+    [mode, modeState, setModeStatus, clearSafetyTimeout],
   );
+
+  // Empty slot placeholder
+  if (!mode || !modeState) {
+    return (
+      <Card className="border-dashed border-text-muted/30">
+        <CardHeader className="p-4 pb-3">
+          {strategies && onSelectStrategy ? (
+            <StrategySelector
+              strategies={strategies}
+              assignedModes={assignedModes ?? new Set()}
+              currentMode={null}
+              onSelect={onSelectStrategy}
+            />
+          ) : (
+            <span className="text-sm text-text-muted">Select Strategy</span>
+          )}
+        </CardHeader>
+        <CardContent className="p-4 pt-0">
+          <div className="flex items-center justify-center h-32 text-text-muted text-sm">
+            No strategy selected
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const { status, stats, allocation, maxAllocation: modeMaxAllocation, positionSize, pairs, slippage, errorDetail, killSwitchDetail } = modeState;
+  const maxAlloc = modeMaxAllocation ?? 500;
+  const availableForMode = Math.max(0, maxAlloc - totalAllocated + allocation);
+
+  const isRunning = status === "running" || status === "starting";
+  const isDisabledToggle = allocation === 0 || status === "error" || status === "kill-switch" || status === "stopping";
 
   // Allocation input handlers
   const displayedAllocation = allocationFocused ? allocationInput : String(allocation);
@@ -249,7 +491,7 @@ export function ModeCard({ mode, name, description, color, barColor }: ModeCardP
     setSlippageFocused(false);
     const numVal = parseFloat(slippageInput);
     if (isNaN(numVal) || numVal < 0.1 || numVal > 5.0) {
-      return; // revert — displayed value snaps back to store value
+      return;
     }
     const rounded = Math.round(numVal * 10) / 10;
     if (rounded !== slippage) {
@@ -285,7 +527,6 @@ export function ModeCard({ mode, name, description, color, barColor }: ModeCardP
     setPositionSizeFocused(false);
     const trimmed = positionSizeInput.trim();
     if (trimmed === "" || trimmed.toLowerCase() === "auto") {
-      // Clear — revert to auto
       if (positionSize !== undefined) {
         const prevPositionSize = positionSize;
         setModeConfig(mode, { positionSize: undefined });
@@ -310,31 +551,6 @@ export function ModeCard({ mode, name, description, color, barColor }: ModeCardP
     if (e.key === "Enter") (e.target as HTMLInputElement).blur();
   };
 
-  // Focus first checkbox when pair dropdown opens
-  useEffect(() => {
-    if (pairDropdownOpen && pairDropdownRef.current) {
-      const firstCheckbox = pairDropdownRef.current.querySelector<HTMLInputElement>('input[type="checkbox"]');
-      firstCheckbox?.focus();
-    }
-  }, [pairDropdownOpen]);
-
-  // Close pair dropdown on click outside
-  useEffect(() => {
-    if (!pairDropdownOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        pairDropdownRef.current && !pairDropdownRef.current.contains(e.target as Node) &&
-        pairTriggerRef.current && !pairTriggerRef.current.contains(e.target as Node)
-      ) {
-        setPairDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [pairDropdownOpen]);
-
-  // Pair selector handlers
-  const pairTogglingRef = useRef(false);
   const handlePairToggle = (pair: string) => {
     if (pairTogglingRef.current) return;
     const newPairs = pairs.includes(pair)
@@ -372,6 +588,15 @@ export function ModeCard({ mode, name, description, color, barColor }: ModeCardP
   return (
     <Card>
       <CardHeader className="p-4 pb-3">
+        {strategies && onSelectStrategy && (
+          <StrategySelector
+            strategies={strategies}
+            assignedModes={assignedModes ?? new Set()}
+            currentMode={mode}
+            currentStatus={status}
+            onSelect={onSelectStrategy}
+          />
+        )}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-lg font-semibold" style={{ color }}>{name}</span>
