@@ -144,7 +144,8 @@ export class FundAllocator {
   checkKillSwitch(mode: ModeType): boolean {
     const entry = this.state.get(mode);
     if (!entry || entry.allocation === 0) return false;
-    return entry.remaining <= entry.allocation * KILL_SWITCH_THRESHOLD;
+    const maxLoss = entry.allocation - entry.allocation * KILL_SWITCH_THRESHOLD;
+    return entry.pnl < -maxLoss;
   }
 
   async loadFromDb(): Promise<void> {

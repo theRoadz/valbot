@@ -163,37 +163,39 @@ describe("FundAllocator", () => {
   });
 
   describe("kill-switch detection", () => {
-    it("returns true at exactly 10% loss", () => {
+    it("returns false at exactly 10% loss boundary (strict <)", () => {
       allocator.setAllocation("volumeMax", 400_000_000);
-      // Simulate: open 200M position, close with 40M loss (returned 160M)
-      allocator.reserve("volumeMax", 200_000_000); // remaining = 200M
-      allocator.release("volumeMax", 160_000_000); // remaining = 360M = allocation * 0.9
-      expect(allocator.checkKillSwitch("volumeMax")).toBe(true);
+      // Simulate: trade with exactly 10% loss (40M of 400M)
+      allocator.reserve("volumeMax", 200_000_000);
+      allocator.release("volumeMax", 160_000_000);
+      allocator.recordTrade("volumeMax", 200_000_000, -40_000_000); // pnl = -40M = exactly 10%
+      // Strict < means exactly at boundary does NOT trigger
+      expect(allocator.checkKillSwitch("volumeMax")).toBe(false);
     });
 
     it("returns true when loss exceeds 10%", () => {
       allocator.setAllocation("volumeMax", 400_000_000);
-      allocator.reserve("volumeMax", 200_000_000); // remaining = 200M
-      allocator.release("volumeMax", 100_000_000); // remaining = 300M < 360M threshold
+      // Simulate: trade with >10% loss
+      allocator.reserve("volumeMax", 200_000_000);
+      allocator.release("volumeMax", 100_000_000);
+      allocator.recordTrade("volumeMax", 200_000_000, -100_000_000); // pnl = -100M > 10%
       expect(allocator.checkKillSwitch("volumeMax")).toBe(true);
     });
 
     it("returns false when no losses (funds merely deployed)", () => {
       allocator.setAllocation("volumeMax", 400_000_000);
-      // Deploy 200M into a position — remaining drops but no loss yet
+      // Deploy 200M into a position — remaining drops but no realized loss
       allocator.reserve("volumeMax", 200_000_000);
-      // remaining = 200M, which is <= 360M threshold
-      // The kill-switch DOES trigger here because remaining <= allocation * 0.9
-      // This is correct per AC7: remaining reflects actual balance
-      // The key is that the position manager releases funds back when closing
-      expect(allocator.checkKillSwitch("volumeMax")).toBe(true);
+      // pnl = 0, no recordTrade called — kill switch must NOT trigger
+      expect(allocator.checkKillSwitch("volumeMax")).toBe(false);
     });
 
     it("returns false when losses are below threshold", () => {
       allocator.setAllocation("volumeMax", 400_000_000);
       // Small trade with small loss
       allocator.reserve("volumeMax", 100_000_000);
-      allocator.release("volumeMax", 95_000_000); // 5M loss, remaining = 395M > 360M
+      allocator.release("volumeMax", 95_000_000);
+      allocator.recordTrade("volumeMax", 100_000_000, -5_000_000); // pnl = -5M < 40M threshold
       expect(allocator.checkKillSwitch("volumeMax")).toBe(false);
     });
 
@@ -519,9 +521,10 @@ describe("FundAllocator", () => {
       allocator.setAllocation("volumeMax", 250_000_000);
       allocator.setAllocation("profitHunter", 250_000_000);
 
-      // volumeMax: simulate loss → remaining drops below 90% threshold
+      // volumeMax: simulate trade with >10% loss (40M lost > 25M threshold)
       allocator.reserve("volumeMax", 200_000_000);
-      allocator.release("volumeMax", 160_000_000); // 40M lost, remaining = 210M (< 225M = 250M * 0.9)
+      allocator.release("volumeMax", 160_000_000);
+      allocator.recordTrade("volumeMax", 200_000_000, -40_000_000); // pnl = -40M > 10% of 250M
 
       expect(allocator.checkKillSwitch("volumeMax")).toBe(true);
       // profitHunter untouched — no kill-switch
