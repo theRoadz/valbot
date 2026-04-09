@@ -14,9 +14,26 @@ import {
 import { withRetry } from "./client.js";
 
 // Estimated taker fee rate — Hyperliquid doesn't return fees in order responses,
-// so we approximate. Actual fees vary by volume tier (0.01%-0.035%).
-// Override via TAKER_FEE_RATE env var if needed.
-const TAKER_FEE_RATE = parseFloat(process.env.TAKER_FEE_RATE || "0.00025");
+// so we approximate. Actual perps taker fees by volume tier:
+// Tier 0: 0.045%, >5M: 0.040%, >25M: 0.035%, >100M: 0.030%, >500M: 0.028%
+// Override via TAKER_FEE_RATE env var if you're on a higher volume tier.
+const TAKER_FEE_RATE = parseFloat(process.env.TAKER_FEE_RATE || "0.00045");
+
+// Builder fee config — optional. If BUILDER_ADDRESS or BUILDER_FEE_RATE unset, orders go without builder.
+// BUILDER_FEE_RATE is in 0.1bps units (10 = 0.001%). Max 100 for perps.
+const BUILDER_ADDRESS = process.env.BUILDER_ADDRESS as `0x${string}` | undefined;
+const BUILDER_FEE_RATE_UNITS = process.env.BUILDER_FEE_RATE ? parseInt(process.env.BUILDER_FEE_RATE, 10) : undefined;
+
+const BUILDER_FEE = (BUILDER_ADDRESS && BUILDER_FEE_RATE_UNITS && BUILDER_FEE_RATE_UNITS > 0)
+  ? { b: BUILDER_ADDRESS, f: BUILDER_FEE_RATE_UNITS }
+  : undefined;
+
+// Builder fee as decimal for fee estimation (10 units of 0.1bps = 0.00001)
+const BUILDER_FEE_DECIMAL = BUILDER_FEE_RATE_UNITS ? BUILDER_FEE_RATE_UNITS * 0.000001 : 0;
+
+if (BUILDER_FEE) {
+  logger.info({ address: BUILDER_ADDRESS, feeUnits: BUILDER_FEE_RATE_UNITS }, "Builder fee enabled");
+}
 
 // Hyperliquid minimum order notional value
 const MIN_ORDER_VALUE = 10_000_000; // $10 in smallest-unit
@@ -207,6 +224,7 @@ export async function openPosition(
       ],
       grouping: "na",
       vaultAddress,
+      builder: BUILDER_FEE,
     }),
     "openPosition",
     { writeCall: true },
@@ -281,6 +299,7 @@ export async function closePosition(
       ],
       grouping: "na",
       vaultAddress,
+      builder: BUILDER_FEE,
     }),
     "closePosition",
     { writeCall: true },
@@ -305,7 +324,7 @@ export async function closePosition(
     // Here we return 0 for pnl — the caller computes actual pnl from entry vs exit
     // Fees: Hyperliquid charges ~0.025% taker fee
     const totalSz = parseFloat(status.filled.totalSz);
-    const fees = Math.round(totalSz * avgPx * TAKER_FEE_RATE * 1e6);
+    const fees = Math.round(totalSz * avgPx * (TAKER_FEE_RATE + BUILDER_FEE_DECIMAL) * 1e6);
     return {
       txHash: `hl-${status.filled.oid}`,
       exitPrice: exitPriceSmallest,
@@ -349,6 +368,7 @@ export async function setStopLoss(
       ],
       grouping: "positionTpsl",
       vaultAddress,
+      builder: BUILDER_FEE,
     }),
     "setStopLoss",
     { writeCall: true },

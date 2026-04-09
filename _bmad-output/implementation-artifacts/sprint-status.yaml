@@ -211,3 +211,6 @@ development_status:
   8-13-improved-profit-hunter-rsi: done
   8-14-momentum-trend-following: done
   8-12-grid-trading-strategy: done
+  8-16-kill-switch-pnl-based-trigger: review
+  8-17-cancel-stale-stop-loss-orders: ready-for-dev
+  8-18-valiant-builder-fee-integration: review

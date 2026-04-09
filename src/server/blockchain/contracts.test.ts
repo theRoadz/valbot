@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock logger
 vi.mock("../lib/logger.js", () => ({
@@ -353,6 +353,182 @@ describe("setStopLoss", () => {
         stopLossPrice: 90_000_000_000,
       }),
     ).rejects.toThrow("Failed to submit stop-loss order");
+  });
+});
+
+describe("builder fee", () => {
+  const BUILDER_ADDR = "0x751d254c07f7a4b454eb5c2a23ebe3adf1a4eaec";
+
+  beforeEach(() => {
+    vi.resetModules();
+    mockOrder.mockReset();
+    mockAllMids.mockReset();
+    mockMeta.mockReset();
+
+    mockMeta.mockResolvedValue({
+      universe: [{ name: "BTC", szDecimals: 5, maxLeverage: 50 }],
+    });
+  });
+
+  afterEach(() => {
+    delete process.env.BUILDER_ADDRESS;
+    delete process.env.BUILDER_FEE_RATE;
+  });
+
+  it("openPosition includes builder when env vars set", async () => {
+    process.env.BUILDER_ADDRESS = BUILDER_ADDR;
+    process.env.BUILDER_FEE_RATE = "38";
+
+    mockAllMids.mockResolvedValue({ BTC: "95000.0" });
+    mockOrder.mockResolvedValue({
+      status: "ok",
+      response: {
+        type: "order",
+        data: {
+          statuses: [{ filled: { totalSz: "0.01", avgPx: "95000.0", oid: 1 } }],
+        },
+      },
+    });
+
+    const { initAssetIndices, openPosition } = await import("./contracts.js");
+    await initAssetIndices(mockInfo);
+    await openPosition({
+      exchange: mockExchange,
+      info: mockInfo,
+      pair: "BTC/USDC",
+      side: "Long",
+      size: 10_000_000,
+      slippage: 0.5,
+      vaultAddress: "0x1234" as `0x${string}`,
+    });
+
+    const orderArgs = mockOrder.mock.calls[0][0];
+    expect(orderArgs.builder).toEqual({ b: BUILDER_ADDR, f: 38 });
+  });
+
+  it("closePosition includes builder when env vars set", async () => {
+    process.env.BUILDER_ADDRESS = BUILDER_ADDR;
+    process.env.BUILDER_FEE_RATE = "38";
+
+    mockAllMids.mockResolvedValue({ BTC: "95000.0" });
+    mockOrder.mockResolvedValue({
+      status: "ok",
+      response: {
+        type: "order",
+        data: {
+          statuses: [{ filled: { totalSz: "0.01", avgPx: "95000.0", oid: 1 } }],
+        },
+      },
+    });
+
+    const { initAssetIndices, closePosition } = await import("./contracts.js");
+    await initAssetIndices(mockInfo);
+    await closePosition({
+      exchange: mockExchange,
+      info: mockInfo,
+      positionId: "BTC-Long",
+      pair: "BTC/USDC",
+      side: "Long",
+      size: 10_000_000,
+      vaultAddress: "0x1234" as `0x${string}`,
+    });
+
+    const orderArgs = mockOrder.mock.calls[0][0];
+    expect(orderArgs.builder).toEqual({ b: BUILDER_ADDR, f: 38 });
+  });
+
+  it("setStopLoss includes builder when env vars set", async () => {
+    process.env.BUILDER_ADDRESS = BUILDER_ADDR;
+    process.env.BUILDER_FEE_RATE = "38";
+
+    mockOrder.mockResolvedValue({
+      status: "ok",
+      response: {
+        type: "order",
+        data: { statuses: ["waitingForTrigger"] },
+      },
+    });
+
+    const { initAssetIndices, setStopLoss } = await import("./contracts.js");
+    await initAssetIndices(mockInfo);
+    await setStopLoss({
+      exchange: mockExchange,
+      pair: "BTC/USDC",
+      side: "Long",
+      size: 10_000_000,
+      stopLossPrice: 90_000_000_000,
+      vaultAddress: "0x1234" as `0x${string}`,
+    });
+
+    const orderArgs = mockOrder.mock.calls[0][0];
+    expect(orderArgs.builder).toEqual({ b: BUILDER_ADDR, f: 38 });
+  });
+
+  it("orders have no builder when env vars are not set", async () => {
+    delete process.env.BUILDER_ADDRESS;
+    delete process.env.BUILDER_FEE_RATE;
+
+    mockAllMids.mockResolvedValue({ BTC: "95000.0" });
+    mockOrder.mockResolvedValue({
+      status: "ok",
+      response: {
+        type: "order",
+        data: {
+          statuses: [{ filled: { totalSz: "0.01", avgPx: "95000.0", oid: 1 } }],
+        },
+      },
+    });
+
+    const { initAssetIndices, openPosition } = await import("./contracts.js");
+    await initAssetIndices(mockInfo);
+    await openPosition({
+      exchange: mockExchange,
+      info: mockInfo,
+      pair: "BTC/USDC",
+      side: "Long",
+      size: 10_000_000,
+      slippage: 0.5,
+      vaultAddress: "0x1234" as `0x${string}`,
+    });
+
+    const orderArgs = mockOrder.mock.calls[0][0];
+    expect(orderArgs.builder).toBeUndefined();
+  });
+
+  it("closePosition fee estimation includes builder fee", async () => {
+    process.env.BUILDER_ADDRESS = BUILDER_ADDR;
+    process.env.BUILDER_FEE_RATE = "38";
+
+    mockAllMids.mockResolvedValue({ BTC: "95000.0" });
+    mockOrder.mockResolvedValue({
+      status: "ok",
+      response: {
+        type: "order",
+        data: {
+          statuses: [{ filled: { totalSz: "0.01", avgPx: "95000.0", oid: 1 } }],
+        },
+      },
+    });
+
+    const { initAssetIndices, closePosition } = await import("./contracts.js");
+    await initAssetIndices(mockInfo);
+    const result = await closePosition({
+      exchange: mockExchange,
+      info: mockInfo,
+      positionId: "BTC-Long",
+      pair: "BTC/USDC",
+      side: "Long",
+      size: 10_000_000,
+      vaultAddress: "0x1234" as `0x${string}`,
+    });
+
+    // totalSz=0.01, avgPx=95000.0
+    // TAKER_FEE_RATE=0.00045, BUILDER_FEE_DECIMAL=38*0.000001=0.000038
+    // fees = round(0.01 * 95000.0 * (0.00045 + 0.000038) * 1e6) = round(0.01 * 95000 * 0.000488 * 1e6) = 463600
+    // Without builder: round(0.01 * 95000.0 * 0.00045 * 1e6) = 427500
+    expect(result.fees).toBe(463600);
+    // Verify it's higher than taker-only fee (427500)
+    expect(result.fees).toBeGreaterThan(427500);
   });
 });
 
