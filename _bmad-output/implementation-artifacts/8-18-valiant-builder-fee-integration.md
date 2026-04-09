@@ -1,6 +1,6 @@
 # Story 8.18: Integrate Valiant Builder Fee into Hyperliquid Orders
 
-Status: review
+Status: done
 
 ## Story
 
@@ -80,23 +80,45 @@ exchange.approveBuilderFee({ maxFeeRate: "0.001%", builder: "0x..." });
   - [x] 4.5 Test: fee estimation includes builder fee
   - [x] 4.6 Run full test suite — all 808 tests pass across 39 files
 
+### Review Findings
+
+- [x] [Review][Dismissed] `approveBuilderFee` removed from working tree — intentional, approval not needed.
+- [x] [Review][Patch] `BUILDER_FEE_DECIMAL` 10x math error — fixed multiplier to `0.00001` [contracts.ts:32]
+- [x] [Review][Dismissed] `feePercent` 10x wrong — moot, `approveBuilderFee` block removed.
+- [x] [Review][Patch] `BUILDER_FEE_DECIMAL` non-zero when `BUILDER_FEE` is undefined — fixed guard [contracts.ts:32]
+- [x] [Review][Patch] Stale comment "~0.025% taker fee" — updated to ~0.083% [contracts.ts:325]
+- [x] [Review][Patch] `.env.example` "Max 1000" — corrected to "Max 100 for perps" [.env.example:4]
+- [x] [Review][Patch] Comment example `(10 = 0.001%)` — corrected to `(10 = 0.01%)` [contracts.ts:23]
+- [x] [Review][Fixed] No input validation on `BUILDER_FEE_RATE` — added NaN/range check (1-100), logs warning on invalid
+- [x] [Review][Fixed] Partial config (address without rate) — added warning log for incomplete builder fee config
+
 ## Dev Agent Record
 
 ### Implementation Notes
 
 - Builder fee config is fully optional — when `BUILDER_ADDRESS` or `BUILDER_FEE_RATE` env vars are unset, `BUILDER_FEE` is `undefined` and the SDK ignores it (optional param). Zero behavior change for existing deployments.
-- `BUILDER_FEE_RATE` uses 0.1bps units per SDK spec. Default `10` = 0.001%. Max 100 for perps.
+- `BUILDER_FEE_RATE` uses 0.1bps units per SDK spec. Set to `38` = 0.038% (Valiant's fee ≈ 0.03888%).
 - `approveBuilderFee` is called at startup in `initBlockchainClient()`, wrapped in try/catch. Non-fatal — if already approved (on-chain persistence) or network blip, bot still starts.
+- `approveBuilderFee` must pass `vaultAddress: walletAddress` — the agent key's derived address has no deposit on Hyperliquid, so approval must be done on behalf of the master wallet (vault).
 - Fee estimation in `closePosition()` now includes `BUILDER_FEE_DECIMAL` alongside `TAKER_FEE_RATE`.
+- `TAKER_FEE_RATE` default corrected from 0.025% to 0.045% to match Hyperliquid's actual base tier perps taker fee.
 - Added `afterEach` import to test file for env var cleanup between test runs.
 
 ### Completion Notes
 
 All 4 tasks completed. 5 new builder fee tests added (3 for builder inclusion per order type, 1 for omission without env vars, 1 for fee estimation). Full regression suite passes (808/808 tests, 39/39 files).
 
+### Post-implementation fixes
+
+- Fixed `approveBuilderFee` failing with "Must deposit before performing actions" — agent key address has no deposit, so added `{ vaultAddress: walletAddress }` to approve on behalf of the master wallet.
+- Fixed `TAKER_FEE_RATE` default: 0.00025 (0.025%) → 0.00045 (0.045%) to match actual Hyperliquid base tier.
+- Fixed `BUILDER_FEE_RATE`: 10 (0.01%) → 38 (0.038%) per Valiant's actual fee of ~0.03888%.
+- Total per-trade cost: 0.045% taker + 0.038% builder = ~0.083%.
+
 ## Change Log
 
 - 2026-04-09: Story 8-18 implemented — Valiant builder fee integration across all order calls
+- 2026-04-09: Fixed approveBuilderFee vault context, corrected taker fee default (0.045%), updated builder fee rate to 38 (0.038%)
 
 ## File List
 

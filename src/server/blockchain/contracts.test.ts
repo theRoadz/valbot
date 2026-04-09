@@ -523,10 +523,10 @@ describe("builder fee", () => {
     });
 
     // totalSz=0.01, avgPx=95000.0
-    // TAKER_FEE_RATE=0.00045, BUILDER_FEE_DECIMAL=38*0.000001=0.000038
-    // fees = round(0.01 * 95000.0 * (0.00045 + 0.000038) * 1e6) = round(0.01 * 95000 * 0.000488 * 1e6) = 463600
+    // TAKER_FEE_RATE=0.00045, BUILDER_FEE_DECIMAL=38*0.00001=0.00038
+    // fees = round(0.01 * 95000.0 * (0.00045 + 0.00038) * 1e6) = round(0.01 * 95000 * 0.00083 * 1e6) = 788500
     // Without builder: round(0.01 * 95000.0 * 0.00045 * 1e6) = 427500
-    expect(result.fees).toBe(463600);
+    expect(result.fees).toBe(788500);
     // Verify it's higher than taker-only fee (427500)
     expect(result.fees).toBeGreaterThan(427500);
   });

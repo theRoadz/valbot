@@ -20,16 +20,26 @@ import { withRetry } from "./client.js";
 const TAKER_FEE_RATE = parseFloat(process.env.TAKER_FEE_RATE || "0.00045");
 
 // Builder fee config — optional. If BUILDER_ADDRESS or BUILDER_FEE_RATE unset, orders go without builder.
-// BUILDER_FEE_RATE is in 0.1bps units (10 = 0.001%). Max 100 for perps.
+// BUILDER_FEE_RATE is in 0.1bps units (10 = 0.01%). Max 100 for perps.
 const BUILDER_ADDRESS = process.env.BUILDER_ADDRESS as `0x${string}` | undefined;
-const BUILDER_FEE_RATE_UNITS = process.env.BUILDER_FEE_RATE ? parseInt(process.env.BUILDER_FEE_RATE, 10) : undefined;
+const BUILDER_FEE_RATE_RAW = process.env.BUILDER_FEE_RATE ? parseInt(process.env.BUILDER_FEE_RATE, 10) : undefined;
+const BUILDER_FEE_RATE_UNITS = (BUILDER_FEE_RATE_RAW && Number.isFinite(BUILDER_FEE_RATE_RAW) && BUILDER_FEE_RATE_RAW > 0 && BUILDER_FEE_RATE_RAW <= 100)
+  ? BUILDER_FEE_RATE_RAW
+  : undefined;
 
-const BUILDER_FEE = (BUILDER_ADDRESS && BUILDER_FEE_RATE_UNITS && BUILDER_FEE_RATE_UNITS > 0)
+if (process.env.BUILDER_FEE_RATE && !BUILDER_FEE_RATE_UNITS) {
+  logger.warn({ raw: process.env.BUILDER_FEE_RATE }, "BUILDER_FEE_RATE is invalid (must be integer 1-100) — builder fee disabled");
+}
+if ((BUILDER_ADDRESS && !BUILDER_FEE_RATE_UNITS) || (!BUILDER_ADDRESS && BUILDER_FEE_RATE_UNITS)) {
+  logger.warn("Partial builder fee config — set both BUILDER_ADDRESS and BUILDER_FEE_RATE to enable");
+}
+
+const BUILDER_FEE = (BUILDER_ADDRESS && BUILDER_FEE_RATE_UNITS)
   ? { b: BUILDER_ADDRESS, f: BUILDER_FEE_RATE_UNITS }
   : undefined;
 
-// Builder fee as decimal for fee estimation (10 units of 0.1bps = 0.00001)
-const BUILDER_FEE_DECIMAL = BUILDER_FEE_RATE_UNITS ? BUILDER_FEE_RATE_UNITS * 0.000001 : 0;
+// Builder fee as decimal for fee estimation (10 units of 0.1bps = 0.0001)
+const BUILDER_FEE_DECIMAL = BUILDER_FEE ? BUILDER_FEE_RATE_UNITS! * 0.00001 : 0;
 
 if (BUILDER_FEE) {
   logger.info({ address: BUILDER_ADDRESS, feeUnits: BUILDER_FEE_RATE_UNITS }, "Builder fee enabled");
@@ -322,7 +332,7 @@ export async function closePosition(
     // Approximate PnL: (exitPrice - entryPrice) * baseSize for Long, inverse for Short
     // Actual PnL will be refined by position-manager using stored entryPrice
     // Here we return 0 for pnl — the caller computes actual pnl from entry vs exit
-    // Fees: Hyperliquid charges ~0.025% taker fee
+    // Fees: ~0.045% taker + ~0.038% builder = ~0.083% total (when builder enabled)
     const totalSz = parseFloat(status.filled.totalSz);
     const fees = Math.round(totalSz * avgPx * (TAKER_FEE_RATE + BUILDER_FEE_DECIMAL) * 1e6);
     return {

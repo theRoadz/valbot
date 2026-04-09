@@ -41,6 +41,7 @@
 
 generated: 2026-04-03
 last_updated: 2026-04-09
+# last review: 2026-04-09 code review of story 8-18, all patches applied
 # last review: 2026-04-09 code review of story 8-12, all patches applied
 # last dev: 2026-04-09 story 8-12 implementation started
 # last review: 2026-04-09 code review of story 8-14, all patches applied
@@ -213,4 +214,4 @@ development_status:
   8-12-grid-trading-strategy: done
   8-16-kill-switch-pnl-based-trigger: review
   8-17-cancel-stale-stop-loss-orders: ready-for-dev
-  8-18-valiant-builder-fee-integration: review
+  8-18-valiant-builder-fee-integration: done

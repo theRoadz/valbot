@@ -272,20 +272,6 @@ export async function initBlockchainClient(): Promise<BlockchainClient> {
     }
   }
 
-  // 5. Approve builder fee if configured
-  const builderAddress = process.env.BUILDER_ADDRESS as `0x${string}` | undefined;
-  const builderFeeRate = process.env.BUILDER_FEE_RATE;
-  if (builderAddress && builderFeeRate) {
-    const feeUnits = parseInt(builderFeeRate, 10);
-    const feePercent = `${(feeUnits * 0.0001).toFixed(4)}%`;
-    try {
-      await exchange.approveBuilderFee({ maxFeeRate: feePercent, builder: builderAddress });
-      logger.info({ builderAddress, feePercent }, "Builder fee approved");
-    } catch (err) {
-      logger.warn({ err, builderAddress }, "Builder fee approval failed — orders may fail if not pre-approved");
-    }
-  }
-
   client = { exchange, info, walletAddress, agentAddress: agentAccount.address };
   return client;
 }
