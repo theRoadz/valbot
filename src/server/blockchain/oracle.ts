@@ -19,6 +19,7 @@ const BACKOFF_BASE_MS = 1_000;
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const MIN_DATA_FOR_MA_MS = 30_000;
 const CANDLE_PERIOD_MS = 300_000; // 5-minute candles
+const BACKFILL_CANDLE_COUNT = 25; // seed 25 candles (~125 min) for indicator warmup
 
 interface PriceSample {
   price: number;
@@ -50,6 +51,9 @@ export class OracleClient {
   private hermesClient: HermesClient | null = null;
   private connecting = false;
   private candleAggregator = new CandleAggregator();
+  private backfillDone = false;
+  /** Exposed for testing — resolves when background backfill completes. */
+  backfillPromise: Promise<void> | null = null;
 
   constructor(broadcast: BroadcastFn) {
     this.broadcast = broadcast;
@@ -118,6 +122,74 @@ export class OracleClient {
     }
 
     this.connecting = false;
+
+    // Fire-and-forget: backfill historical candles for indicator warmup
+    // without blocking live price streaming. Skipped on reconnects.
+    this.backfillPromise = this.backfillCandles(feedIds).catch((err) => {
+      logger.error({ err }, "Candle backfill failed — continuing with live data only");
+    });
+  }
+
+  // Backfill fetches one price snapshot per 5-min candle period, so each
+  // backfilled candle has open=high=low=close (flat OHLC). This is sufficient
+  // for EMA warmup; live candles with real OHLC replace them within minutes.
+  private async backfillCandles(feedIds: string[]): Promise<void> {
+    if (!this.hermesClient || this.backfillDone) return;
+    this.backfillDone = true;
+
+    try {
+      const nowMs = Date.now();
+      let insertedCount = 0;
+
+      for (let i = BACKFILL_CANDLE_COUNT - 1; i >= 0; i--) {
+        const timestampMs = nowMs - i * CANDLE_PERIOD_MS;
+        const timestampSec = Math.floor(timestampMs / 1000);
+
+        try {
+          const response = await this.hermesClient.getPriceUpdatesAtTimestamp(
+            timestampSec,
+            feedIds,
+            { parsed: true },
+          );
+
+          const parsed = response.parsed;
+          if (!Array.isArray(parsed)) continue;
+
+          for (const entry of parsed) {
+            const feedId = "0x" + (entry.id as string);
+            const pair = this.feedIdToPair.get(feedId);
+            if (!pair) continue;
+
+            const rawPrice = parseInt(entry.price.price as string, 10);
+            const expo = entry.price.expo as number;
+            const publishTime = (entry.price.publish_time as number) * 1000;
+
+            if (isNaN(rawPrice) || isNaN(expo) || isNaN(publishTime)) continue;
+
+            const usdPrice = rawPrice * Math.pow(10, expo);
+            const smallestUnit = Math.round(usdPrice * 1_000_000);
+
+            if (!Number.isFinite(smallestUnit)) continue;
+
+            this.candleAggregator.addPrice(pair, smallestUnit, publishTime, CANDLE_PERIOD_MS);
+            insertedCount++;
+          }
+        } catch (fetchErr) {
+          logger.warn(
+            { err: fetchErr, timestampSec },
+            "Failed to fetch historical price for backfill — skipping timestamp",
+          );
+        }
+      }
+
+      const pairCount = this.feedIdToPair.size;
+      logger.info(
+        { insertedCount, pairCount },
+        `Backfilled ${insertedCount} candle samples for ${pairCount} pairs`,
+      );
+    } catch (err) {
+      logger.error({ err }, "Candle backfill failed — continuing with live data only");
+    }
   }
 
   private handleMessage(event: MessageEvent): void {

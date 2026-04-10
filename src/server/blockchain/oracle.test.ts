@@ -13,12 +13,16 @@ function createMockEventSource() {
 
 let mockEventSources: ReturnType<typeof createMockEventSource>[] = [];
 let getPriceUpdatesStreamImpl: (...args: unknown[]) => Promise<ReturnType<typeof createMockEventSource>>;
+let getPriceUpdatesAtTimestampImpl: (publishTime: number, ids: string[], options?: unknown) => Promise<unknown>;
 
 vi.mock("@pythnetwork/hermes-client", () => {
   class MockHermesClient {
     constructor(_endpoint: string) {}
     async getPriceUpdatesStream(...args: unknown[]) {
       return getPriceUpdatesStreamImpl(...args);
+    }
+    async getPriceUpdatesAtTimestamp(publishTime: number, ids: string[], options?: unknown) {
+      return getPriceUpdatesAtTimestampImpl(publishTime, ids, options);
     }
   }
   return { HermesClient: MockHermesClient };
@@ -71,9 +75,12 @@ describe("OracleClient", () => {
       mockEventSources.push(es);
       return es;
     };
+    getPriceUpdatesAtTimestampImpl = async () => ({ parsed: [] });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Await any in-flight backfill before disconnecting to prevent leaking into next test
+    if (oracle.backfillPromise) await oracle.backfillPromise;
     oracle.disconnect();
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -407,5 +414,131 @@ describe("OracleClient", () => {
     es.onmessage!(makePriceMessage(SOL_FEED, "3800000000", -8, freshSec));
 
     expect(oracle.getPrice("SOL-PERP")).toBe(38_000_000);
+  });
+
+  describe("backfillCandles", () => {
+    // Backfill is fire-and-forget after connect(). Await the backfillPromise to let it complete.
+    async function connectAndAwaitBackfill(pairs: string[]) {
+      await oracle.connect(pairs);
+      await oracle.backfillPromise;
+    }
+
+    it("seeds candle aggregator with historical prices on connect", async () => {
+      let fetchCount = 0;
+      getPriceUpdatesAtTimestampImpl = async (_publishTime, _ids) => {
+        fetchCount++;
+        return {
+          parsed: [
+            {
+              id: SOL_FEED.replace("0x", ""),
+              price: { price: "3800000000", conf: "100", expo: -8, publish_time: _publishTime },
+              ema_price: { price: "3800000000", conf: "100", expo: -8, publish_time: _publishTime },
+            },
+          ],
+        };
+      };
+
+      await connectAndAwaitBackfill(["SOL-PERP"]);
+
+      // Should have fetched 25 historical timestamps
+      expect(fetchCount).toBe(25);
+
+      // Candle aggregator should have candles (at least 21 for EMA)
+      const candles = oracle.getCandles("SOL-PERP");
+      expect(candles.length).toBeGreaterThanOrEqual(21);
+    });
+
+    it("continues with remaining timestamps when a single fetch fails", async () => {
+      let fetchCount = 0;
+      getPriceUpdatesAtTimestampImpl = async (_publishTime, _ids) => {
+        fetchCount++;
+        // Fail on the 3rd fetch
+        if (fetchCount === 3) throw new Error("Network timeout");
+        return {
+          parsed: [
+            {
+              id: SOL_FEED.replace("0x", ""),
+              price: { price: "3800000000", conf: "100", expo: -8, publish_time: _publishTime },
+              ema_price: { price: "3800000000", conf: "100", expo: -8, publish_time: _publishTime },
+            },
+          ],
+        };
+      };
+
+      await connectAndAwaitBackfill(["SOL-PERP"]);
+
+      // All 25 timestamps were attempted
+      expect(fetchCount).toBe(25);
+
+      // Candles still populated (24 out of 25 succeeded)
+      const candles = oracle.getCandles("SOL-PERP");
+      expect(candles.length).toBeGreaterThanOrEqual(20);
+    });
+
+    it("SSE stream still connects when backfill fails completely", async () => {
+      getPriceUpdatesAtTimestampImpl = async () => {
+        throw new Error("Service unavailable");
+      };
+
+      await connectAndAwaitBackfill(["SOL-PERP"]);
+
+      // SSE stream should still be set up
+      expect(mockEventSources.length).toBe(1);
+
+      const es = getEs();
+      expect(es.onmessage).not.toBeNull();
+    });
+
+    it("backfills multiple pairs simultaneously", async () => {
+      getPriceUpdatesAtTimestampImpl = async (_publishTime, _ids) => {
+        return {
+          parsed: [
+            {
+              id: SOL_FEED.replace("0x", ""),
+              price: { price: "3800000000", conf: "100", expo: -8, publish_time: _publishTime },
+              ema_price: { price: "3800000000", conf: "100", expo: -8, publish_time: _publishTime },
+            },
+            {
+              id: BTC_FEED.replace("0x", ""),
+              price: { price: "6100000000000", conf: "1000", expo: -8, publish_time: _publishTime },
+              ema_price: { price: "6100000000000", conf: "1000", expo: -8, publish_time: _publishTime },
+            },
+          ],
+        };
+      };
+
+      await connectAndAwaitBackfill(["SOL-PERP", "BTC-PERP"]);
+
+      const solCandles = oracle.getCandles("SOL-PERP");
+      const btcCandles = oracle.getCandles("BTC-PERP");
+      expect(solCandles.length).toBeGreaterThanOrEqual(21);
+      expect(btcCandles.length).toBeGreaterThanOrEqual(21);
+    });
+
+    it("skips backfill on reconnect", async () => {
+      let fetchCount = 0;
+      getPriceUpdatesAtTimestampImpl = async (_publishTime, _ids) => {
+        fetchCount++;
+        return {
+          parsed: [
+            {
+              id: SOL_FEED.replace("0x", ""),
+              price: { price: "3800000000", conf: "100", expo: -8, publish_time: _publishTime },
+              ema_price: { price: "3800000000", conf: "100", expo: -8, publish_time: _publishTime },
+            },
+          ],
+        };
+      };
+
+      await connectAndAwaitBackfill(["SOL-PERP"]);
+      expect(fetchCount).toBe(25);
+
+      // Simulate reconnect
+      fetchCount = 0;
+      await connectAndAwaitBackfill(["SOL-PERP"]);
+
+      // Backfill should NOT have run again
+      expect(fetchCount).toBe(0);
+    });
   });
 });
