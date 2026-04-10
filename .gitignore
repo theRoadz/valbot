@@ -3,6 +3,8 @@ node_modules/
 dist/
 valbot.db
 *.db-journal
+*.db-shm
+*.db-wal
 
 # AI/Agent tooling
 _bmad/

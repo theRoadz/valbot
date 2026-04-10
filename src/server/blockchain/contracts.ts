@@ -233,9 +233,8 @@ export async function openPosition(
         },
       ],
       grouping: "na",
-      vaultAddress,
       builder: BUILDER_FEE,
-    }),
+    }, { vaultAddress }),
     "openPosition",
     { writeCall: true },
   );
@@ -308,9 +307,8 @@ export async function closePosition(
         },
       ],
       grouping: "na",
-      vaultAddress,
       builder: BUILDER_FEE,
-    }),
+    }, { vaultAddress }),
     "closePosition",
     { writeCall: true },
   );
@@ -377,9 +375,8 @@ export async function setStopLoss(
         },
       ],
       grouping: "positionTpsl",
-      vaultAddress,
       builder: BUILDER_FEE,
-    }),
+    }, { vaultAddress }),
     "setStopLoss",
     { writeCall: true },
   );

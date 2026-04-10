@@ -114,6 +114,9 @@ importers:
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
+      eventsource:
+        specifier: 3.0.7
+        version: 3.0.7
       jsdom:
         specifier: ^29.0.1
         version: 29.0.1(@noble/hashes@2.0.1)
