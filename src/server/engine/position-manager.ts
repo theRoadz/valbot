@@ -128,7 +128,6 @@ export class PositionManager {
         side,
         size,
         slippage,
-        vaultAddress: client.walletAddress,
       });
     } catch (err) {
       this.fundAllocator.release(mode, size);
@@ -149,7 +148,6 @@ export class PositionManager {
           side,
           size,
           baseSz: openResult.filledSz,
-          vaultAddress: client.walletAddress,
         });
       } catch (closeErr) {
         logger.error({ err: closeErr, positionId: openResult.positionId, code: "POSITION_CLOSE_FAILED" },
@@ -169,7 +167,6 @@ export class PositionManager {
         size,
         stopLossPrice,
         baseSz: openResult.filledSz,
-        vaultAddress: client.walletAddress,
       });
     } catch (err) {
       // Rollback: close position and release funds
@@ -184,7 +181,6 @@ export class PositionManager {
           side,
           size,
           baseSz: openResult.filledSz,
-          vaultAddress: client.walletAddress,
         });
         rollbackCloseSucceeded = true;
       } catch (closeErr) {
@@ -314,7 +310,6 @@ export class PositionManager {
           side,
           size,
           baseSz: openResult.filledSz,
-          vaultAddress: client.walletAddress,
         });
         dbRollbackCloseSucceeded = true;
       } catch (closeErr) {
@@ -410,7 +405,6 @@ export class PositionManager {
         side: pos.side,
         size: pos.size,
         baseSz: pos.filledSz,
-        vaultAddress: client.walletAddress,
       });
     } catch (err) {
       logger.error({ err, positionId, mode: pos.mode, code: "POSITION_CLOSE_FAILED" }, "Failed to close position on-chain");
@@ -846,7 +840,6 @@ export class PositionManager {
         size: pos.size,
         stopLossPrice: newStopPrice,
         baseSz: pos.filledSz,
-        vaultAddress: client.walletAddress,
       });
     } catch (err) {
       logger.error(

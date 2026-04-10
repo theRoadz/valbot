@@ -110,7 +110,7 @@ export interface OpenPositionParams {
   side: TradeSide;
   size: number; // smallest-unit
   slippage: number;
-  vaultAddress: `0x${string}`;
+  vaultAddress?: `0x${string}`;
 }
 
 export interface OpenPositionResult {
@@ -129,7 +129,7 @@ export interface ClosePositionParams {
   side: TradeSide;
   size: number; // smallest-unit
   baseSz?: string; // exact base-unit size; if provided, skip re-derivation from USDC/price
-  vaultAddress: `0x${string}`;
+  vaultAddress?: `0x${string}`;
 }
 
 export interface ClosePositionResult {
@@ -146,7 +146,7 @@ export interface SetStopLossParams {
   size: number; // smallest-unit (position size for the stop-loss)
   stopLossPrice: number; // smallest-unit
   baseSz?: string; // exact base-unit size; if provided, skip re-derivation from USDC/price
-  vaultAddress: `0x${string}`;
+  vaultAddress?: `0x${string}`;
 }
 
 export interface SetStopLossResult {

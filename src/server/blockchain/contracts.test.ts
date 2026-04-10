@@ -399,7 +399,6 @@ describe("builder fee", () => {
       side: "Long",
       size: 10_000_000,
       slippage: 0.5,
-      vaultAddress: "0x1234" as `0x${string}`,
     });
 
     const orderArgs = mockOrder.mock.calls[0][0];
@@ -430,7 +429,6 @@ describe("builder fee", () => {
       pair: "BTC/USDC",
       side: "Long",
       size: 10_000_000,
-      vaultAddress: "0x1234" as `0x${string}`,
     });
 
     const orderArgs = mockOrder.mock.calls[0][0];
@@ -457,7 +455,6 @@ describe("builder fee", () => {
       side: "Long",
       size: 10_000_000,
       stopLossPrice: 90_000_000_000,
-      vaultAddress: "0x1234" as `0x${string}`,
     });
 
     const orderArgs = mockOrder.mock.calls[0][0];
@@ -488,7 +485,6 @@ describe("builder fee", () => {
       side: "Long",
       size: 10_000_000,
       slippage: 0.5,
-      vaultAddress: "0x1234" as `0x${string}`,
     });
 
     const orderArgs = mockOrder.mock.calls[0][0];
@@ -519,7 +515,6 @@ describe("builder fee", () => {
       pair: "BTC/USDC",
       side: "Long",
       size: 10_000_000,
-      vaultAddress: "0x1234" as `0x${string}`,
     });
 
     // totalSz=0.01, avgPx=95000.0
